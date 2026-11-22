@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "AGPL-3.0-only",
+  "type": "module",
   "workspaces": [
     "packages/*",
     "action"
@@ -22,7 +23,7 @@
     "lint:lockfile": "lockfile-lint --path package-lock.json --type npm --allowed-hosts npm npm.pkg.github.com --validate-https --validate-integrity --validate-package-names",
     "test": "node --test \"tests/**/*.test.ts\"",
     "test:packages": "node --test tests/schemas.test.ts tests/cli.test.ts tests/cli-bundle.test.ts",
-    "test:coverage": "c8 --all --src packages/engine/src --src packages/cli/src --include \"packages/engine/src/**\" --include \"packages/cli/src/**\" --exclude packages/cli/src/main.ts --check-coverage --lines 98 --statements 98 --branches 88 --functions 96 --reporter text --reporter text-summary node --test \"tests/**/*.test.ts\"",
+    "test:coverage": "c8 --all --src packages/engine/src --src packages/cli/src --include \"packages/engine/src/**\" --include \"packages/cli/src/**\" --exclude packages/cli/src/main.ts --check-coverage --lines 98 --statements 98 --branches 88 --functions 99 --reporter text --reporter text-summary node --test \"tests/**/*.test.ts\"",
     "validate:emit": "node scripts/validate-emit.ts",
     "schemas:gen": "node scripts/gen-schemas.ts",
     "schemas:check": "node scripts/gen-schemas.ts --check",
