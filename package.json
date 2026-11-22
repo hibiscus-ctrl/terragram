@@ -53,7 +53,7 @@
     "check:colours": "node scripts/check-colour-tokens.mjs",
     "check:design-doc": "node scripts/check-design-doc.mjs",
     "check:design": "npm run check:contrast && npm run check:colours && npm run check:design-doc",
-    "check:imports": "depcruise src packages/engine/src --output-type err-long",
+    "check:imports": "depcruise src packages/engine/src --output-type err-long && node scripts/check-engine-env.mjs",
     "knip": "knip",
     "stripe:setup": "env-cmd -f ./.env.local node --use-system-ca scripts/stripe-setup.mjs",
     "db:verify-auth": "env-cmd -f ./.env.local node --use-system-ca scripts/verify-auth.mjs",
