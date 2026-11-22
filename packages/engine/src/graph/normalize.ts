@@ -27,6 +27,8 @@ export type NormalNode = {
   id?: string;
   account: string;
   region?: string;
+  /** The environment of the node's root, when the graph names one. */
+  environment?: string;
   source?: string;
   version?: string;
   /** The key of the module call the resource is in. */
@@ -108,6 +110,7 @@ export function normalizeGraph(doc: GraphDocument, glue: Readonly<GlueRule> | fa
       ...(n.type !== undefined && { type: n.type }),
       ...(n.id !== undefined && { id: n.id }),
       ...(n.region !== undefined && { region: n.region }),
+      ...(n.environment !== undefined && { environment: n.environment }),
       ...(n.source !== undefined && { source: n.source }),
       ...(n.version !== undefined && { version: n.version }),
       ...(container !== undefined && { container }),
