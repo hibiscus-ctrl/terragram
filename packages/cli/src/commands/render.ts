@@ -10,7 +10,7 @@ import { readModel } from "../model-file.ts";
 
 const RENDER_HELP = `Usage: terragram render <model.json> [-o diagram.svg]
 
-Draw a model as a standalone SVG, laid out the way the workspace lays it out.
+Draw a model as a standalone SVG, laid out the way the engine lays out a model.
 
 Options:
   -o, --output <file>  where to write the SVG (default: standard output)

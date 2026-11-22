@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an improvement to Terragram Cloud.
+description: Suggest an improvement to the Terragram engine, CLI, GitHub Action or schemas.
 labels: ["enhancement"]
 body:
   - type: textarea
@@ -13,7 +13,7 @@ body:
     id: proposal
     attributes:
       label: Proposed solution
-      description: What you'd like to happen. Sketches/mockups welcome.
+      description: What you'd like to happen, for example a command, an Action input or a resource kind.
     validations:
       required: false
   - type: textarea

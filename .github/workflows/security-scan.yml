@@ -1,8 +1,8 @@
 name: Security scan
 
-# The app holds customer workspaces and billing, so we hold it to the bar we
-# publish: Semgrep SAST over the TypeScript/Next.js source, plus Trivy for
-# committed secrets and known-vulnerable dependencies (it reads package-lock.json).
+# Terragram generates Terraform people review and apply, so its own CI is held to the
+# bar it publishes: Semgrep SAST over the TypeScript source, plus Trivy for committed
+# secrets and known-vulnerable dependencies (it reads package-lock.json).
 #
 # LICENSING — permissive OSS, INTERNAL CI only, never bundled into what we ship:
 #   • Trivy   — Apache-2.0
@@ -92,7 +92,7 @@ jobs:
         # CI use of those rules is permitted by the Semgrep Rules License.
         run: |
           set -euo pipefail
-          semgrep scan --config auto src \
+          semgrep scan --config auto packages/engine/src packages/cli/src action/src scripts \
             --baseline-commit "$BASE_SHA" \
             --error \
             --sarif --output semgrep.sarif
@@ -143,10 +143,7 @@ jobs:
             echo "no scannable files changed"
             exit 0
           fi
-          # The ignore file lists the test-only values by rule and exact path (see it); the changed
-          # files are copied to /tmp/changed with their relative paths, so the same paths match.
-          trivy fs /tmp/changed --scanners secret --exit-code 1 --format table \
-            --ignorefile "$GITHUB_WORKSPACE/.trivyignore.yaml"
+          trivy fs /tmp/changed --scanners secret --exit-code 1 --format table
 
   dep-cve-diff:
     name: No new vulnerable dependencies (Trivy)
@@ -224,8 +221,8 @@ jobs:
           set -euo pipefail
           # Full SARIF first (every severity, never fails), then the gate on errors only,
           # so code scanning keeps the warnings while only errors fail the run.
-          semgrep scan --config auto src --sarif --output semgrep.sarif
-          semgrep scan --config auto src --severity ERROR --error --quiet
+          semgrep scan --config auto packages/engine/src packages/cli/src action/src scripts --sarif --output semgrep.sarif
+          semgrep scan --config auto packages/engine/src packages/cli/src action/src scripts --severity ERROR --error --quiet
       - name: Upload Semgrep SARIF
         if: always() && hashFiles('semgrep.sarif') != ''
         continue-on-error: true
@@ -251,8 +248,7 @@ jobs:
         run: |
           trivy fs . \
             --scanners vuln,secret \
-            --skip-dirs '**/node_modules/**,**/.next/**' \
-            --ignorefile .trivyignore.yaml \
+            --skip-dirs '**/node_modules/**' \
             --format sarif --output trivy.sarif \
             --exit-code 0
       - name: Trivy filesystem (fail on HIGH/CRITICAL)
@@ -262,9 +258,8 @@ jobs:
         run: |
           trivy fs . \
             --scanners vuln,secret \
-            --skip-dirs '**/node_modules/**,**/.next/**' \
+            --skip-dirs '**/node_modules/**' \
             --skip-db-update \
-            --ignorefile .trivyignore.yaml \
             --severity HIGH,CRITICAL \
             --format table \
             --exit-code 1

@@ -1,19 +1,21 @@
 # Security Policy
 
-Terragram translates between plain English, architecture diagrams, and Terraform through one auditable
-internal model. Its security model is **deterministic by default**: the workspace runs without any model
-credentials, and managed UK inference is an opt-in, server-side seam (the browser never holds a model key).
-We take vulnerabilities in that boundary seriously.
+Terragram turns plain English, Mermaid flowcharts and architecture diagrams into reviewed Terraform through
+one auditable internal model, and checks evidence receipts offline. This repository is the engine, the
+command line and the GitHub Action. It runs no hosted service. The engine is deterministic by default: it
+needs no model credentials, and any model call goes through a port the host binds. We take vulnerabilities in
+the code that generates, signs and verifies what people apply to their infrastructure seriously.
 
 ## Reporting a vulnerability
 
 **Please report privately — do not open a public issue or PR for a suspected vulnerability.**
 
-Email **security@terragram.dev** with:
+Use GitHub's private vulnerability reporting for this repository
+(<https://github.com/hibiscus-ctrl/terragram/security/advisories/new>) or email **security@terragram.dev** with:
 
 - a description of the issue and its impact,
 - steps to reproduce (a proof-of-concept if possible),
-- affected component / endpoint / version or commit.
+- affected component (engine, CLI, Action or schema) and version or commit.
 
 We aim to acknowledge within **2 business days** and to agree a remediation timeline after triage. Please give us
 a reasonable window to fix and release before any public disclosure (coordinated disclosure).
@@ -22,34 +24,39 @@ a reasonable window to fix and release before any public disclosure (coordinated
 
 If you make a good-faith effort to follow this policy while researching a vulnerability, we will not pursue or
 support legal action against you, and we will work with you to understand and resolve the issue quickly. Good
-faith means: only test against your own account and organisation, do not access, modify or retain data that
-is not yours, do not degrade the service for other tenants, give us reasonable time to fix before public
-disclosure, and stop as soon as you have enough to write the report. If you are unsure whether something is in
-bounds, ask first at <security@terragram.dev> — asking is always in bounds.
+faith means: only test against your own repositories and workflows, do not access, modify or retain data that
+is not yours, give us reasonable time to fix before public disclosure, and stop as soon as you have enough to
+write the report. If you are unsure whether something is in bounds, ask first at <security@terragram.dev> —
+asking is always in bounds.
 
 This is not a bug-bounty programme; we pay no monetary rewards. We do credit researchers unless you would rather
 we didn't.
 
 ## Scope
 
-In scope for this repository (`terragram-ui`):
+In scope for this repository:
 
-- The API routes (`src/app/api/**`) — session auth on the workspace translate endpoint, the Stripe
-  webhook signature check, and the double-authenticated managed-inference usage callback.
-- The workspace persistence layer (owner-only RLS on `workspaces`/`workspace_snapshots`, `user_id`
-  scoping in the data layer).
-- The account/billing server actions and data access (tenancy, RBAC, rate limiting).
-- Managed-model proxy credential handling (the short-lived `tmpx_` HMAC token mint and the
-  usage-callback secret).
+- **The engine** (`packages/engine`): the Terraform/OpenTofu emitter (output that escapes quoting, injects
+  configuration or leaks a value it was given), the HCL parser and Mermaid importer on hostile input, and the
+  evidence receipt, its content hash and its signature handling.
+- **The CLI** (`packages/cli`): path handling when it writes files, and `terragram verify`, which must report a
+  receipt as verified only when the hash matches and the signature checks against a key from outside the bundle.
+- **The GitHub Action** (`action/`): file access inside the workspace (symlinks, path traversal), the sticky pull
+  request comment (hostile component labels, workflow-command injection through logs), handling of the
+  `signing-key` input and the GitHub token, and the committed bundle in `action/dist` matching its source.
+- **The JSON Schemas** (`schemas/`) where a schema accepts a document the engine would treat unsafely.
+
+Out of scope: vulnerabilities in third-party dependencies with no effect on these components (report them
+upstream), and Terraform you generate and then apply: review it, which is what the receipt is for.
 
 ## Handling of secrets (design notes)
 
-- The browser never holds a model credential: managed inference mints a short-lived, org-scoped,
-  HMAC-signed `tmpx_` token **server-side** and calls the EU Bedrock proxy from the server.
-- Any stored API credentials are kept only as **SHA-256 hashes** and shown to the user exactly once;
-  secret-bearing tables are **service-role only** (no member-readable RLS policy).
-- Tenancy is enforced app-side from the authenticated session's org/user id on every route and server
-  action; the dashboard path additionally uses Supabase RLS.
-- Shared-secret comparisons (proxy callback, token hashes) are constant-time.
+- The engine never reads the environment, holds a key or mints a credential. A signing key reaches it only as a
+  `Signer` the host passes in, and a model only as a `ModelClient`.
+- The Action masks the `signing-key` input line by line, never writes it to a log, an output or the receipt bundle,
+  and its error messages do not quote it. It refuses `pull_request_target` and only updates a comment a bot wrote.
+- Receipts carry the signer's public key, but `terragram verify` never trusts it: the key must come from outside
+  the bundle (`--key` or `--trust`), and an unsigned receipt does not verify.
+- Tests generate their own keys at run time; no credential is committed.
 
 Please report any deviation from the above.

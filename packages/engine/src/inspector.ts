@@ -15,7 +15,6 @@ import type { InfraModel, ModelEdge, ModelNode } from "./model.ts";
  * marked `manual`, so no later chat turn quietly re-derives the graph you drew.
  */
 
-export type { KindField as NodeField };
 export { fieldsForKind };
 
 /** Current value of an attribute for a node — the reviewer's choice, else the fallback. */
@@ -50,15 +49,6 @@ export function setNodeAttribute(
 /** Clear a node's review flag — the inspector's "Mark resolved". */
 export function resolveNodeFlag(model: InfraModel, id: string): InfraModel {
   return mapNode(model, id, (n) => ({ ...n, flag: null }));
-}
-
-/** Remember where a node was dragged to, so the layout survives the next turn. */
-export function setNodePosition(
-  model: InfraModel,
-  id: string,
-  position: { x: number; y: number },
-): InfraModel {
-  return mapNode(model, id, (n) => ({ ...n, position }));
 }
 
 /* --------------------------------------------------------- structural edits -- */
@@ -105,17 +95,6 @@ export function removeNodes(model: InfraModel, ids: string[]): InfraModel {
     ...model,
     nodes: model.nodes.filter((n) => !gone.has(n.id)),
     edges: model.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target)),
-    topology: "manual",
-  };
-}
-
-/** Remove edges by id. Marks topology manual so they do not come straight back. */
-export function removeEdges(model: InfraModel, ids: string[]): InfraModel {
-  const gone = new Set(ids);
-  if (gone.size === 0) return model;
-  return {
-    ...model,
-    edges: model.edges.filter((e) => !gone.has(e.id)),
     topology: "manual",
   };
 }

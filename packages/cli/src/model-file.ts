@@ -5,7 +5,7 @@ import { type Cloud, CLOUDS, type InfraModel, MODEL_SCHEMA, modelDocumentSchema 
 
 import { CommandError, type Io, readText, UsageError } from "./io.ts";
 
-/** The cloud a command targets when nothing says otherwise: the app's own default. */
+/** The cloud a command targets when nothing says otherwise. */
 export const DEFAULT_CLOUD: Cloud = "azure";
 
 export function parseCloud(value: string | undefined): Cloud | undefined {

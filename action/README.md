@@ -2,7 +2,7 @@
 
 Keeps a repository's Terraform in line with a Terragram model file.
 
-The model file (`terragram.json`, validated against `terragram.model/v1`) is the source of truth. On every run the Action regenerates the Terraform from it with the same engine the Terragram app and CLI use, then either fails when the committed Terraform differs (`check`) or writes the regenerated files (`write`). On a pull request it also posts one comment that shows what the change does to the model: a Mermaid diagram of the diff between the base and head versions of the model file, a summary table and the content hash of the receipt.
+The model file (`terragram.json`, validated against `terragram.model/v1`) is the source of truth. On every run the Action regenerates the Terraform from it with the same engine the Terragram CLI uses, then either fails when the committed Terraform differs (`check`) or writes the regenerated files (`write`). On a pull request it also posts one comment that shows what the change does to the model: a Mermaid diagram of the diff between the base and head versions of the model file, a summary table and the content hash of the receipt.
 
 It runs from one committed bundle (`action/dist/index.mjs`) with no install step, makes no network call except to the GitHub API to post the comment, and never runs Terraform or any code from your repository.
 

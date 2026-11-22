@@ -30,10 +30,10 @@ import { type Io, writeUnder } from "../packages/cli/src/io.ts";
 import { BRIEFS } from "../scripts/emit-briefs.ts";
 
 /**
- * The CLI is a second front door onto the engine the app uses, so its output must be
- * the app's output byte for byte. These run the commands in-process over the documents
- * the emit gate (scripts/validate-emit.ts) generates from, and compare with what the
- * engine functions the app calls (`emitTerraform`, `modelToSvg`, `explainModel`) return.
+ * The CLI is a front door onto the engine, so its output must be the engine's output
+ * byte for byte. These run the commands in-process over the documents the emit gate
+ * (scripts/validate-emit.ts) generates from, and compare with what the engine functions
+ * (`emitTerraform`, `modelToSvg`, `explainModel`) return.
  */
 
 const scratch = mkdtempSync(join(tmpdir(), "terragram-cli-test-"));
@@ -84,7 +84,7 @@ const validModel = modelValidator();
 const BRIEF_WEB = BRIEFS[1] ?? "";
 const BRIEF_API = BRIEFS[2] ?? "";
 
-describe("terragram generate matches the app's emit path", () => {
+describe("terragram generate matches the engine's emit path", () => {
   for (const [i, brief] of BRIEFS.entries()) {
     for (const cloud of CLOUDS) {
       it(`brief ${i + 1} on ${cloud}`, async () => {
@@ -110,7 +110,7 @@ describe("terragram generate matches the app's emit path", () => {
     }
   }
 
-  it("emits for OpenTofu with --tofu, as the app does for that tool", async () => {
+  it("emits for OpenTofu with --tofu, as the engine does for that tool", async () => {
     const out = fresh("tofu");
     const result = await cli(["generate", "--prompt", BRIEF_WEB, "--cloud", "azure", "--tofu", "-o", out]);
     assert.equal(result.code, 0, result.stderr);
@@ -166,7 +166,7 @@ describe("terragram generate matches the app's emit path", () => {
 });
 
 describe("terragram parse, render and explain", () => {
-  it("parses a directory the way the app parses pasted Terraform", async () => {
+  it("parses a directory the way the engine parses Terraform", async () => {
     const dir = fresh("tf");
     writeFileSync(join(dir, "main.tf"), SAMPLE_TERRAFORM);
     const out = join(fresh("parse"), "model.json");

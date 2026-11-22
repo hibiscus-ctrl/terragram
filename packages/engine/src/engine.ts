@@ -21,7 +21,7 @@ import {
 /**
  * The deterministic translator: plain English in, model out, with no network and no
  * randomness. It is the availability floor under managed inference — when the
- * gateway is off or unreachable the workspace still answers — so it recognises the
+ * gateway is off or unreachable a turn still gets an answer — so it recognises the
  * same vocabulary the managed engine does, coarsely, by keyword.
  *
  * Every resource fact it needs comes from the kind registry (`kinds.ts`). This file
@@ -31,8 +31,8 @@ import {
 
 export { MODEL_KIND_IDS } from "./kinds.ts";
 
-/** Which translator produced a turn — surfaced honestly in the workspace chrome so
- *  the "Managed · UK Bedrock" badge never claims managed inference when the
+/** Which translator produced a turn — surfaced honestly (the evidence summary labels
+ *  it) so a managed badge never claims managed inference when the
  *  deterministic keyword engine actually answered. */
 export type EngineKind = "managed" | "deterministic";
 
@@ -302,7 +302,7 @@ export function matchKinds(text: string): string[] {
 /**
  * The cloud a brief names, if it names one. Provider names and the services that
  * belong to exactly one cloud both count; a brief that names neither returns null
- * and the workspace keeps its current target.
+ * and the caller keeps its current target.
  */
 const CLOUD_HINTS: ReadonlyArray<{ cloud: Cloud; pattern: RegExp }> = [
   {

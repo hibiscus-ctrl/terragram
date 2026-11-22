@@ -12,7 +12,7 @@ import { addNode, connectNodes } from "terragram-engine/inspector";
 import { EMPTY_MODEL } from "terragram-engine/model";
 import { MODULE_VERSIONS } from "terragram-engine/module-versions";
 import { parseTerraform } from "terragram-engine/parse";
-import { buildEvidenceReceipt } from "../src/features/workspace/sign.ts";
+import { buildEvidenceReceipt } from "./helpers/receipt.ts";
 import { emitTerraform } from "terragram-engine/terraform";
 
 /**

@@ -7,10 +7,9 @@ import { resourceNodes } from "./model.ts";
 import type { TerraformOutput } from "./terraform.ts";
 
 /**
- * The evidence *summary* shown live in the workspace as the model changes — a
- * cheap, synchronous preview. The authoritative, cryptographically-hashed and
- * (when a key is configured) Ed25519-signed receipt is produced server-side at the
- * review gate — see `sign.ts` / `generateEvidenceAction`. This preview never claims
+ * The evidence *summary* for a model as it changes — a cheap, synchronous preview.
+ * The authoritative, cryptographically-hashed and (when a signer is passed)
+ * Ed25519-signed receipt is `buildEvidenceReceipt` in `build-receipt.ts`. This preview never claims
  * a signature it doesn't have; it reports the resource set, provider SBOM, region,
  * and which translator answered.
  */
@@ -53,7 +52,7 @@ function canonical(model: InfraModel): string {
   return `${nodes}#${edges}`;
 }
 
-export function inferenceModeLabel(engine: EngineKind): string {
+function inferenceModeLabel(engine: EngineKind): string {
   return engine === "managed" ? "Managed · UK Bedrock" : "Deterministic · local";
 }
 

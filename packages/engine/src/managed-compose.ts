@@ -24,7 +24,7 @@ import type { MessagesRequest, ModelClient } from "./ports.ts";
  * of its answer. It forces a single tool call so the model returns a structured set of
  * components rather than prose we'd have to parse. The component vocabulary is the
  * SAME one the Terraform generator understands, so managed output stays coherent
- * with the deterministic emitter. Everything else in the workspace (parse, emit,
+ * with the deterministic emitter. Everything else in the engine (parse, emit,
  * evidence) is deterministic and needs no inference.
  *
  * Transport, credentials and spend caps are the `ModelClient` the host passes in.
@@ -42,7 +42,7 @@ import type { MessagesRequest, ModelClient } from "./ports.ts";
  * `configured` value is therefore ignored rather than forwarded — a deployment typo
  * degrades to the default instead of failing every managed turn.
  *
- * `configured` is the host's own setting (the app reads `TERRAGRAM_WORKSPACE_MODEL`).
+ * `configured` is the host's own setting (for example an environment variable it reads).
  */
 export function resolveManagedModel(override?: string, configured?: string): ManagedModelId {
   const chosen = migrateManagedModelId(override);

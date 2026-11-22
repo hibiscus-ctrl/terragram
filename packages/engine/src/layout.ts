@@ -23,8 +23,8 @@ export type LayoutOptions = {
  * Dagre still lays out the nodes that have never been placed, so a new component
  * appears somewhere sensible instead of at the origin.
  *
- * This is the renderer-neutral half of the canvas layout: the live canvas maps the
- * result to React Flow, the SVG export draws it directly.
+ * This is the renderer-neutral half of the layout: the SVG export draws the result
+ * directly, and any other renderer can map it.
  */
 export function layoutPositions(model: InfraModel, options: LayoutOptions = {}): Map<string, Position> {
   const autoLayout = options.autoLayout ?? true;

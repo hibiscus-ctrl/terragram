@@ -1,117 +1,45 @@
-# Terragram (`terragram-ui`)
+# Terragram
 
-**Terragram** translates between plain English, architecture diagrams, and Terraform through one
-auditable internal model — with a review gate before any code lands. One Next.js codebase, one deploy:
-the marketing site, the diagram workspace, and the account/billing backend.
+**Terragram** turns a plain-English brief, a Mermaid flowchart or an architecture diagram into reviewed
+Terraform or OpenTofu, and reads Terraform back into a diagram, through one auditable internal model.
+This repository holds the TypeScript engine that does it, a command line over that engine, and a GitHub
+Action that keeps a repository's Terraform in line with a model file.
 
-> Licensed under [AGPL-3.0-only](./LICENSE).
+> Licensed under [AGPL-3.0-only](./LICENSE). The JSON Schemas under [`schemas/`](schemas/) are Apache-2.0.
 
-## What this is
+## What is here
 
-- **The workspace** (`/workspace`) — a three-pane translator (compose/parse · React Flow canvas ·
-  code/evidence) with four modes: Chat → Diagram, Chat → Terraform, Diagram → Terraform,
-  Terraform → Diagram. Words, diagram, and code never drift because all three flow through one
-  internal model (`packages/engine/src/model.ts`).
-- **The engine** — deterministic by default (keyword compose + HCL parse + template emit, no LLM,
-  no keys). Managed UK inference (AWS Bedrock via the EU proxy) is opt-in per deployment with
-  `WORKSPACE_ENGINE=managed`; on any gateway error it falls back to the deterministic engine.
-- **The marketing site** — landing, pricing, docs, FAQ, trust centre, legal; UK-residency framed.
-- **Account + billing** — personal accounts (Supabase Auth), Stripe subscriptions + metered managed
-  inference, `/billing` and `/settings`.
-
-## Stack
-
-- **Next.js 16** (App Router, RSC, route handlers, Turbopack) · **React 19**
-- **@xyflow/react** (React Flow) + **dagre** — the diagram canvas + auto-layout
-- **Supabase** — Postgres + Auth (GitHub OAuth + email) + RLS + Storage
-- **Stripe** v22 (Basil API) — subscriptions + Billing Meter usage
-- **Tailwind v4** (CSS-first) + shadcn-style primitives + **Sonner**
-- **Zod 4** — the model contracts (`infraModelSchema`, translate request/response)
-- Node **24+** (tests + self-test use native TypeScript stripping)
-
-## Getting started
-
-### Prerequisites
-
-- Node.js **24+**, npm
-- A Supabase project (UK/EU region for production residency)
-- A Stripe account (billing only — the workspace runs without it)
-
-### 1. Install & configure
-
-```bash
-npm install
-cp .env.local.example .env.local   # then fill in the values
-```
-
-`.env.local.example` documents every variable: Supabase (publishable/secret keys), Stripe, the
-managed-model proxy (`TERRAGRAM_MODEL_PROXY_URL`/`_SECRET`, `TERRAGRAM_PROXY_CALLBACK_SECRET`,
-`WORKSPACE_ENGINE`), and analytics.
-
-### 2. Database
-
-```bash
-npm run db:link              # derives the project ref from NEXT_PUBLIC_SUPABASE_URL
-npm run db:migrate           # applies supabase/migrations/* and regenerates types
-```
-
-Without the `workspaces`/`workspace_snapshots` tables applied, the workspace still runs — it degrades
-to ephemeral (no create/load/save) by design.
-
-### 3. Stripe (optional to start)
-
-```bash
-npm run stripe:setup         # creates products, prices and the Billing Meters (idempotent)
-```
-
-Add a webhook endpoint pointing at `/api/webhooks` and put its signing secret in
-`STRIPE_WEBHOOK_SECRET`. Prices and meters are resolved by stable **lookup keys** at runtime.
-
-### 4. Run
-
-```bash
-npm run dev      # http://localhost:3000
-```
-
-## Scripts
-
-| Script | What it does |
+| Path | What it is |
 | --- | --- |
-| `npm run dev` | Dev server (Turbopack) |
-| `npm run build` / `npm start` | Production build / serve |
-| `npm run typecheck` / `typecheck:all` | `tsc --noEmit` (src / src+tests) |
-| `npm run lint` / `lint:fix` | Biome lint |
-| `npm test` | Unit tests (node built-in runner, `tests/*.test.ts`) |
-| `npm run test:cloud` | Pure-logic self-tests (proxy mint, token hashing, rate limiter, upload schema) |
-| `npm run build:packages` | Bundle the CLI (`packages/cli/dist/terragram.mjs`) and build the engine library (`packages/engine/dist`) |
-| `npm run schemas:gen` / `schemas:check` | Write / verify `schemas/*.schema.json`, generated from the engine's zod schemas |
-| `npm run db:migrate` / `db:types` / `db:link` | Apply the consolidated schema / regen types / link |
-| `npm run stripe:setup` | Idempotent Stripe products/prices/meters |
+| [`packages/engine`](packages/engine) | `terragram-engine`: the model and kind registry, the Terraform/OpenTofu emitter, the HCL parser, Mermaid import, verifier, explainer, evidence receipts, layout and SVG export. Pure functions: models, signing and logging come in through ports. |
+| [`packages/cli`](packages/cli) | `terragram`: the command line, bundled into one file with no runtime dependencies. |
+| [`action`](action) | The GitHub Action, one committed bundle. See [`action/README.md`](action/README.md). |
+| [`schemas`](schemas) | JSON Schemas for the model (`terragram.model/v1`) and the evidence receipt (`terragram.receipt/v2`), generated from the engine's zod schemas. |
+| [`scripts`](scripts) | The release gates (generated-Terraform validation, module-interface check, schema generation) and the provider-version refresher. |
 
-## Project structure
+The engine is deterministic: keyword compose, HCL parse and template emit, with no model call and no
+key. Words, diagram and code never drift because all three flow through one internal model
+(`packages/engine/src/model.ts`), and every Terraform resource comes from the registry in
+`packages/engine/src/kinds.ts`. The engine also has a managed-inference path (a forced tool call over a
+`ModelClient` port, plus diagram reading from a picture) that a host binds to its own gateway and spend
+cap; the CLI does not use it yet.
 
-```text
-src/app/(marketing)       marketing site + docs + legal
-src/app/(auth)            sign-in / sign-up (GitHub OAuth + email)
-src/app/(account)         account + subscription management
-src/app/(app)             the workspace (/workspace) + personal /billing and /settings
-src/app/api               workspace translate, Stripe webhooks, proxy usage callback
-packages/engine           the generation engine (own package): model, kinds, terraform, hcl, receipts
-packages/cli              the `terragram` command line, bundled into one file over the engine
-schemas                   open JSON Schemas (Apache-2.0) for the model and the evidence receipt
-src/features/workspace    the app's side of it: store, actions, managed inference, signing
-src/features/billing      Stripe metering, plan flip, managed-model proxy mint
-src/features/account      auth/org controllers, action guards
-src/libs                  Supabase / Stripe clients, rate limiter
-supabase/migrations       the consolidated schema (single database.sql)
+Nothing here runs a service. Nothing is published to a registry yet: install from source.
+
+## Install from source
+
+You need Node.js 24 or later and npm. Terraform or OpenTofu is only needed for the formatting check
+and the generated-Terraform gate.
+
+```bash
+npm ci            # @infraweaver-io/* come from GitHub Packages, so this needs a read:packages token
+npm run build:packages
+node packages/cli/dist/terragram.mjs --help
 ```
 
-## Command line and schemas
+## Command line
 
-`packages/cli` is a `terragram` command over the same deterministic engine the workspace uses. It
-runs offline with no model and no account, and builds into one file with no runtime dependencies
-(Node 24 or later). Not published yet: build it with `npm run build:packages` and run
-`node packages/cli/dist/terragram.mjs`.
+`terragram` runs offline with no model and no account.
 
 ```bash
 terragram generate --prompt "A web app with a Postgres database" --cloud aws -o out/   # Terraform + model.json
@@ -126,24 +54,46 @@ terragram verify bundle/ --key signer.pem                                       
 matches **and** the receipt's signature verifies against a public key you hold: `--key signer.pem`,
 or `--trust keys.json` (a JSON object of key id to PEM, picked by the receipt's key id). The key must
 come from outside the bundle; `signing-key.pem` inside it is never used, since whoever alters a
-bundle can swap the key. The key the receipt carries must be the trusted one. An unsigned receipt
-fails; `--allow-unsigned` checks the hashes only and prints `UNSIGNED`, which is not a pass.
+bundle can swap the key. An unsigned receipt fails; `--allow-unsigned` checks the hashes only and
+prints `UNSIGNED`, which is not a pass.
 
-Exit status is 0 on success, 1 when a command fails (including a receipt that does not verify)
-and 2 for bad arguments; `--json` prints a machine-readable result where it helps.
+Exit status is 0 on success, 1 when a command fails (including a receipt that does not verify) and 2
+for bad arguments; `--json` prints a machine-readable result where it helps.
 
-The documents it reads and writes have JSON Schemas under [`schemas/`](schemas/):
-`model.v1.schema.json` (`terragram.model/v1`) and `receipt.v2.schema.json`
-(`terragram.receipt/v2`). They are Apache-2.0, so a tool can build against the formats without
-taking on the AGPL, and they are generated, not hand-written.
+## GitHub Action
 
-## Verification & CI
+`hibiscus-ctrl/terragram/action@<full commit SHA>` regenerates the Terraform from a `terragram.json`
+model file and fails the check when the committed Terraform differs, or writes the files. On a pull
+request it posts one comment with the model diff as a Mermaid diagram. Usage, inputs, outputs and the
+security notes are in [`action/README.md`](action/README.md).
 
-The gates (all run in CI — `.github/workflows/ci.yml`): `tsc --noEmit`, Biome, `next build`,
-`npm test`, the self-test, and a packages job (schemas current, CLI and engine builds, the CLI
-matching the app's output). Biome handles linting only (its formatter is off; there is no
-formatter step — match the surrounding style by hand).
+## Schemas
 
-## Security
+[`schemas/model.v1.schema.json`](schemas/model.v1.schema.json) and
+[`schemas/receipt.v2.schema.json`](schemas/receipt.v2.schema.json) describe the documents the CLI and
+the Action read and write. They are Apache-2.0, so a tool can build against the formats without taking
+on the AGPL, and they are generated (`npm run schemas:gen`), not hand-written.
 
-See [`SECURITY.md`](./SECURITY.md) for responsible disclosure.
+## Scripts
+
+| Script | What it does |
+| --- | --- |
+| `npm test` | Unit tests (the node built-in runner, `tests/**/*.test.ts`) |
+| `npm run test:coverage` | The same suite under c8, with floors for the engine and CLI |
+| `npm run typecheck:all` | `tsc` over the tests and scripts, the engine, the CLI and the Action |
+| `npm run lint:ci` / `lint:ox` | Biome / oxlint |
+| `npm run check:imports` | Import rules (dependency-cruiser) and the engine-reads-no-environment check |
+| `npm run knip` | Unused files, exports and dependencies |
+| `npm run build:packages` | Bundle the CLI (`packages/cli/dist/terragram.mjs`) and build the engine library (`packages/engine/dist`) |
+| `npm run build:action` | Rebuild the committed Action bundle (`action/dist/index.mjs`) |
+| `npm run schemas:gen` / `schemas:check` | Write / verify `schemas/*.schema.json` |
+| `npm run validate:emit` | The generated-Terraform gate: `fmt`, `validate`, tflint, trivy and checkov over every brief and template, then Infraweaver's assess |
+| `npm run check:modules` | Check every pinned module call against its published interface |
+| `npm run refresh:providers` | Refresh the pinned provider and module versions the emitter writes |
+
+Biome handles linting only (its formatter is off): match the surrounding style by hand.
+
+## Contributing and security
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow and [`SECURITY.md`](SECURITY.md) for
+responsible disclosure.

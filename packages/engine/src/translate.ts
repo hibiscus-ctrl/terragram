@@ -34,7 +34,7 @@ export async function translateWithFallback(args: {
     } catch (err) {
       // A reached cap is a decision, not a fault — logging it as a failure would bury
       // the one signal that tells an operator why quality dropped. Either way the
-      // deterministic engine answers, so the workspace keeps working.
+      // deterministic engine answers, so the caller keeps working.
       if (err instanceof ManagedCapReachedError) {
         args.log.info("managed spend cap reached; using the deterministic engine");
       } else {

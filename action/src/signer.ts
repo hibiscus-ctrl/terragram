@@ -9,8 +9,8 @@ import { ActionError } from "./workflow.ts";
 
 /**
  * The signing-key input as a `Signer` for the engine: an Ed25519 private key in PKCS#8
- * PEM form, either as the PEM itself or base64-encoded (the two spellings the app's
- * own signing key is accepted in). The engine only ever sees the `Signer`; the key
+ * PEM form, either as the PEM itself or base64-encoded (the two spellings a signing key
+ * is commonly stored in). The engine only ever sees the `Signer`; the key
  * stays in this closure and never reaches a log, an output or the bundle.
  */
 

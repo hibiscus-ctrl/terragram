@@ -2,11 +2,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 # Copyright and licence of the files that carry no header of their own
-# (https://reuse.software/spec-3.3/): JSON, SQL, Markdown, YAML and Terraform
-# files, the lockfile, images, the generated Supabase types and anything else
-# that can't or doesn't take a comment. A file with its own header, as every
-# TypeScript and JavaScript source file has, keeps it ("closest"). The CI
-# workflow runs `reuse lint`.
+# (https://reuse.software/spec-3.3/): JSON, Markdown, YAML and Terraform files, the
+# lockfile, images and anything else that cannot or does not take a comment. A file
+# with its own header, as every TypeScript and JavaScript source file has, keeps it
+# ("closest"). The CI workflow runs `reuse lint`.
 version = 1
 
 [[annotations]]

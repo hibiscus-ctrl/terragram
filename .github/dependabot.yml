@@ -30,18 +30,11 @@ updates:
       semver-patch-days: 7
     groups:
       # Minor/patch for everything else lands as one PR, keeping CI and reviewers
-      # sane. The exclusions get their own PR because each one changes runtime
-      # behaviour a grouped diff would bury: the framework and its renderer, the
-      # database client and its generated types, the payments SDK, and the
-      # type-checker the build itself runs.
+      # sane. The type-checker the build itself runs gets its own PR, because a
+      # compiler bump changes what every file is judged against.
       npm-minor-patch:
         patterns: ["*"]
         exclude-patterns:
-          - next
-          - react
-          - react-dom
-          - "@supabase/*"
-          - stripe
           - typescript
         update-types: [minor, patch]
 

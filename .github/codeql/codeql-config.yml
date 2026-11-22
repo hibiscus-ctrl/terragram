@@ -3,5 +3,4 @@
 # sanitisation queries read as product code. Scan what ships.
 paths-ignore:
   - tests
-  - cypress
   - contracts

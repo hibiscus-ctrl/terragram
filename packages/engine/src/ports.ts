@@ -6,7 +6,7 @@
  *
  * The engine decides what to ask a model, how to read the answer and what a receipt
  * says; it never reads the environment, mints credentials, meters spend or holds a
- * key. Those belong to the host (the Next.js app today, a CLI or an Action later), which
+ * key. Those belong to the host (a CLI, an Action or any other program), which
  * passes an implementation of each port in.
  */
 
@@ -42,7 +42,7 @@ export interface Signer {
   keyId: string;
   /** ISO timestamp the host stamps on the signature. */
   signedAt: string;
-  /** Base64 SPKI DER of the public half, the form the browser verifier imports. */
+  /** Base64 SPKI DER of the public half, the form a verifier imports. */
   publicKey: string;
   /** The public half as PEM, the form `infraweaver verify-evidence` takes. */
   publicKeyPem: string;

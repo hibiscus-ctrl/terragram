@@ -3,7 +3,7 @@
 
 import { type Cloud, type InfraModel, modelDocumentSchema } from "terragram-engine/model";
 
-/** The cloud a model targets when its file does not say: the CLI's and the app's default. */
+/** The cloud a model targets when its file does not say: the CLI's default. */
 const DEFAULT_CLOUD: Cloud = "azure";
 
 export type ModelDocument = { model: InfraModel; cloud: Cloud };

@@ -3,12 +3,12 @@
 
 /**
  * The engine reads no environment: `packages/engine` is configured by what its caller
- * passes in (ports and arguments), never by `process.env`, so the same code runs in the
- * app, a CLI and an Action without one of them silently changing what it emits.
+ * passes in (ports and arguments), never by `process.env`, so the same code runs in a
+ * CLI, an Action and any other host without one of them silently changing what it emits.
  *
  *   node scripts/check-engine-env.mjs
  *
- * The import half of the boundary (no src/, Next, React, Supabase, Stripe) is the
+ * The import half of the boundary (no framework or service SDK, nothing from outside the package) is the
  * dependency-cruiser rules in .dependency-cruiser.cjs; this is the half it cannot see,
  * because `process.env` is a global rather than an import. Comments are ignored, so a
  * doc can still name the variable the host reads.

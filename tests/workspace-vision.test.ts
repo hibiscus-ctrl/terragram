@@ -5,16 +5,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { buildGraphModel } from "terragram-engine/graph-build";
-import { buildImageRequest, modelFromReading } from "terragram-engine/vision";
-import { runManagedDiagramRead } from "../src/features/workspace/vision.ts";
+import { DEFAULT_MANAGED_MODEL } from "terragram-engine/managed-models";
+import type { MessagesRequest, ModelClient } from "terragram-engine/ports";
+import { buildImageRequest, modelFromReading, runManagedDiagramRead } from "terragram-engine/vision";
 
 const IMAGE = { data: "aGVsbG8=", mediaType: "image/png" as const };
-
-const MINT_DEPS = {
-  mint: () => ({ token: "tmpx_test.sig", endpoint: "https://proxy.example.test", expires_at: "2099-01-01T00:00:00Z" }),
-  cycleSpendPence: async () => 0,
-  capPence: async () => 25_000,
-};
 
 describe("diagram picture request", () => {
   it("sends the image as a base64 block and forces the emit_diagram tool", () => {
@@ -93,43 +88,33 @@ describe("modelFromReading", () => {
 });
 
 describe("runManagedDiagramRead", () => {
-  it("posts the image through the managed gateway and reads the tool call back", async () => {
-    const seen: { body?: { messages: Array<{ content: Array<{ type: string }> }> } } = {};
-    const fetchImpl = (async (_url: string, init: RequestInit) => {
-      seen.body = JSON.parse(String(init.body));
-      return new Response(
-        JSON.stringify({
-          content: [
-            {
-              type: "tool_use",
-              name: "emit_diagram",
-              input: {
-                reply: "ok",
-                components: [{ ref: "a1", label: "Postgres", kind: "postgres" }],
-                connections: [],
-              },
-            },
-          ],
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      );
-    }) as unknown as typeof fetch;
+  const reading = {
+    reply: "ok",
+    components: [{ ref: "a1", label: "Postgres", kind: "postgres" }],
+    connections: [],
+  };
 
-    const result = await runManagedDiagramRead({ orgId: "o", image: IMAGE, recordMint: () => {}, deps: { fetchImpl, ...MINT_DEPS } });
+  it("sends the image through the model client and reads the tool call back", async () => {
+    const seen: MessagesRequest[] = [];
+    const client: ModelClient = {
+      async toolCall(request) {
+        seen.push(request);
+        return reading;
+      },
+    };
+
+    const result = await runManagedDiagramRead({ client, image: IMAGE, model: DEFAULT_MANAGED_MODEL });
     assert.ok(result.model.nodes.some((n) => n.kind === "postgres"));
-    assert.equal(seen.body?.messages[0]?.content.some((c) => c.type === "image"), true);
+    const body = seen[0] as { model: string; messages: Array<{ content: Array<{ type: string }> }> };
+    assert.equal(body.model, DEFAULT_MANAGED_MODEL);
+    assert.equal(body.messages[0]?.content.some((c) => c.type === "image"), true);
   });
 
-  it("refuses over the spend cap before any image is sent", async () => {
-    const fetchImpl = (async () => assert.fail("the gateway was called")) as unknown as typeof fetch;
+  it("throws on a reading it cannot use, so the caller can say so", async () => {
+    const client: ModelClient = { toolCall: async () => ({ components: "nope" }) };
     await assert.rejects(
-      runManagedDiagramRead({
-        orgId: "o",
-        image: IMAGE,
-        recordMint: () => {},
-        deps: { fetchImpl, mint: MINT_DEPS.mint, cycleSpendPence: async () => 25_000, capPence: async () => 25_000 },
-      }),
-      /spend cap/,
+      runManagedDiagramRead({ client, image: IMAGE, model: DEFAULT_MANAGED_MODEL }),
+      /unusable diagram reading/,
     );
   });
 });
@@ -146,27 +131,5 @@ describe("buildGraphModel", () => {
     );
     assert.deepEqual(model.nodes.filter((n) => n.kind === "postgres").map((n) => n.id), ["postgres", "postgres-2"]);
     assert.equal(model.nodes.find((n) => n.kind === "external")?.id, "external-old-mainframe");
-  });
-});
-
-describe("diagram read mint ledger", () => {
-  it("records the mint the diagram read made, like a chat turn", async () => {
-    const rows: { orgId: string; budgetPence: number }[] = [];
-    const fetchImpl = (async () =>
-      new Response(
-        JSON.stringify({
-          content: [{ type: "tool_use", name: "emit_diagram", input: { reply: "", components: [], connections: [] } }],
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      )) as unknown as typeof fetch;
-
-    await runManagedDiagramRead({
-      orgId: "org_1",
-      image: IMAGE,
-      recordMint: (orgId, budgetPence) => rows.push({ orgId, budgetPence }),
-      deps: { fetchImpl, ...MINT_DEPS },
-    });
-
-    assert.deepEqual(rows, [{ orgId: "org_1", budgetPence: 25_000 }]);
   });
 });

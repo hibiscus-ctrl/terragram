@@ -1,43 +1,18 @@
 {
+  // The tests and the release gates in scripts/ (validate-emit, check-module-inputs,
+  // gen-schemas), which no package's tsconfig includes. `npm run typecheck:all` runs
+  // this one beside the engine, the CLI and the Action.
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    // The dependency-CVE gate is plain JavaScript, imported by its test.
     "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "noUncheckedIndexedAccess": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noImplicitReturns": true,
-    "noImplicitOverride": true,
-    "exactOptionalPropertyTypes": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "react-jsx",
-    // Explicit: TypeScript 7 defaults "types" to [], so without this line the app
-    // type-checks only while a transitive devDependency happens to pull @types/node in.
-    "types": ["node"],
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    // Tests index into known-shaped fixtures (arr[0], .find()!) and assert on the
+    // result; a wrong index just fails the test. Relaxing here keeps the type gate
+    // focused on real drift (renamed exports, changed signatures) without forcing
+    // non-null guards through every fixture access. The scripts index into fixtures
+    // they built themselves, for the same reason.
+    "noUncheckedIndexedAccess": false
   },
-  "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
-  ],
-  "exclude": ["node_modules", "packages", "action", "scripts", "tests", "cypress", "cypress.config.ts"]
+  "include": ["tests/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["node_modules"]
 }

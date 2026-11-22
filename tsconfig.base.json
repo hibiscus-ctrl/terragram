@@ -1,0 +1,28 @@
+{
+  // The compiler options every project here shares: Node only (no DOM, no JSX), strict,
+  // nothing emitted. The engine, CLI and Action each extend this and add their own
+  // `include`; the root tsconfig.json covers the tests and the release gates in scripts/.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["esnext"],
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    // Explicit: TypeScript 7 defaults "types" to [], so without this line the code
+    // type-checks only while a transitive devDependency happens to pull @types/node in.
+    "types": ["node"],
+    "incremental": false
+  }
+}

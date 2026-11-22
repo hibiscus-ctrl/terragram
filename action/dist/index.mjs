@@ -22653,7 +22653,7 @@ function buildBundle(receipt, model, files, attestation) {
     // `infraweaver verify-evidence <bundle> <sig> <pubkey>` already reads — so one
     // verifier covers both products, and an auditor with the CLI needs no browser.
     // The in-receipt signature over the content hash is unchanged and is still
-    // what the offline web verifier checks.
+    // what `verifyBundle` checks.
     ...attestation ? [
       { name: RECEIPT_SIGNATURE_FILE, content: `${attestation.detachedSignature}
 ` },

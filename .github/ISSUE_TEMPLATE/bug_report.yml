@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a problem with Terragram Cloud (the dashboard, marketing site, or API).
+description: Report a problem with the Terragram engine, CLI, GitHub Action or schemas.
 labels: ["bug"]
 body:
   - type: markdown
@@ -7,6 +7,18 @@ body:
       value: |
         Thanks for filing a bug. Please do **not** include secrets, tokens, or private
         Terraform in anything you paste below.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Engine (terragram-engine)
+        - CLI (terragram)
+        - GitHub Action
+        - JSON Schemas
+        - Other
+    validations:
+      required: true
   - type: textarea
     id: what-happened
     attributes:
@@ -18,32 +30,25 @@ body:
     id: repro
     attributes:
       label: Steps to reproduce
-      description: Minimal steps that trigger the issue.
+      description: The command, workflow step or model file that triggers the issue, as small as you can make it.
       placeholder: |
-        1. Go to …
-        2. Click …
+        1. Run …
+        2. With this model file …
         3. See …
     validations:
       required: true
   - type: input
-    id: url
+    id: environment
     attributes:
-      label: Page / URL
-      description: Where it happened (e.g. /console/acme/infra), with no tokens in the URL.
-    validations:
-      required: false
-  - type: input
-    id: browser
-    attributes:
-      label: Browser & OS
-      description: e.g. Chrome 140 on Windows 11.
+      label: Environment
+      description: Node version, OS, and Terraform or OpenTofu version if it matters. e.g. Node 24.2 on Ubuntu 24.04.
     validations:
       required: false
   - type: textarea
     id: logs
     attributes:
-      label: Console / network errors
-      description: Any browser console or network error (redact secrets). Formatted as code.
+      label: Output
+      description: The command output or workflow log (redact secrets). Formatted as code.
       render: shell
     validations:
       required: false

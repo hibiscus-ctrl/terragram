@@ -14,7 +14,7 @@ import {
 } from "terragram-engine/inspector";
 import { countFlags } from "terragram-engine/model";
 import { emitTerraform } from "terragram-engine/terraform";
-import { buildEvidenceReceipt } from "../src/features/workspace/sign.ts";
+import { buildEvidenceReceipt } from "./helpers/receipt.ts";
 
 const WEB_PROMPT = "A web app with a Postgres database and Redis cache";
 
@@ -78,8 +78,7 @@ describe("attribute-aware Terraform emit", () => {
 });
 
 describe("buildEvidenceReceipt", () => {
-  it("produces a stable sha256 content hash and ships unsigned without a key", async () => {
-    delete process.env.EVIDENCE_SIGNING_KEY;
+  it("produces a stable sha256 content hash and ships unsigned without a signer", async () => {
     const { model } = composeFromPrompt(WEB_PROMPT);
     const a = await buildEvidenceReceipt(model, "azure", "deterministic", "alice", "2026-07-10T00:00:00Z");
     const b = await buildEvidenceReceipt(model, "azure", "deterministic", "alice", "2026-07-10T00:00:00Z");
@@ -92,7 +91,6 @@ describe("buildEvidenceReceipt", () => {
   });
 
   it("changes the content hash when a resolved attribute changes the plan", async () => {
-    delete process.env.EVIDENCE_SIGNING_KEY;
     const { model } = composeFromPrompt(WEB_PROMPT);
     const pg = model.nodes.find((n) => n.kind === "postgres")!;
     const changed = setNodeAttribute(model, pg.id, "PostgreSQL version", "PostgreSQL 14");
@@ -102,7 +100,6 @@ describe("buildEvidenceReceipt", () => {
   });
 
   it("carries the plain-English description the approver was shown", async () => {
-    delete process.env.EVIDENCE_SIGNING_KEY;
     const { model } = composeFromPrompt(WEB_PROMPT);
     const { receipt } = await buildEvidenceReceipt(
       model,
