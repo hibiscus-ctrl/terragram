@@ -3,43 +3,24 @@
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "includes": [
-      "src/**/*.{ts,tsx,js,jsx,mjs,cjs}",
       "packages/**/*.{ts,mts,mjs,js}",
       "action/**/*.{ts,mts,mjs,js}",
       "!action/dist",
       "scripts/**/*.{ts,mts,mjs,js}",
-      "tests/**/*.{ts,tsx,mts,mjs,js}",
-      "cypress/**/*.{ts,mts,mjs,js}",
-      "*.{ts,js,mjs,cjs}",
-      "!src/components/ui",
-      "!src/libs/supabase/types.ts",
-      "!next-env.d.ts"
+      "tests/**/*.{ts,mts,mjs,js}",
+      "*.{ts,js,mjs,cjs}"
     ]
   },
   "linter": {
     "enabled": true,
     "rules": {
       "preset": "recommended",
-      "a11y": {
-        "noSvgWithoutTitle": "off",
-        "noLabelWithoutControl": {
-          "level": "error",
-          "options": {
-            "inputComponents": ["Checkbox", "Input", "Select", "Textarea"]
-          }
-        }
-      },
-      "correctness": {
-        "useJsxKeyInIterable": "off"
-      },
       "suspicious": {
-        "noArrayIndexKey": "off",
         "noCommentText": "off",
         "noTemplateCurlyInString": "off"
       },
       "nursery": {
-        "noExtendNative": "error",
-        "noNonScalableViewport": "error"
+        "noExtendNative": "error"
       }
     }
   },
