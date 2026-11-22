@@ -6,8 +6,8 @@ import { z } from "zod";
 /**
  * The internal model — the single auditable representation every mode flows
  * through. Chat, diagram and Terraform are three projections of this one shape,
- * so the three never drift. Phase 4 ships a deterministic stub behind this
- * boundary; Phase 5 swaps in the real translation engine without the UI changing.
+ * so the three never drift. The translators (deterministic and managed) sit behind this
+ * boundary and can change without the model changing.
  */
 
 const NODE_CATEGORIES = [

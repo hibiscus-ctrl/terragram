@@ -21,7 +21,7 @@ import {
  * is actually true — including after we are gone.
  */
 
-export type VerifyStatus = "pass" | "fail" | "unavailable";
+type VerifyStatus = "pass" | "fail" | "unavailable";
 
 export type VerifyReport = {
   /** Overall: pass only when the hash matches and any signature present verifies. */

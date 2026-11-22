@@ -22,11 +22,8 @@ import type { ModelClient } from "./ports.ts";
  * photographed one keep the same promises.
  */
 
-export const IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+const IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
 type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
-
-/** Anthropic's per-image ceiling is 5 MB; leave headroom for base64 framing. */
-export const MAX_IMAGE_BYTES = 4_500_000;
 
 export type DiagramImage = { data: string; mediaType: ImageMediaType };
 
@@ -35,7 +32,7 @@ export type DiagramReadResult = {
   untranslated: string[];
   reply: string;
   /** The cloud the picture depicts, when its icons or labels say — a page of AWS
-   *  icons is an AWS design whatever the workspace toggle was set to. */
+   *  icons is an AWS design whatever cloud the caller had selected. */
   cloud: Cloud | null;
 };
 

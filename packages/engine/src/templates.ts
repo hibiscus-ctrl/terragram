@@ -48,7 +48,3 @@ export const WORKSPACE_TEMPLATES: readonly WorkspaceTemplate[] = [
 export function templateModel(template: WorkspaceTemplate): InfraModel {
   return assembleModel(template.kinds, undefined, true).model;
 }
-
-export function templateById(id: string): WorkspaceTemplate | undefined {
-  return WORKSPACE_TEMPLATES.find((t) => t.id === id);
-}

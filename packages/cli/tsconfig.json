@@ -1,14 +1,7 @@
 {
   // The CLI on its own terms: Node only, no DOM, and nothing but the engine's public
   // exports (`terragram-engine/<subpath>`), exactly as a host outside this repo sees them.
-  "extends": "../../tsconfig.json",
-  "compilerOptions": {
-    "lib": ["esnext"],
-    "jsx": "preserve",
-    "plugins": [],
-    "paths": {},
-    "incremental": false
-  },
+  "extends": "../../tsconfig.base.json",
   "include": ["src/**/*.ts", "package.json"],
   "exclude": ["node_modules"]
 }

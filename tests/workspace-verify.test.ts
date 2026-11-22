@@ -2,18 +2,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
 
 import { verifyBytes } from "@infraweaver-io/attest/signing";
 import { describe, it } from "node:test";
 
 import { composeFromPrompt } from "terragram-engine/engine";
 import { explainModel } from "terragram-engine/explain";
-import { resolvedModel } from "../src/features/workspace/inference.ts";
+import { DEFAULT_MANAGED_MODEL } from "terragram-engine/managed-models";
 import { buildBundle, receiptJson } from "terragram-engine/receipt";
-import { buildEvidenceReceipt } from "../src/features/workspace/sign.ts";
+import { buildEvidenceReceipt, testSigner } from "./helpers/receipt.ts";
 import { readBundleZip, verifyBundle } from "terragram-engine/verify";
-import { makeZip } from "../src/utils/zip.ts";
+import { makeZip } from "./helpers/zip.ts";
 
 /**
  * The promise the evidence bundle makes is that an auditor can check it without us.
@@ -23,26 +22,11 @@ import { makeZip } from "../src/utils/zip.ts";
 
 const WEB_PROMPT = "A web app with a Postgres database and Redis cache";
 
-async function withSigningKey<T>(run: () => Promise<T>): Promise<T> {
-  const { privateKey } = generateKeyPairSync("ed25519");
-  const previous = process.env.EVIDENCE_SIGNING_KEY;
-  process.env.EVIDENCE_SIGNING_KEY = privateKey
-    .export({ type: "pkcs8", format: "pem" })
-    .toString();
-  process.env.EVIDENCE_SIGNING_KEY_ID = "test-key";
-  try {
-    return await run();
-  } finally {
-    if (previous === undefined) delete process.env.EVIDENCE_SIGNING_KEY;
-    else process.env.EVIDENCE_SIGNING_KEY = previous;
-  }
-}
-
 async function signedBundle() {
   const { model } = composeFromPrompt(WEB_PROMPT);
-  const built = await withSigningKey(() =>
-    buildEvidenceReceipt(model, "azure", "deterministic", "alice", "2026-09-11T00:00:00Z"),
-  );
+  const built = await buildEvidenceReceipt(model, "azure", "deterministic", "alice", "2026-09-11T00:00:00Z", {
+    signer: testSigner(),
+  });
   return {
     model,
     ...built,
@@ -104,7 +88,6 @@ describe("evidence bundle", () => {
   });
 
   it("says a receipt is unsigned rather than implying it was verified", async () => {
-    delete process.env.EVIDENCE_SIGNING_KEY;
     const { model } = composeFromPrompt(WEB_PROMPT);
     const { receipt, terraform } = await buildEvidenceReceipt(
       model,
@@ -136,7 +119,7 @@ describe("evidence bundle", () => {
 });
 
 describe("bundle zip round-trip", () => {
-  it("reads back exactly what the workspace's zip writer produced", async () => {
+  it("reads back exactly what a zip writer produced", async () => {
     const { bundle } = await signedBundle();
     // The reader and the writer are the two halves of the download, and they are the
     // one seam a unit test of either half alone would miss.
@@ -201,7 +184,7 @@ describe("receipt provenance", () => {
       "alice",
       "2026-09-12T00:00:00Z",
     );
-    assert.equal(managed.receipt.provenance.model, resolvedModel());
+    assert.equal(managed.receipt.provenance.model, DEFAULT_MANAGED_MODEL);
   });
 
   it("records the model the turn ran on, not the one configured now", async () => {
@@ -220,7 +203,7 @@ describe("receipt provenance", () => {
       { inferenceModel: "claude-opus-5-5" },
     );
     assert.equal(opus.receipt.provenance.model, "claude-opus-5-5");
-    assert.notEqual(opus.receipt.provenance.model, resolvedModel());
+    assert.notEqual(opus.receipt.provenance.model, DEFAULT_MANAGED_MODEL);
 
     // The deterministic engine still records null however it is called — no model
     // chose anything, so naming one would be the same lie in the other direction.
@@ -265,8 +248,7 @@ describe("detached signature for the command-line verifier", () => {
     assert.equal(verifyBytes(`${bytes} `, sig!.content.trim(), pem!.content), false);
   });
 
-  it("ships neither when no key is configured, rather than an unsigned placeholder", async () => {
-    delete process.env.EVIDENCE_SIGNING_KEY;
+  it("ships neither when no signer is configured, rather than an unsigned placeholder", async () => {
     const { model } = composeFromPrompt(WEB_PROMPT);
     const built = await buildEvidenceReceipt(
       model,

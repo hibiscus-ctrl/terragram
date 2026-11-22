@@ -8,7 +8,7 @@ import type { TerraformFile, TerraformTool } from "./terraform.ts";
 /**
  * The evidence receipt and the bundle it travels in.
  *
- * Everything here is pure and runs in a browser as readily as on the server, which
+ * Everything here is pure and runs in a browser as readily as in Node, which
  * is the whole point: the auditor has to be able to check the receipt without
  * calling us. The bundle therefore carries its own public key, and the content hash
  * is computed over a serialization defined in this one file, so the code that
@@ -178,7 +178,7 @@ export function buildBundle(
     // `infraweaver verify-evidence <bundle> <sig> <pubkey>` already reads — so one
     // verifier covers both products, and an auditor with the CLI needs no browser.
     // The in-receipt signature over the content hash is unchanged and is still
-    // what the offline web verifier checks.
+    // what `verifyBundle` checks.
     ...(attestation
       ? [
           { name: RECEIPT_SIGNATURE_FILE, content: `${attestation.detachedSignature}\n` },

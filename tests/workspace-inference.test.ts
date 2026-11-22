@@ -5,35 +5,30 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { assembleModel, MODEL_KIND_IDS } from "terragram-engine/engine";
-import {
-  ManagedCapReachedError,
-  runManagedCompose,
-} from "../src/features/workspace/inference.ts";
+import { extractToolUse, runManagedCompose, toolNameOf } from "terragram-engine/managed-compose";
+import { DEFAULT_MANAGED_MODEL } from "terragram-engine/managed-models";
 import { countFlags } from "terragram-engine/model";
-import { translateChat, translateRequestSchema } from "../src/features/workspace/translate.ts";
+import { type Logger, ManagedCapReachedError, type MessagesRequest, type ModelClient } from "terragram-engine/ports";
+import { translateRequestSchema, translateWithFallback } from "terragram-engine/translate";
 
-function fakeMint() {
-  return { token: "tmpx_test.sig", endpoint: "https://proxy.example.test", expires_at: "2099-01-01T00:00:00Z" };
+/** A `ModelClient` that answers every call with `output` and remembers the requests. */
+function clientReturning(output: unknown) {
+  const requests: MessagesRequest[] = [];
+  const client: ModelClient = {
+    async toolCall(request) {
+      requests.push(request);
+      return output;
+    },
+  };
+  return { client, requests };
 }
 
-/** Spend-cap reads, stubbed well under the cap so the mint is never the thing
- *  under test. A managed call cannot be made without them. */
-const MINT_DEPS = {
-  mint: fakeMint,
-  cycleSpendPence: async () => 0,
-  capPence: async () => 25_000,
-};
+function toolOutput(components: { kind: string; label?: string; attributes?: Record<string, string>; flag_reason?: string }[], reply = "Done.") {
+  return { reply, components };
+}
 
-/** A mint ledger that records nothing, for the tests not about the ledger. */
-const noLedger = () => {};
-
-function toolResponse(components: { kind: string; label?: string }[], reply = "Done.") {
-  return new Response(
-    JSON.stringify({
-      content: [{ type: "tool_use", name: "emit_infrastructure", input: { reply, components } }],
-    }),
-    { status: 200, headers: { "content-type": "application/json" } },
-  );
+function run(client: ModelClient, prompt: string) {
+  return runManagedCompose({ client, prompt, model: DEFAULT_MANAGED_MODEL });
 }
 
 describe("assembleModel", () => {
@@ -54,21 +49,14 @@ describe("assembleModel", () => {
 
 describe("runManagedCompose", () => {
   it("turns the forced tool call into a model the emitter understands", async () => {
-    const calls: { url: string; body: unknown }[] = [];
-    const fetchImpl = (async (url: string, init: RequestInit) => {
-      calls.push({ url, body: JSON.parse(String(init.body)) });
-      return toolResponse([{ kind: "postgres" }, { kind: "redis-cache" }], "Added a database and cache.");
-    }) as unknown as typeof fetch;
+    const { client } = clientReturning(
+      toolOutput([{ kind: "postgres" }, { kind: "redis-cache" }], "Added a database and cache."),
+    );
+    const result = await run(client, "a web app with a database and a cache");
 
-    const result = await runManagedCompose({
-      orgId: "org_1",
-      prompt: "a web app with a database and a cache",
-      recordMint: noLedger,
-      deps: { fetchImpl, ...MINT_DEPS },
-    });
-
-    assert.equal(calls[0]?.url, "https://proxy.example.test/v1/messages");
     assert.equal(result.reply, "Added a database and cache.");
+    assert.equal(result.engine, "managed");
+    assert.equal(result.inferenceModel, DEFAULT_MANAGED_MODEL);
     const kinds = result.model.nodes.map((n) => n.kind);
     assert.ok(kinds.includes("postgres"));
     assert.ok(kinds.includes("redis-cache"));
@@ -76,58 +64,108 @@ describe("runManagedCompose", () => {
     assert.equal(countFlags(result.model), 2); // redis + postgres flagged
   });
 
-  it("forces the emit_infrastructure tool call", async () => {
-    let sentBody: any;
-    const fetchImpl = (async (_url: string, init: RequestInit) => {
-      sentBody = JSON.parse(String(init.body));
-      return toolResponse([{ kind: "object-storage" }]);
-    }) as unknown as typeof fetch;
-
-    await runManagedCompose({ orgId: "o", prompt: "add a bucket", recordMint: noLedger, deps: { fetchImpl, ...MINT_DEPS } });
-    assert.equal(sentBody.tool_choice.name, "emit_infrastructure");
-    assert.equal(sentBody.tool_choice.type, "tool");
-    assert.ok(Array.isArray(sentBody.tools));
+  it("forces the emit_infrastructure tool call on the model it was given", async () => {
+    const { client, requests } = clientReturning(toolOutput([{ kind: "object-storage" }]));
+    await runManagedCompose({ client, prompt: "add a bucket", model: "claude-opus-5-5" });
+    const sent = requests[0] as { model: string; tool_choice: { type: string; name: string }; tools: unknown[] };
+    assert.equal(sent.model, "claude-opus-5-5");
+    assert.equal(sent.tool_choice.name, "emit_infrastructure");
+    assert.equal(sent.tool_choice.type, "tool");
+    assert.ok(Array.isArray(sent.tools));
   });
 
-  it("throws on a non-OK gateway response so the caller can fall back", async () => {
-    const fetchImpl = (async () => new Response("nope", { status: 502 })) as unknown as typeof fetch;
-    await assert.rejects(
-      runManagedCompose({ orgId: "o", prompt: "x", recordMint: noLedger, deps: { fetchImpl, ...MINT_DEPS } }),
-      /managed inference failed/,
-    );
+  it("tells the model which components are already present", async () => {
+    const { model: prev } = assembleModel(["postgres"]);
+    const { client, requests } = clientReturning(toolOutput([{ kind: "queue" }]));
+    await runManagedCompose({ client, prompt: "add a queue", prev, model: DEFAULT_MANAGED_MODEL });
+    const messages = (requests[0] as unknown as { messages: { content: string }[] }).messages;
+    assert.match(messages[0]?.content ?? "", /^Current components: .*postgres/);
+    assert.match(messages[0]?.content ?? "", /Instruction: add a queue$/);
   });
 
-  it("throws when the response has no usable tool call", async () => {
-    const fetchImpl = (async () =>
-      new Response(JSON.stringify({ content: [{ type: "text", text: "hi" }] }), {
-        status: 200,
-      })) as unknown as typeof fetch;
-    await assert.rejects(
-      runManagedCompose({ orgId: "o", prompt: "x", recordMint: noLedger, deps: { fetchImpl, ...MINT_DEPS } }),
-      /unusable response/,
-    );
+  it("throws when the response has no usable tool call, so the caller can fall back", async () => {
+    await assert.rejects(run(clientReturning(null).client, "x"), /unusable response/);
+    await assert.rejects(run(clientReturning({ components: "nope" }).client, "x"), /unusable response/);
+  });
+
+  it("describes the turn itself when the model gives no reply", async () => {
+    const result = await run(clientReturning(toolOutput([{ kind: "queue" }], "  ")).client, "a queue");
+    assert.notEqual(result.reply, "");
+  });
+
+  it("reports the cloud the model read from the description", async () => {
+    const { client } = clientReturning({ reply: "ok", cloud: "aws", components: [{ kind: "queue" }] });
+    assert.equal((await run(client, "an SQS queue")).cloud, "aws");
   });
 });
 
-describe("translateChat", () => {
-  it("uses the deterministic engine when managed inference is disabled", async () => {
-    // WORKSPACE_ENGINE is unset in the test env → managedEngineEnabled() is false.
-    const result = await translateChat({
-      managedOrgId: "o",
-      recordMint: noLedger,
-      prompt: "A web app with a Postgres database and Redis cache",
-    });
-    assert.equal(result.model.nodes.filter((n) => n.category !== "edge").length, 4);
-    assert.equal(countFlags(result.model), 2);
+describe("managed attributes and flags", () => {
+  it("accepts attribute choices the registry permits", async () => {
+    const { client } = clientReturning(
+      toolOutput(
+        [{ kind: "postgres", attributes: { "PostgreSQL version": "PostgreSQL 15" } }],
+        "Sized for production.",
+      ),
+    );
+    const result = await run(client, "a database on 15");
+    const pg = result.model.nodes.find((n) => n.kind === "postgres");
+    assert.equal(pg?.attributes?.["PostgreSQL version"], "PostgreSQL 15");
   });
 
-  it("stays deterministic when the caller passes no managed-entitled org", async () => {
-    const result = await translateChat({
-      managedOrgId: null,
-      recordMint: noLedger,
-      prompt: "A web app with a Postgres database",
-    });
-    assert.ok(result.model.nodes.some((n) => n.kind === "postgres"));
+  it("drops an attribute value the provider would reject", async () => {
+    const { client } = clientReturning(
+      toolOutput([{ kind: "postgres", attributes: { "PostgreSQL version": "PostgreSQL 99", Nonsense: "x" } }], ""),
+    );
+    const result = await run(client, "a database");
+    const pg = result.model.nodes.find((n) => n.kind === "postgres");
+    assert.equal(pg?.attributes, undefined);
+  });
+
+  it("raises the model's own review flag when it says it is unsure", async () => {
+    const { client } = clientReturning(
+      toolOutput([{ kind: "object-storage", flag_reason: "Retention policy was not stated." }], ""),
+    );
+    const result = await run(client, "somewhere to put files");
+    const bucket = result.model.nodes.find((n) => n.kind === "object-storage");
+    assert.equal(bucket?.flag?.reason, "Retention policy was not stated.");
+  });
+
+  it("offers the model the widened vocabulary", async () => {
+    const { client, requests } = clientReturning(toolOutput([{ kind: "queue" }]));
+    await run(client, "a queue");
+    const sent = requests[0] as unknown as {
+      tools: { input_schema: { properties: { components: { items: { properties: { kind: { enum: string[] } } } } } } }[];
+    };
+    const enumerated = sent.tools[0]?.input_schema.properties.components.items.properties.kind.enum ?? [];
+    for (const kind of ["queue", "containers", "monitoring", "vnet", "load-balancer"]) {
+      assert.ok(enumerated.includes(kind), `${kind} should be offered to the model`);
+    }
+    assert.equal(enumerated.includes("internet"), false);
+  });
+});
+
+describe("tool-call transport helpers", () => {
+  const response = {
+    content: [
+      { type: "text", text: "thinking" },
+      { type: "tool_use", name: "emit_infrastructure", input: { reply: "hi" } },
+    ],
+  };
+
+  it("reads the named tool's input out of a Messages response", () => {
+    assert.deepEqual(extractToolUse(response, "emit_infrastructure"), { reply: "hi" });
+  });
+
+  it("returns null when the response carries no such tool call", () => {
+    assert.equal(extractToolUse(response, "other_tool"), null);
+    assert.equal(extractToolUse({ content: "nope" }, "emit_infrastructure"), null);
+    assert.equal(extractToolUse(null, "emit_infrastructure"), null);
+    assert.equal(extractToolUse("text", "emit_infrastructure"), null);
+  });
+
+  it("names the tool a request forces, defaulting to the compose tool", () => {
+    assert.equal(toolNameOf({ model: "m", tool_choice: { type: "tool", name: "emit_diagram" } }), "emit_diagram");
+    assert.equal(toolNameOf({ model: "m" }), "emit_infrastructure");
   });
 });
 
@@ -143,278 +181,57 @@ describe("translateRequestSchema", () => {
   });
 });
 
-describe("managed attributes and flags", () => {
-  it("accepts attribute choices the registry permits", async () => {
-    const fetchImpl = (async () =>
-      new Response(
-        JSON.stringify({
-          content: [
-            {
-              type: "tool_use",
-              name: "emit_infrastructure",
-              input: {
-                reply: "Sized for production.",
-                components: [
-                  { kind: "postgres", attributes: { "PostgreSQL version": "PostgreSQL 15" } },
-                ],
-              },
-            },
-          ],
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      )) as unknown as typeof fetch;
+describe("translateWithFallback", () => {
+  const PROMPT = "A web app with a Postgres database and Redis cache";
 
-    const result = await runManagedCompose({
-      orgId: "o",
-      prompt: "a database on 15",
-      recordMint: noLedger,
-      deps: { fetchImpl, ...MINT_DEPS },
-    });
-    const pg = result.model.nodes.find((n) => n.kind === "postgres");
-    assert.equal(pg?.attributes?.["PostgreSQL version"], "PostgreSQL 15");
-  });
-
-  it("drops an attribute value the provider would reject", async () => {
-    const fetchImpl = (async () =>
-      new Response(
-        JSON.stringify({
-          content: [
-            {
-              type: "tool_use",
-              name: "emit_infrastructure",
-              input: {
-                reply: "",
-                components: [
-                  {
-                    kind: "postgres",
-                    attributes: { "PostgreSQL version": "PostgreSQL 99", Nonsense: "x" },
-                  },
-                ],
-              },
-            },
-          ],
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      )) as unknown as typeof fetch;
-
-    const result = await runManagedCompose({
-      orgId: "o",
-      prompt: "a database",
-      recordMint: noLedger,
-      deps: { fetchImpl, ...MINT_DEPS },
-    });
-    const pg = result.model.nodes.find((n) => n.kind === "postgres");
-    assert.equal(pg?.attributes, undefined);
-  });
-
-  it("raises the model's own review flag when it says it is unsure", async () => {
-    const fetchImpl = (async () =>
-      new Response(
-        JSON.stringify({
-          content: [
-            {
-              type: "tool_use",
-              name: "emit_infrastructure",
-              input: {
-                reply: "",
-                components: [
-                  { kind: "object-storage", flag_reason: "Retention policy was not stated." },
-                ],
-              },
-            },
-          ],
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      )) as unknown as typeof fetch;
-
-    const result = await runManagedCompose({
-      orgId: "o",
-      prompt: "somewhere to put files",
-      recordMint: noLedger,
-      deps: { fetchImpl, ...MINT_DEPS },
-    });
-    const bucket = result.model.nodes.find((n) => n.kind === "object-storage");
-    assert.equal(bucket?.flag?.reason, "Retention policy was not stated.");
-  });
-
-  it("offers the model the widened vocabulary", async () => {
-    let sent: any;
-    const fetchImpl = (async (_url: string, init: RequestInit) => {
-      sent = JSON.parse(String(init.body));
-      return toolResponse([{ kind: "queue" }]);
-    }) as unknown as typeof fetch;
-
-    await runManagedCompose({ orgId: "o", prompt: "a queue", recordMint: noLedger, deps: { fetchImpl, ...MINT_DEPS } });
-    const enumerated: string[] =
-      sent.tools[0].input_schema.properties.components.items.properties.kind.enum;
-    for (const kind of ["queue", "containers", "monitoring", "vnet", "load-balancer"]) {
-      assert.ok(enumerated.includes(kind), `${kind} should be offered to the model`);
-    }
-    assert.equal(enumerated.includes("internet"), false);
-  });
-});
-
-describe('managed spend cap', () => {
-  /** A fetch that fails the test if it is ever reached: refusing the mint must
-   *  happen BEFORE the gateway call, or the money is already spent. */
-  const neverCalled = (async () => {
-    assert.fail('the gateway was called after the cap was reached');
-  }) as unknown as typeof fetch;
-
-  it('refuses to mint once the cycle spend reaches the cap', async () => {
-    await assert.rejects(
-      runManagedCompose({
-        orgId: 'o',
-        prompt: 'x',
-        recordMint: noLedger,
-        deps: {
-          fetchImpl: neverCalled,
-          mint: fakeMint,
-          cycleSpendPence: async () => 25_000,
-          capPence: async () => 25_000,
-        },
-      }),
-      ManagedCapReachedError,
-    );
-  });
-
-  it('treats a cap of zero as managed models off', async () => {
-    await assert.rejects(
-      runManagedCompose({
-        orgId: 'o',
-        prompt: 'x',
-        recordMint: noLedger,
-        deps: {
-          fetchImpl: neverCalled,
-          mint: fakeMint,
-          cycleSpendPence: async () => 0,
-          capPence: async () => 0,
-        },
-      }),
-      ManagedCapReachedError,
-    );
-  });
-
-  it('fails closed when the spend ledger cannot be read', async () => {
-    // An unreadable ledger must not mean unbounded spend.
-    await assert.rejects(
-      runManagedCompose({
-        orgId: 'o',
-        prompt: 'x',
-        recordMint: noLedger,
-        deps: {
-          fetchImpl: neverCalled,
-          mint: fakeMint,
-          cycleSpendPence: async () => {
-            throw new Error('ledger unavailable');
-          },
-          capPence: async () => 25_000,
-        },
-      }),
-      /ledger unavailable/,
-    );
-  });
-
-  it('mints with the remaining budget so the gateway can enforce the cap mid-TTL', async () => {
-    let budget: number | undefined;
-    const fetchImpl = (async () => toolResponse([{ kind: 'queue' }])) as unknown as typeof fetch;
-
-    await runManagedCompose({
-      orgId: 'o',
-      prompt: 'a queue',
-      recordMint: noLedger,
-      deps: {
-        fetchImpl,
-        mint: (_org: string, _model?: string | null, budgetPence?: number) => {
-          budget = budgetPence;
-          return fakeMint();
-        },
-        cycleSpendPence: async () => 20_000,
-        capPence: async () => 25_000,
-      },
-    });
-
-    assert.equal(budget, 5_000);
-  });
-});
-
-describe("mint ledger", () => {
-  /** A ledger that remembers what it was asked to record. */
-  function ledger() {
-    const rows: { orgId: string; budgetPence: number }[] = [];
-    const recordMint = (orgId: string, budgetPence: number) => {
-      rows.push({ orgId, budgetPence });
+  function logger() {
+    const lines: { level: "info" | "error"; message: string }[] = [];
+    const log: Logger = {
+      info: (message) => lines.push({ level: "info", message }),
+      error: (message) => lines.push({ level: "error", message }),
     };
-    return { rows, recordMint };
+    return { log, lines };
   }
 
-  it("records one row per mint, carrying the org and the budget the token was issued with", async () => {
-    const { rows, recordMint } = ledger();
-    const fetchImpl = (async () => toolResponse([{ kind: "queue" }])) as unknown as typeof fetch;
-
-    await runManagedCompose({
-      orgId: "org_1",
-      prompt: "a queue",
-      recordMint,
-      deps: { ...MINT_DEPS, fetchImpl, cycleSpendPence: async () => 20_000, capPence: async () => 25_000 },
-    });
-
-    assert.deepEqual(rows, [{ orgId: "org_1", budgetPence: 5_000 }]);
+  it("uses the deterministic engine when the host runs no managed turn", async () => {
+    const { log, lines } = logger();
+    const result = await translateWithFallback({ prompt: PROMPT, managed: null, log });
+    assert.equal(result.model.nodes.filter((n) => n.category !== "edge").length, 4);
+    assert.equal(countFlags(result.model), 2);
+    assert.deepEqual(lines, []);
   });
 
-  it("records nothing when the cap refuses the mint", async () => {
-    const { rows, recordMint } = ledger();
-    const neverCalled = (async () => assert.fail("the gateway was called")) as unknown as typeof fetch;
-    await assert.rejects(
-      runManagedCompose({
-        orgId: "o",
-        prompt: "x",
-        recordMint,
-        deps: { ...MINT_DEPS, fetchImpl: neverCalled, cycleSpendPence: async () => 25_000 },
-      }),
-      ManagedCapReachedError,
-    );
-    assert.deepEqual(rows, []);
-  });
-
-  it("records nothing when the mint itself throws", async () => {
-    const { rows, recordMint } = ledger();
-    await assert.rejects(
-      runManagedCompose({
-        orgId: "o",
-        prompt: "x",
-        recordMint,
-        deps: {
-          ...MINT_DEPS,
-          mint: () => {
-            throw new Error("model proxy not configured");
-          },
-        },
-      }),
-      /not configured/,
-    );
-    assert.deepEqual(rows, []);
-  });
-
-  it("does not fail the managed call when the ledger write throws", async () => {
-    // The token is already signed when the ledger runs; a throw escaping would fail
-    // a call that minted successfully, and the retry would mint a second token.
-    let gatewayCalls = 0;
-    const fetchImpl = (async () => {
-      gatewayCalls++;
-      return toolResponse([{ kind: "queue" }], "Added a queue.");
-    }) as unknown as typeof fetch;
-
-    const result = await runManagedCompose({
-      orgId: "o",
-      prompt: "a queue",
-      recordMint: () => {
-        throw new Error("usage_events unavailable");
-      },
-      deps: { fetchImpl, ...MINT_DEPS },
-    });
-
-    assert.equal(gatewayCalls, 1);
+  it("returns the managed answer when it succeeds", async () => {
+    const { log } = logger();
+    const managed = () => run(clientReturning(toolOutput([{ kind: "queue" }], "Added a queue.")).client, "a queue");
+    const result = await translateWithFallback({ prompt: "a queue", managed, log });
+    assert.equal(result.engine, "managed");
     assert.equal(result.reply, "Added a queue.");
+  });
+
+  it("falls back to the deterministic engine and logs an error when the managed turn fails", async () => {
+    const { log, lines } = logger();
+    const result = await translateWithFallback({
+      prompt: "A web app with a Postgres database",
+      managed: async () => {
+        throw new Error("gateway down");
+      },
+      log,
+    });
+    assert.ok(result.model.nodes.some((n) => n.kind === "postgres"));
+    assert.deepEqual(lines.map((l) => l.level), ["error"]);
+  });
+
+  it("logs a reached spend cap as information, not as a failure", async () => {
+    const { log, lines } = logger();
+    const result = await translateWithFallback({
+      prompt: "A web app with a Postgres database",
+      managed: async () => {
+        throw new ManagedCapReachedError();
+      },
+      log,
+    });
+    assert.ok(result.model.nodes.some((n) => n.kind === "postgres"));
+    assert.deepEqual(lines.map((l) => l.level), ["info"]);
   });
 });

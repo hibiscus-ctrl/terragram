@@ -8,7 +8,6 @@ import { assembleModel, composeFromPrompt } from "terragram-engine/engine";
 import { explainModel } from "terragram-engine/explain";
 import { addNode, removeNodes, setNodeAttribute } from "terragram-engine/inspector";
 import { EMPTY_MODEL } from "terragram-engine/model";
-import { parseSettings, workspaceSettingsSchema } from "terragram-engine/settings";
 import { templateModel, WORKSPACE_TEMPLATES } from "terragram-engine/templates";
 
 const WEB_PROMPT = "A web app with a Postgres database and Redis cache";
@@ -87,23 +86,6 @@ describe("structural edits", () => {
       pruned.edges.some((e) => e.source === "postgres" || e.target === "postgres"),
       false,
     );
-  });
-});
-
-describe("workspace settings", () => {
-  it("falls back to defaults for an absent or malformed blob", () => {
-    assert.deepEqual(parseSettings(null), workspaceSettingsSchema.parse({}));
-    assert.deepEqual(parseSettings({ edgeRouting: "wormhole" }), workspaceSettingsSchema.parse({}));
-  });
-
-  it("has no dead streaming toggle", () => {
-    assert.equal("streaming" in workspaceSettingsSchema.parse({}), false);
-  });
-
-  it("keeps valid values", () => {
-    const parsed = parseSettings({ autoLayout: false, labelFace: "sans" });
-    assert.equal(parsed.autoLayout, false);
-    assert.equal(parsed.labelFace, "sans");
   });
 });
 

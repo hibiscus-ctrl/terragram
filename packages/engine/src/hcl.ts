@@ -9,8 +9,7 @@
  * It is deliberately NOT a full HCL implementation — it never evaluates expressions,
  * resolves variables, or validates syntax. It is string-, comment- and heredoc-aware
  * structural scanning, which is exactly what reading a resource graph back out of a
- * file needs. Being pure keeps it usable in the browser, so pasting Terraform into
- * the workspace costs no round trip.
+ * file needs. Being pure keeps it usable in any host, a browser included.
  *
  * The writer is the other half: the emitter builds `HclBlock` values and renders them
  * here, so emission and parsing share one shape and the round-trip test is meaningful.

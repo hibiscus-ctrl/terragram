@@ -1,14 +1,6 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-/** Starter prompts shown in the compose empty state. */
-export const COMPOSE_SUGGESTIONS = [
-  "A web app with a Postgres database and Redis cache",
-  "A containerised API behind a load balancer with a queue and monitoring",
-  "Add a CDN and WAF in front of the web tier",
-  "Put identity behind Entra ID and store secrets in a vault",
-];
-
 /**
  * A pasteable Terraform sample for the Terraform → Diagram mode.
  *
