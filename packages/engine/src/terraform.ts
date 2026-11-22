@@ -85,7 +85,7 @@ function tfName(id: string): string {
   const slug = id
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+    .replace(/^_|_$/g, "");
   return /^[0-9]/.test(slug) || slug === "" ? `r_${slug}` : slug;
 }
 
@@ -94,7 +94,7 @@ function tfSlug(id: string): string {
   const slug = id
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(/^-|-$/g, "");
   return slug === "" ? "node" : slug;
 }
 
