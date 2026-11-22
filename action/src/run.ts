@@ -1,7 +1,6 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { readFileSync } from "node:fs";
 
 import { buildEvidenceReceipt } from "terragram-engine/build-receipt";
 import { assessFeasibility } from "terragram-engine/feasibility";
@@ -12,6 +11,7 @@ import { emitTerraform } from "terragram-engine/terraform";
 import { type CommentTarget, GitHubApiError, upsertStickyComment } from "./comment.ts";
 import { readInputs, resolveInside } from "./inputs.ts";
 import { renderDiagram } from "./mermaid.ts";
+import { readRegularFile } from "./safe-fs.ts";
 import { diffModels } from "./model-diff.ts";
 import { parseModelDocument } from "./model-file.ts";
 import { type BaseModel, readBaseModel, readPullRequest } from "./pull-request.ts";
@@ -55,7 +55,7 @@ async function execute(host: Host, workflow: Workflow): Promise<number> {
 
   let text: string;
   try {
-    text = readFileSync(modelPath, "utf8");
+    text = readRegularFile(root, modelPath, inputs.model);
   } catch {
     throw new ActionError(`cannot read the model file ${inputs.model}`);
   }
@@ -67,9 +67,9 @@ async function execute(host: Host, workflow: Workflow): Promise<number> {
   // The Terraform the model says, regenerated in memory: nothing is written to the
   // terraform directory in check mode.
   const terraform = emitTerraform(model, cloud, "terraform");
-  const files = compareFiles(terraformDir, inputs.terraformDir, terraform.files);
+  const files = compareFiles(root, terraformDir, inputs.terraformDir, terraform.files);
   const drifted = files.filter((f) => f.status !== "same");
-  const written = inputs.mode === "write" ? writeFiles(terraformDir, terraform.files, files) : [];
+  const written = inputs.mode === "write" ? writeFiles(root, terraformDir, terraform.files, files) : [];
 
   const signer = inputs.signingKey ? loadSigner(inputs.signingKey, host.now().toISOString()) : null;
   const { receipt, attestation } = await buildEvidenceReceipt(model, cloud, "deterministic", "terragram-action", host.now().toISOString(), {
@@ -77,7 +77,7 @@ async function execute(host: Host, workflow: Workflow): Promise<number> {
     signer,
     nodeVersion: process.version,
   });
-  replaceDirectory(bundleDir, buildBundle(receipt, model, terraform.files, attestation));
+  replaceDirectory(root, bundleDir, buildBundle(receipt, model, terraform.files, attestation));
   const receiptPath = `${BUNDLE_DIR}/receipt.json`;
 
   const feasibility = assessFeasibility(model, cloud);

@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -248,6 +248,39 @@ describe("refusals and seams", () => {
     }
     assert.match(action(workspace(), { mode: "apply" }).stdout, /mode must be "check" or "write"/);
     assert.match(action(workspace(), { comment: "yes" }).stdout, /comment must be/);
+  });
+
+  it("never follows a symlink a pull request commits, for reads or writes", () => {
+    const secret = join(scratch, `secret-${counter}.txt`);
+    writeFileSync(secret, "RUNNER_SECRET_VALUE\n");
+
+    // A Terraform file that points outside the workspace: not read into the diff.
+    const file = workspace();
+    rmSync(join(file, "infra/main.tf"));
+    symlinkSync(secret, join(file, "infra/main.tf"));
+    for (const mode of ["check", "write"]) {
+      const result = action(file, { mode });
+      assert.equal(result.status, 1, mode);
+      assert.match(result.stdout, /refusing to follow the symlink/);
+      assert.doesNotMatch(result.stdout, /RUNNER_SECRET_VALUE/);
+    }
+    assert.equal(readFileSync(secret, "utf8"), "RUNNER_SECRET_VALUE\n", "the target was not written");
+
+    // The Terraform directory itself as a symlink.
+    const dir = workspace();
+    const elsewhere = mkdtempSync(join(scratch, "elsewhere-"));
+    rmSync(join(dir, "infra"), { recursive: true });
+    symlinkSync(elsewhere, join(dir, "infra"));
+    assert.equal(action(dir, { mode: "write" }).status, 1);
+    assert.equal(existsSync(join(elsewhere, "main.tf")), false, "nothing written through the link");
+
+    // The model file as a symlink.
+    const model = workspace();
+    rmSync(join(model, "terragram.json"));
+    symlinkSync(secret, join(model, "terragram.json"));
+    const result = action(model);
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(result.stdout, /RUNNER_SECRET_VALUE/);
   });
 
   it("fails clearly on a missing, malformed or empty model", () => {
