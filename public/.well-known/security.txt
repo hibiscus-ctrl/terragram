@@ -1,8 +1,0 @@
-# Terragram Cloud — security contact (RFC 9116).
-# Report vulnerabilities privately; please do not open a public issue or PR.
-# Full policy + scope: see SECURITY.md in the terragram-ui repository.
-Contact: mailto:security@terragram.dev
-Expires: 2027-06-16T00:00:00.000Z
-Preferred-Languages: en
-# Canonical/Policy URLs to be set to the production domain once live, e.g.:
-# Canonical: https://app.terragram.dev/.well-known/security.txt
