@@ -14,7 +14,8 @@ import { recordManagedMint } from "@/features/billing/managed-usage";
 import { ManagedCapReachedError } from "@/features/workspace/inference";
 import { logger } from "@/libs/log";
 import { managedEngineEnabled } from "@/features/workspace/translate";
-import { IMAGE_MEDIA_TYPES, MAX_IMAGE_BYTES, runManagedDiagramRead } from "@/features/workspace/vision";
+import { IMAGE_MEDIA_TYPES, MAX_IMAGE_BYTES } from "terragram-engine/vision";
+import { runManagedDiagramRead } from "@/features/workspace/vision";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

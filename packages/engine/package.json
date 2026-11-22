@@ -10,6 +10,7 @@
     "node": ">=24"
   },
   "exports": {
+    "./build-receipt": "./src/build-receipt.ts",
     "./diagram-svg": "./src/diagram-svg.ts",
     "./engine": "./src/engine.ts",
     "./evidence": "./src/evidence.ts",
@@ -21,11 +22,13 @@
     "./interchange": "./src/interchange.ts",
     "./kinds": "./src/kinds.ts",
     "./layout": "./src/layout.ts",
+    "./managed-compose": "./src/managed-compose.ts",
     "./managed-models": "./src/managed-models.ts",
     "./model": "./src/model.ts",
     "./modes": "./src/modes.ts",
     "./module-versions": "./src/module-versions.ts",
     "./parse": "./src/parse.ts",
+    "./ports": "./src/ports.ts",
     "./provider-versions": "./src/provider-versions.ts",
     "./receipt": "./src/receipt.ts",
     "./samples": "./src/samples.ts",
@@ -33,7 +36,9 @@
     "./share-link": "./src/share-link.ts",
     "./templates": "./src/templates.ts",
     "./terraform": "./src/terraform.ts",
-    "./verify": "./src/verify.ts"
+    "./translate": "./src/translate.ts",
+    "./verify": "./src/verify.ts",
+    "./vision": "./src/vision.ts"
   },
   "dependencies": {
     "@infraweaver-io/attest": "^0.1.7",

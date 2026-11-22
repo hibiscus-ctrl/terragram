@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { buildGraphModel } from "terragram-engine/graph-build";
-import { buildImageRequest, modelFromReading, runManagedDiagramRead } from "../src/features/workspace/vision.ts";
+import { buildImageRequest, modelFromReading } from "terragram-engine/vision";
+import { runManagedDiagramRead } from "../src/features/workspace/vision.ts";
 
 const IMAGE = { data: "aGVsbG8=", mediaType: "image/png" as const };
 
