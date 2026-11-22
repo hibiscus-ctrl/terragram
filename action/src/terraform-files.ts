@@ -13,7 +13,7 @@ import { ActionError } from "./workflow.ts";
 /**
  * The generated Terraform against the Terraform in the repository.
  *
- * Only the files Terragram generates are compared: a directory may hold a lock file,
+ * Only the files the Action generates are compared: a directory may hold a lock file,
  * tfvars or modules of its own, and none of that is the Action's business.
  */
 
@@ -62,7 +62,7 @@ export function writeFiles(root: string, dir: string, generated: readonly Terraf
   return written;
 }
 
-/** Replace a directory the Action owns (`_terragram/`) with the given files. */
+/** Replace a directory the Action owns (`_diagram/`) with the given files. */
 export function replaceDirectory(root: string, dir: string, entries: readonly { name: string; content: string }[]): void {
   assertNoSymlinks(root, dir, "receipt directory");
   let existing: ReturnType<typeof lstatSync> | null = null;

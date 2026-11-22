@@ -22,7 +22,7 @@ import { uploadReceipt } from "./upload.ts";
 import { ActionError, createWorkflow, type Host, type Workflow } from "./workflow.ts";
 
 /** Where the receipt bundle goes, under the workspace: for `terragram verify` and upload-artifact. */
-const BUNDLE_DIR = "_terragram";
+const BUNDLE_DIR = "_diagram";
 
 /**
  * Run the Action and return the process exit status: 0, or 1 when the step failed (a check
@@ -72,7 +72,7 @@ async function execute(host: Host, workflow: Workflow): Promise<number> {
   const written = inputs.mode === "write" ? writeFiles(root, terraformDir, terraform.files, files) : [];
 
   const signer = inputs.signingKey ? loadSigner(inputs.signingKey, host.now().toISOString()) : null;
-  const { receipt, attestation } = await buildEvidenceReceipt(model, cloud, "deterministic", "terragram-action", host.now().toISOString(), {
+  const { receipt, attestation } = await buildEvidenceReceipt(model, cloud, "deterministic", "diagram-action", host.now().toISOString(), {
     tool: "terraform",
     signer,
     nodeVersion: process.version,

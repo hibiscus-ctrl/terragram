@@ -46,7 +46,7 @@ export function loadSigner(raw: string, signedAt: string): Signer {
   const publicKey = createPublicKey(privateKey);
   const der = publicKey.export({ type: "spki", format: "der" });
   return {
-    keyId: `terragram-action-${createHash("sha256").update(der).digest("hex").slice(0, 12)}`,
+    keyId: `diagram-action-${createHash("sha256").update(der).digest("hex").slice(0, 12)}`,
     signedAt,
     publicKey: der.toString("base64"),
     publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString(),

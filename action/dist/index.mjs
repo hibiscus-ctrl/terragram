@@ -19770,7 +19770,7 @@ var infraModelSchema = external_exports.object({
    *  so a hand-built diagram is not silently rewritten. */
   topology: external_exports.enum(["derived", "manual"]).default("derived")
 });
-var MODEL_SCHEMA = "terragram.model/v1";
+var MODEL_SCHEMA = "diagram.model/v1";
 var modelDocumentSchema = infraModelSchema.extend({
   schema: external_exports.literal(MODEL_SCHEMA).optional(),
   cloud: external_exports.enum(CLOUDS).optional()
@@ -20278,7 +20278,7 @@ var LAMBDA_RUNTIME = {
     handler: "index.handler",
     file: "index.mjs",
     stub: [
-      "// Terragram placeholder handler \u2014 replace with your function's code.",
+      "// Placeholder handler \u2014 replace with your function's code.",
       "// `terraform plan` packages this directory (see `source_path` in main.tf), so the",
       "// directory must exist and hold the file the handler names.",
       "export const handler = async () => ({",
@@ -20294,7 +20294,7 @@ var LAMBDA_RUNTIME = {
     handler: "lambda_function.lambda_handler",
     file: "lambda_function.py",
     stub: [
-      `"""Terragram placeholder handler \u2014 replace with your function's code.`,
+      `"""Placeholder handler \u2014 replace with your function's code.`,
       "",
       "`terraform plan` packages this directory (see `source_path` in main.tf), so the",
       "directory must exist and hold the file the handler names.",
@@ -20319,7 +20319,7 @@ var LAMBDA_RUNTIME = {
     stub: [
       "package example;",
       "",
-      "// Terragram placeholder handler. A Java function deploys as a BUILT jar: compile this,",
+      "// Placeholder handler. A Java function deploys as a BUILT jar: compile this,",
       "// then point `source_path` in main.tf at the build output (or set `create_package = false`",
       "// and `local_existing_package`). As source it lets `terraform plan` run; it will not execute.",
       "import com.amazonaws.services.lambda.runtime.Context;",
@@ -20655,7 +20655,7 @@ function tagsBlock(slug) {
     key: "tags",
     value: mapExpression([
       { key: "Name", value: quote(slug) },
-      { key: "ManagedBy", value: quote("terragram") }
+      { key: "ManagedBy", value: quote("diagram") }
     ])
   };
 }
@@ -22580,7 +22580,7 @@ function assessFeasibility(model, cloud) {
         label: node2.label,
         kind: node2.kind,
         status: "unsupported",
-        reason: node2.flag?.reason ?? "No matching component in Terragram's vocabulary.",
+        reason: node2.flag?.reason ?? "No matching component in the component vocabulary.",
         suggestion: suggestionFor(node2)
       });
       continue;
@@ -22601,7 +22601,7 @@ function assessFeasibility(model, cloud) {
   const review = components.filter((c) => c.status === "needs-review").length;
   let summary;
   if (verdict === "none") {
-    summary = components.length === 0 ? "Nothing in this diagram maps to a component Terragram can build." : `None of the ${components.length} components map to something Terragram can build on ${cloudLabel}.`;
+    summary = components.length === 0 ? "Nothing in this diagram maps to a component it can build." : `None of the ${components.length} components map to something it can build on ${cloudLabel}.`;
   } else if (verdict === "full") {
     summary = `All ${built} components can be built on ${cloudLabel}.`;
   } else {
@@ -22616,7 +22616,7 @@ function assessFeasibility(model, cloud) {
 }
 
 // ../packages/engine/src/receipt.ts
-var RECEIPT_SCHEMA = "terragram.receipt/v2";
+var RECEIPT_SCHEMA = "diagram.receipt/v2";
 var RECEIPT_FILE = "receipt.json";
 var RECEIPT_SIGNATURE_FILE = "receipt.json.sig";
 var SIGNING_KEY_FILE = "signing-key.pem";
@@ -23088,7 +23088,7 @@ function emitTerraform(model, cloud, tool = "terraform") {
   ];
   if (emitted.length > 0) {
     variables.set(TAGS.name, TAGS);
-    const base = `{ ManagedBy = "terragram", Environment = "${modelIsProduction(model.nodes) ? "production" : "dev"}" }`;
+    const base = `{ ManagedBy = "diagram", Environment = "${modelIsProduction(model.nodes) ? "production" : "dev"}" }`;
     scaffold.push(block("locals", [], [{ key: "tags", value: `merge(${base}, var.tags)` }]));
   }
   if (cloud === "azure") {
@@ -23146,7 +23146,7 @@ function emitTerraform(model, cloud, tool = "terraform") {
   }));
   const rawCount = [...resourceBlocks, ...wireBlocks].filter((b) => b.type === "resource").length;
   const header = [
-    `# Terragram \u2014 generated from the internal model`,
+    `# Generated from the diagram model`,
     `# Target: ${config2.label} \xB7 ${config2.regionLabel} \xB7 ${TOOL_LABEL[tool]}`,
     `# ${modules.length} module ${modules.length === 1 ? "call" : "calls"} and ${rawCount} resources from ${emitted.length} components`,
     ...notes.flatMap((note) => ["#", ...note.split("\n").map((line) => `# ${line}`)])
@@ -23253,7 +23253,7 @@ async function buildEvidenceReceipt(model, cloud, engine, approver, nowIso, opti
 }
 
 // src/comment.ts
-var COMMENT_MARKER = "<!-- terragram-action:sticky -->";
+var COMMENT_MARKER = "<!-- diagram-action:sticky -->";
 var MAX_BODY = 65e3;
 var PAGE = 100;
 var MAX_PAGES = 20;
@@ -23424,7 +23424,7 @@ function readInputs(env) {
     throw new ActionError(`input comment must be "true" or "false" (got "${comment}")`);
   }
   return {
-    model: input2(env, "model") ?? "terragram.json",
+    model: input2(env, "model") ?? "diagram.json",
     terraformDir: input2(env, "terraform-dir") ?? "infra/",
     mode,
     comment: comment === "true",
@@ -23615,7 +23615,7 @@ function parseModelDocument(text) {
   const parsed = modelDocumentSchema.safeParse(json2);
   if (!parsed.success) {
     const issues = parsed.error.issues.slice(0, 8).map((issue2) => `  ${issue2.path.join(".") || "(document)"}: ${issue2.message}`).join("\n");
-    return { ok: false, problem: `it is not a Terragram model:
+    return { ok: false, problem: `it is not a diagram model:
 ${issues}` };
   }
   const { nodes, edges, topology, cloud } = parsed.data;
@@ -23723,7 +23723,7 @@ function modelSection(input3) {
   return out;
 }
 function renderReport(input3) {
-  const lines2 = ["## Terragram", "", statusLine(input3), ""];
+  const lines2 = ["## Diagram", "", statusLine(input3), ""];
   lines2.push(...modelSection(input3));
   const hasBase = input3.base.state === "compared" || input3.base.state === "new";
   lines2.push("### Summary", "", "| | |", "| --- | --- |");
@@ -23798,7 +23798,7 @@ function loadSigner(raw, signedAt) {
   const publicKey = createPublicKey(privateKey);
   const der = publicKey.export({ type: "spki", format: "der" });
   return {
-    keyId: `terragram-action-${createHash("sha256").update(der).digest("hex").slice(0, 12)}`,
+    keyId: `diagram-action-${createHash("sha256").update(der).digest("hex").slice(0, 12)}`,
     signedAt,
     publicKey: der.toString("base64"),
     publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
@@ -23967,7 +23967,7 @@ async function uploadReceipt(_request) {
 }
 
 // src/run.ts
-var BUNDLE_DIR = "_terragram";
+var BUNDLE_DIR = "_diagram";
 async function run(host) {
   const workflow = createWorkflow(host);
   try {
@@ -24005,7 +24005,7 @@ async function execute(host, workflow) {
   const drifted = files.filter((f) => f.status !== "same");
   const written = inputs.mode === "write" ? writeFiles(root, terraformDir, terraform.files, files) : [];
   const signer = inputs.signingKey ? loadSigner(inputs.signingKey, host.now().toISOString()) : null;
-  const { receipt, attestation } = await buildEvidenceReceipt(model, cloud, "deterministic", "terragram-action", host.now().toISOString(), {
+  const { receipt, attestation } = await buildEvidenceReceipt(model, cloud, "deterministic", "diagram-action", host.now().toISOString(), {
     tool: "terraform",
     signer,
     nodeVersion: process.version

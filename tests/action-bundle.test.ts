@@ -123,7 +123,7 @@ describe("action.yml", () => {
       "signing-key",
       "terraform-dir",
     ]);
-    assert.equal(defaultOf(inputs.get("model")), "terragram.json");
+    assert.equal(defaultOf(inputs.get("model")), "diagram.json");
     assert.equal(defaultOf(inputs.get("terraform-dir")), "infra/");
     assert.equal(defaultOf(inputs.get("mode")), "check");
     assert.equal(defaultOf(inputs.get("comment")), '"true"');

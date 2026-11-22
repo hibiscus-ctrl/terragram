@@ -43,7 +43,7 @@ const target = (fetchImpl: typeof fetch): CommentTarget => ({
   repository: "acme/infra",
   issueNumber: 12,
 });
-const body = `${COMMENT_MARKER}\n## Terragram\n`;
+const body = `${COMMENT_MARKER}\n## Diagram\n`;
 const bot = (id: number, text = body): Existing => ({ id, body: text, user: { type: "Bot" } });
 
 describe("upsertStickyComment", () => {

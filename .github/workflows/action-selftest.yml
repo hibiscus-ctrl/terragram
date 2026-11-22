@@ -39,7 +39,7 @@ jobs:
         id: match
         uses: ./action
         with:
-          model: tests/fixtures/action/terragram.json
+          model: tests/fixtures/action/diagram.json
           terraform-dir: tests/fixtures/action/infra
           # The comment needs pull-requests: write, which this job does not hold.
           comment: "false"
@@ -64,7 +64,7 @@ jobs:
         continue-on-error: true
         uses: ./action
         with:
-          model: drifted/terragram.json
+          model: drifted/diagram.json
           terraform-dir: drifted/infra
           comment: "false"
 

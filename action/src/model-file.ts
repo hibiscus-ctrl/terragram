@@ -26,7 +26,7 @@ export function parseModelDocument(text: string): { ok: true; document: ModelDoc
       .slice(0, 8)
       .map((issue) => `  ${issue.path.join(".") || "(document)"}: ${issue.message}`)
       .join("\n");
-    return { ok: false, problem: `it is not a Terragram model:\n${issues}` };
+    return { ok: false, problem: `it is not a diagram model:\n${issues}` };
   }
   const { nodes, edges, topology, cloud } = parsed.data;
   return { ok: true, document: { model: { nodes, edges, topology }, cloud: cloud ?? DEFAULT_CLOUD } };

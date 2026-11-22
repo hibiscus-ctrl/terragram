@@ -10,7 +10,7 @@
  * (`github-actions[bot]`), so that is also what finds our previous one.
  */
 
-export const COMMENT_MARKER = "<!-- terragram-action:sticky -->";
+export const COMMENT_MARKER = "<!-- diagram-action:sticky -->";
 
 /** GitHub rejects a comment body over 65,536 characters. */
 const MAX_BODY = 65_000;

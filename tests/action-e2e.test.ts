@@ -110,14 +110,14 @@ describe("check mode", () => {
     const result = action(ws);
     assert.equal(result.status, 0, result.stdout);
     assert.equal(result.outputs.changed, "false");
-    assert.equal(result.outputs["receipt-path"], "_terragram/receipt.json");
+    assert.equal(result.outputs["receipt-path"], "_diagram/receipt.json");
     assert.match(result.outputs["content-hash"] ?? "", /^sha256:[0-9a-f]{64}$/);
-    assert.equal(JSON.parse(read(ws, "_terragram/receipt.json")).contentHash, result.outputs["content-hash"]);
-    assert.ok(existsSync(join(ws, "_terragram/model.json")));
-    assert.ok(existsSync(join(ws, "_terragram/plan/main.tf")));
-    assert.equal(existsSync(join(ws, "_terragram/receipt.json.sig")), false, "unsigned: no signature file");
-    assert.equal((await verify([join(ws, "_terragram"), "--allow-unsigned"])).code, 0);
-    assert.match(result.summary, /`infra\/` matches `terragram\.json`/);
+    assert.equal(JSON.parse(read(ws, "_diagram/receipt.json")).contentHash, result.outputs["content-hash"]);
+    assert.ok(existsSync(join(ws, "_diagram/model.json")));
+    assert.ok(existsSync(join(ws, "_diagram/plan/main.tf")));
+    assert.equal(existsSync(join(ws, "_diagram/receipt.json.sig")), false, "unsigned: no signature file");
+    assert.equal((await verify([join(ws, "_diagram"), "--allow-unsigned"])).code, 0);
+    assert.match(result.summary, /`infra\/` matches `diagram\.json`/);
     assert.equal(read(ws, "infra/main.tf"), read(fixture, "infra/main.tf"), "check never writes to the terraform directory");
   });
 
@@ -132,7 +132,7 @@ describe("check mode", () => {
     assert.match(result.stdout, /--- a\/infra\/main\.tf\n\+\+\+ b\/infra\/main\.tf\n@@ /);
     assert.match(result.stdout, /^-resource "aws_s3_bucket" "rogue" \{\}$/m);
     assert.equal(read(ws, "infra/main.tf"), drifted);
-    assert.ok(existsSync(join(ws, "_terragram/receipt.json")), "the receipt is written even when the check fails");
+    assert.ok(existsSync(join(ws, "_diagram/receipt.json")), "the receipt is written even when the check fails");
   });
 
   it("fails when a generated file is missing", () => {
@@ -157,7 +157,7 @@ describe("check mode", () => {
     const ws = workspace();
     mkdirSync(join(ws, "deploy/stack"), { recursive: true });
     cpSync(join(ws, "infra"), join(ws, "deploy/stack/tf"), { recursive: true });
-    cpSync(join(ws, "terragram.json"), join(ws, "deploy/stack/model.json"));
+    cpSync(join(ws, "diagram.json"), join(ws, "deploy/stack/model.json"));
     const result = action(ws, { model: "deploy/stack/model.json", "terraform-dir": "deploy/stack/tf" });
     assert.equal(result.status, 0, result.stdout);
   });
@@ -199,9 +199,9 @@ describe("signing", () => {
     const ws = workspace();
     const result = action(ws, { "signing-key": pem });
     assert.equal(result.status, 0, result.stdout);
-    assert.ok(existsSync(join(ws, "_terragram/receipt.json.sig")));
-    assert.equal(JSON.parse(read(ws, "_terragram/receipt.json")).signed, true);
-    const verdict = await verify([join(ws, "_terragram"), "--key", publicPem]);
+    assert.ok(existsSync(join(ws, "_diagram/receipt.json.sig")));
+    assert.equal(JSON.parse(read(ws, "_diagram/receipt.json")).signed, true);
+    const verdict = await verify([join(ws, "_diagram"), "--key", publicPem]);
     assert.equal(verdict.code, 0, verdict.stdout);
     assert.match(verdict.stdout, /detached:\s+pass/);
 
@@ -213,7 +213,7 @@ describe("signing", () => {
       .filter((l) => !l.startsWith("::add-mask::"))
       .join("\n");
     for (const line of body) assert.ok(!visible.includes(line), "the key appears nowhere else in the log");
-    assert.ok(!read(ws, "_terragram/receipt.json").includes(body.join("")));
+    assert.ok(!read(ws, "_diagram/receipt.json").includes(body.join("")));
   });
 
   it("accepts the key base64-encoded, and rejects a key that is not Ed25519 without echoing it", () => {
@@ -237,11 +237,11 @@ describe("refusals and seams", () => {
     const result = action(ws, {}, { GITHUB_EVENT_NAME: "pull_request_target" });
     assert.equal(result.status, 1);
     assert.match(result.stdout, /must not run under pull_request_target/);
-    assert.equal(existsSync(join(ws, "_terragram")), false, "nothing was done");
+    assert.equal(existsSync(join(ws, "_diagram")), false, "nothing was done");
   });
 
   it("keeps the model and the directory inside the workspace, and rejects bad inputs", () => {
-    for (const inputs of [{ model: "../terragram.json" }, { "terraform-dir": "/etc" }, { "terraform-dir": "../x" }]) {
+    for (const inputs of [{ model: "../diagram.json" }, { "terraform-dir": "/etc" }, { "terraform-dir": "../x" }]) {
       const result = action(workspace(), inputs);
       assert.equal(result.status, 1, JSON.stringify(inputs));
       assert.match(result.stdout, /is outside the workspace/);
@@ -276,8 +276,8 @@ describe("refusals and seams", () => {
 
     // The model file as a symlink.
     const model = workspace();
-    rmSync(join(model, "terragram.json"));
-    symlinkSync(secret, join(model, "terragram.json"));
+    rmSync(join(model, "diagram.json"));
+    symlinkSync(secret, join(model, "diagram.json"));
     const result = action(model);
     assert.equal(result.status, 1);
     assert.doesNotMatch(result.stdout, /RUNNER_SECRET_VALUE/);
@@ -289,7 +289,7 @@ describe("refusals and seams", () => {
     writeFileSync(join(ws, "bad.json"), "{");
     assert.match(action(ws, { model: "bad.json" }).stdout, /bad\.json: it is not valid JSON/);
     writeFileSync(join(ws, "wrong.json"), '{"nodes": 3}');
-    assert.match(action(ws, { model: "wrong.json" }).stdout, /not a Terragram model/);
+    assert.match(action(ws, { model: "wrong.json" }).stdout, /not a diagram model/);
     writeFileSync(join(ws, "empty.json"), '{"nodes":[],"edges":[]}');
     assert.match(action(ws, { model: "empty.json" }).stdout, /has no components to build/);
   });
@@ -351,12 +351,12 @@ function pullRequest(): { ws: string; baseSha: string; headSha: string; event: s
   git(ws, "add", "-A");
   git(ws, "commit", "-q", "-m", "base");
   const baseSha = git(ws, "rev-parse", "HEAD");
-  const model = JSON.parse(read(ws, "terragram.json")) as { nodes: { id: string }[]; edges: { target: string }[] };
+  const model = JSON.parse(read(ws, "diagram.json")) as { nodes: { id: string }[]; edges: { target: string }[] };
   model.nodes = model.nodes.filter((n) => n.id !== "redis-cache");
   model.edges = model.edges.filter((e) => e.target !== "redis-cache");
   model.nodes.push({ id: "queue", category: "compute", kind: "queue", label: "Jobs queue", flag: null } as never);
   model.edges.push({ id: "app-queue", source: "app-service", target: "queue", origin: "user" } as never);
-  writeFileSync(join(ws, "terragram.json"), `${JSON.stringify(model, null, 2)}\n`);
+  writeFileSync(join(ws, "diagram.json"), `${JSON.stringify(model, null, 2)}\n`);
   assert.equal(action(ws, { mode: "write" }).status, 0);
   git(ws, "add", "-A");
   git(ws, "commit", "-q", "-m", "head");
@@ -394,7 +394,7 @@ describe("on a pull request", () => {
       assert.match(comment, /Jobs queue/);
       assert.match(comment, /\| Nodes \| 1 \| 1 \| 0 \|/);
       assert.ok(comment.includes(first.outputs["content-hash"] ?? "unreachable"));
-      assert.match(comment, /`infra\/` matches `terragram\.json`/);
+      assert.match(comment, /`infra\/` matches `diagram\.json`/);
       assert.ok(gh.seen.every((s) => s.auth === "Bearer ghs_secret"));
       assert.equal(first.summary.includes(COMMENT_MARKER), false, "the step summary has no marker");
       assert.match(first.summary, /Model changes/);
@@ -417,7 +417,7 @@ describe("on a pull request", () => {
       assert.equal(result.status, 1);
       assert.equal(result.outputs.changed, "true");
       const comment = gh.comments[0]?.body ?? "";
-      assert.match(comment, /`infra\/` differs from `terragram\.json` in \d+ files?\./);
+      assert.match(comment, /`infra\/` differs from `diagram\.json` in \d+ files?\./);
       assert.match(comment, /```diff\n--- a\/infra\/main\.tf/);
     } finally {
       await gh.close();
@@ -446,7 +446,7 @@ describe("on a pull request", () => {
     const gh = await fakeGitHub();
     try {
       const pr = pullRequest();
-      git(pr.ws, "mv", "terragram.json", "model.json");
+      git(pr.ws, "mv", "diagram.json", "model.json");
       git(pr.ws, "commit", "-q", "-m", "rename");
       const result = await onPullRequest(gh, pr, { "github-token": "t", model: "model.json" });
       assert.equal(result.status, 0, result.stdout);
