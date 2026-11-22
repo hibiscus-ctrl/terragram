@@ -1,8 +1,6 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import type { EvidenceProvenance } from "@infraweaver-io/attest/envelope";
-
 import type { EngineKind } from "./engine.ts";
 import type { Cloud, InfraModel } from "./model.ts";
 import type { TerraformFile, TerraformTool } from "./terraform.ts";
@@ -35,6 +33,18 @@ const RECEIPT_SIGNATURE_FILE = "receipt.json.sig";
 const SIGNING_KEY_FILE = "signing-key.pem";
 
 export type SbomEntry = { name: string; version: string };
+
+/** Who produced the plan. Structurally the `@infraweaver-io/attest` envelope's
+ *  `EvidenceProvenance` (a test pins the two together), declared here so the
+ *  receipt's types, and the schema published for them, name no restricted package. */
+export type ReceiptProvenance = {
+  /** The model that chose the components, or null when none did. */
+  model: string | null;
+  /** The Node.js runtime the engine executed on (`process.version`). */
+  node: string;
+  /** Scanner tool versions observed while generating; empty when none ran. */
+  scanners: { tool: string; version: string | null }[];
+};
 
 export type EvidenceReceipt = {
   schema: typeof RECEIPT_SCHEMA;
@@ -80,7 +90,7 @@ export type EvidenceReceipt = {
    * Claiming "nothing was suppressed" about a posture that does not exist would
    * be the kind of empty assurance the section was invented to prevent.
    */
-  provenance: EvidenceProvenance;
+  provenance: ReceiptProvenance;
 };
 
 /** The exact bytes of `receipt.json` in the bundle — and therefore the exact

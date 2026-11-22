@@ -31,6 +31,7 @@
     "./ports": "./src/ports.ts",
     "./provider-versions": "./src/provider-versions.ts",
     "./receipt": "./src/receipt.ts",
+    "./receipt-schema": "./src/receipt-schema.ts",
     "./samples": "./src/samples.ts",
     "./settings": "./src/settings.ts",
     "./share-link": "./src/share-link.ts",
@@ -41,7 +42,6 @@
     "./vision": "./src/vision.ts"
   },
   "dependencies": {
-    "@infraweaver-io/attest": "^0.1.7",
     "dagre": "^0.8.5",
     "zod": "^4.6.7"
   },

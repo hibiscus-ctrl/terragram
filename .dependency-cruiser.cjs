@@ -74,7 +74,7 @@ const PRIVILEGED_CLIENT = "^src/libs/(supabase/supabase-admin|stripe/stripe-admi
 
 /** The engine's own source, and the only npm packages it may import. */
 const ENGINE = "^packages/engine/";
-const ENGINE_ALLOWED_PACKAGES = ["zod", "dagre", "@infraweaver-io/attest"];
+const ENGINE_ALLOWED_PACKAGES = ["zod", "dagre"];
 
 /** @type {import("dependency-cruiser").IConfiguration} */
 module.exports = {

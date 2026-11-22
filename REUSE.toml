@@ -25,3 +25,13 @@ path = "tests/fixtures/hcl-oracle/terraform-aws-lambda-8.8.0/**"
 precedence = "override"
 SPDX-FileCopyrightText = "Copyright The terraform-aws-modules/terraform-aws-lambda authors"
 SPDX-License-Identifier = "Apache-2.0"
+
+# The JSON Schemas for Terragram's documents (schemas/), generated from the engine's
+# zod schemas by `npm run schemas:gen`. They are Apache-2.0, unlike the code that
+# generates them, so anyone can validate or build against the formats without taking
+# on the AGPL.
+[[annotations]]
+path = "schemas/**"
+precedence = "override"
+SPDX-FileCopyrightText = "Copyright 2026 Gabriel Ignat"
+SPDX-License-Identifier = "Apache-2.0"
