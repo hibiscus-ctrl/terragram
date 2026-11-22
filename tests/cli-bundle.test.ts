@@ -159,3 +159,34 @@ describe("the engine library build", () => {
   });
 });
 
+
+describe("terragram graph, as built", () => {
+  const fixtures = join(root, "tests/fixtures/graph");
+
+  it("draws the same SVG and Mermaid as the engine, from a bare directory", async () => {
+    const { parseGraphDocument, projectGraph, renderGraphMermaid, renderGraphSvg } = await import("terragram-engine/graph");
+    const bare = mkdtempSync(join(scratch, "bare-"));
+    copyFileSync(cliBundle, join(bare, "terragram.mjs"));
+    for (const name of ["small.json", "small-base.json"]) copyFileSync(join(fixtures, name), join(bare, name));
+    const doc = (name: string) => parseGraphDocument(readFileSync(join(bare, name), "utf8"));
+    const spawn = (...args: string[]) =>
+      spawnSync(process.execPath, ["terragram.mjs", "graph", ...args], { cwd: bare, encoding: "utf8", env: { PATH: process.env.PATH ?? "" } });
+
+    const svg = spawn("small.json", "--base", "small-base.json", "-o", "diff.svg");
+    assert.equal(svg.status, 0, svg.stderr);
+    assert.equal(readFileSync(join(bare, "diff.svg"), "utf8"), `${renderGraphSvg(projectGraph(doc("small.json"), { base: doc("small-base.json") }))}\n`);
+
+    const mermaid = spawn("small.json", "--format", "mermaid");
+    assert.equal(mermaid.status, 0, mermaid.stderr);
+    assert.equal(mermaid.stdout, renderGraphMermaid(projectGraph(doc("small.json"))));
+
+    assert.equal(spawn("small.json", "--delta").status, 2);
+  });
+
+  it("is in the engine's library build, which draws the same bytes as the source", async () => {
+    const source = await import("terragram-engine/graph");
+    const built = (await import(join(engineDist, "graph.js"))) as typeof source;
+    const doc = source.parseGraphDocument(readFileSync(join(fixtures, "medium.json"), "utf8"));
+    assert.equal(built.renderGraphSvg(built.projectGraph(doc)), source.renderGraphSvg(source.projectGraph(doc)));
+  });
+});

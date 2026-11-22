@@ -4,6 +4,7 @@
 import pkg from "../package.json" with { type: "json" };
 import { explain } from "./commands/explain.ts";
 import { generate } from "./commands/generate.ts";
+import { graph } from "./commands/graph.ts";
 import { parse } from "./commands/parse.ts";
 import { render } from "./commands/render.ts";
 import { verify } from "./commands/verify.ts";
@@ -19,6 +20,7 @@ Commands:
   generate  a brief (--prompt) or Mermaid flowchart (--mermaid) to Terraform files + model.json
   parse     Terraform (a directory or .tf files) to model.json
   render    model.json to an SVG diagram
+  graph     an infraharvest graph/v1 document to an SVG or Mermaid diagram of the estate
   explain   model.json to a plain-English description
   verify    check an evidence receipt offline, optionally with its detached signature
 
@@ -36,6 +38,7 @@ const COMMANDS: Record<string, (argv: string[], io: Io) => Promise<number>> = {
   generate,
   parse,
   render,
+  graph,
   explain,
   verify,
 };
