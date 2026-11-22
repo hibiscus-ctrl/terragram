@@ -61,7 +61,10 @@ for bad arguments; `--json` prints a machine-readable result where it helps.
 
 ## GitHub Action
 
-
+`hibiscus-ctrl/terragram/action@<full commit SHA>` regenerates the Terraform from a `terragram.json`
+model file and fails the check when the committed Terraform differs, or writes the files. On a pull
+request it posts one comment with the model diff as a Mermaid diagram. Usage, inputs, outputs and the
+security notes are in [`action/README.md`](action/README.md).
 
 ## Graph rendering
 
@@ -93,11 +96,6 @@ A finding that only has a Terraform address is counted as not placed unless the 
 
 In code, import `terragram-engine/graph`: `parseGraphDocument`, `projectGraph(doc, options)` (a view
 model), `renderGraphSvg(view)`, `renderGraphMermaid(view)` and `diffGraphs(base, head)`.
-
-`hibiscus-ctrl/terragram/action@<full commit SHA>` regenerates the Terraform from a `terragram.json`
-model file and fails the check when the committed Terraform differs, or writes the files. On a pull
-request it posts one comment with the model diff as a Mermaid diagram. Usage, inputs, outputs and the
-security notes are in [`action/README.md`](action/README.md).
 
 ## Schemas
 
