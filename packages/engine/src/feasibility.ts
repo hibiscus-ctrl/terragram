@@ -77,7 +77,7 @@ export function assessFeasibility(model: InfraModel, cloud: Cloud): Feasibility 
         label: node.label,
         kind: node.kind,
         status: "unsupported",
-        reason: node.flag?.reason ?? "No matching component in Terragram's vocabulary.",
+        reason: node.flag?.reason ?? "No matching component in the component vocabulary.",
         suggestion: suggestionFor(node),
       });
       continue;
@@ -102,8 +102,8 @@ export function assessFeasibility(model: InfraModel, cloud: Cloud): Feasibility 
   if (verdict === "none") {
     summary =
       components.length === 0
-        ? "Nothing in this diagram maps to a component Terragram can build."
-        : `None of the ${components.length} components map to something Terragram can build on ${cloudLabel}.`;
+        ? "Nothing in this diagram maps to a component it can build."
+        : `None of the ${components.length} components map to something it can build on ${cloudLabel}.`;
   } else if (verdict === "full") {
     summary = `All ${built} components can be built on ${cloudLabel}.`;
   } else {

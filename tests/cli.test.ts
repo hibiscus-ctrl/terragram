@@ -229,7 +229,7 @@ describe("terragram parse, render and explain", () => {
     writeFileSync(join(dir, "model.json"), JSON.stringify({ nodes: [{ id: "a" }], edges: [] }));
     const result = await cli(["explain", join(dir, "model.json")]);
     assert.equal(result.code, 1);
-    assert.match(result.stderr, /not a Terragram model/);
+    assert.match(result.stderr, /not a diagram model/);
     assert.match(result.stderr, /nodes\.0\.category/);
   });
 

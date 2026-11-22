@@ -74,7 +74,7 @@ export function buildGraphModel(boxes: GraphBox[], links: GraphLink[]): BuiltGra
       kind: "external",
       label: label.slice(0, 160),
       flag: {
-        reason: `"${label}" does not match a component Terragram can generate. Pick a kind for it, or leave it as documentation.`,
+        reason: `"${label}" does not match a component that can be generated. Pick a kind for it, or leave it as documentation.`,
       },
     });
     untranslated.push(label);
