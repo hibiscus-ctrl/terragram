@@ -41,6 +41,8 @@ export type ViewNode = {
   label: string;
   category: GraphCategory;
   region?: string;
+  /** The environment of the node's root, when the graph names one. */
+  environment?: string;
   status: GraphStatus;
   findings: FindingTally | null;
 };
@@ -246,6 +248,7 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
       label: isCard ? shortSource(n.source ?? "") : shortId(n.id ?? "", head.idsHashed),
       category: isCard ? "other" : categoryOf(n.type ?? ""),
       ...(n.region !== undefined && !isCard && { region: n.region }),
+      ...(n.environment !== undefined && { environment: n.environment }),
       status: entry.status,
       findings: tally(placement.onNode.get(key) ?? []),
     });

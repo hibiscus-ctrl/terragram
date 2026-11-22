@@ -127,6 +127,12 @@ describe("graph/v1 schema", () => {
     ["an empty id", mutate((d) => { node(d, 1).id = ""; }), false],
     ["a negative index", mutate((d) => { (d.edges as { from: number }[])[0]!.from = -1; }), false],
     ["a hash algorithm that is not hmac-sha256", mutate((d) => { d.redaction = { ids_hashed: true, hash_alg: "md5" }; }), false],
+    ["environments and addresses", mutate((d) => { node(d, 0).environment = "prod"; node(d, 0).module_address = "module.network"; node(d, 1).environment = "prod"; node(d, 1).address = "module.network.aws_vpc.this"; d.redaction = { ids_hashed: false, hash_alg: "hmac-sha256", addresses: "plain" }; }), true],
+    ["hashed addresses", mutate((d) => { node(d, 1).address = "4f2a9c"; d.redaction = { ids_hashed: true, hash_alg: "hmac-sha256", addresses: "hashed" }; }), true],
+    ["an address way that is not plain, hashed or dropped", mutate((d) => { d.redaction = { ids_hashed: false, hash_alg: "hmac-sha256", addresses: "masked" }; }), false],
+    ["an empty environment", mutate((d) => { node(d, 1).environment = ""; }), false],
+    ["a resource with a module address", mutate((d) => { node(d, 1).module_address = "module.network"; }), false],
+    ["a module with a resource address", mutate((d) => { node(d, 0).address = "aws_vpc.this"; }), false],
   ];
 
   for (const [name, doc, valid] of cases) {
@@ -190,6 +196,12 @@ describe("projecting a graph", () => {
     assert.equal(category("aws_iam_role"), "identity");
     assert.equal(view(medium).nodes.find((n) => n.type === "aws_s3_bucket")?.category, "storage");
     assert.equal(view(medium).nodes.find((n) => n.type === "aws_db_instance")?.category, "data");
+  });
+
+  it("carries the environment a graph names onto its cards, and nothing when it names none", () => {
+    const named = { ...small, nodes: small.nodes.map((n) => ({ ...n, environment: "prod" })) };
+    assert.ok(view(named).nodes.every((n) => n.environment === "prod"));
+    assert.ok(view(small).nodes.every((n) => n.environment === undefined));
   });
 
   it("shortens an ID to what fits a card, and a hashed one to its first characters", () => {

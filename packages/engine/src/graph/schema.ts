@@ -26,6 +26,12 @@ const graphNodeSchema = z
     id: text.optional(),
     account: text,
     region: text.optional(),
+    /** The environment of the node's root, when the import named its environments. */
+    environment: text.optional(),
+    /** A resource's address, as `redaction.addresses` says it was kept. */
+    address: text.optional(),
+    /** A module call's address (`module.<name>`), likewise. */
+    module_address: text.optional(),
     source: text.optional(),
     version: text.optional(),
     parent: index.optional(),
@@ -44,10 +50,10 @@ const graphNodeSchema = z
     };
     if (node.kind === "resource") {
       need("type", "id");
-      refuse("source", "version");
+      refuse("source", "version", "module_address");
     } else {
       need("source");
-      refuse("type", "id", "parent");
+      refuse("type", "id", "parent", "address");
     }
   });
 
@@ -62,7 +68,12 @@ export const graphDocumentSchema = z
     cloud: z.enum(["aws", "azure", "google"]),
     nodes: z.array(graphNodeSchema),
     edges: z.array(graphEdgeSchema),
-    redaction: z.strictObject({ ids_hashed: z.boolean(), hash_alg: z.literal("hmac-sha256") }),
+    redaction: z.strictObject({
+      ids_hashed: z.boolean(),
+      hash_alg: z.literal("hmac-sha256"),
+      /** How the addresses were written: as they are, hashed, or not at all. */
+      addresses: z.enum(["plain", "hashed", "dropped"]).optional(),
+    }),
   })
   .superRefine((doc, ctx) => {
     doc.edges.forEach((edge, i) => {
