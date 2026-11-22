@@ -26,9 +26,11 @@ name: Security scan
 #                (scripts/dep-cve-gate.mjs, unit-tested in tests/).
 #
 # The pre-existing backlog is NOT hidden: the `inventory` job runs every scanner
-# at full scope on main and on a schedule, report-only, and publishes to the
-# Security tab. It is deliberately not a gate — a red main that no single PR
-# owns is how a scanner earns its `|| true` back.
+# at full scope on a daily schedule and publishes to the Security tab. Unlike
+# the PR gates it is not diff-aware: it fails the scheduled run on any
+# ERROR-severity Semgrep finding and any HIGH/CRITICAL Trivy finding, so a
+# red scheduled run is the prompt to triage the backlog. It does not run on
+# main or on pull requests, so no PR is blocked by a finding it did not add.
 #
 # The schedule matters independently: a CVE is published against a dependency we
 # already have without any commit here, so PR-triggered scans alone never see it.
@@ -141,7 +143,10 @@ jobs:
             echo "no scannable files changed"
             exit 0
           fi
-          trivy fs /tmp/changed --scanners secret --exit-code 1 --format table
+          # The ignore file lists the test-only values by rule and exact path (see it); the changed
+          # files are copied to /tmp/changed with their relative paths, so the same paths match.
+          trivy fs /tmp/changed --scanners secret --exit-code 1 --format table \
+            --ignorefile "$GITHUB_WORKSPACE/.trivyignore.yaml"
 
   dep-cve-diff:
     name: No new vulnerable dependencies (Trivy)
@@ -190,10 +195,14 @@ jobs:
       - name: Gate on newly-introduced CVEs
         run: node scripts/dep-cve-gate.mjs --base /tmp/base.json --head /tmp/head.json
 
-  # ── Full-scope inventory (main + schedule): report-only, on purpose ─────────
+  # ── Full-scope scan (daily + by hand): fails on ERROR / HIGH / CRITICAL ─────
   inventory:
-    name: Full scan (report-only)
-    if: github.event_name != 'pull_request'
+    name: Full scan
+    # Not on every push to main: the backlog it reports changes by the day, not by the
+    # commit, and a busy day of merges would run this 20-minute scan once per merge. The
+    # daily schedule keeps the Security tab current, and the PR gates above still see
+    # every change.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -207,10 +216,16 @@ jobs:
       - name: Install Semgrep
         run: pipx install "semgrep==${SEMGREP_VERSION}"
       - name: Semgrep (full)
-        # Report-only BY DESIGN, not a flag awaiting a flip: gating lives in
-        # sast-diff above, which can name the PR that introduced a finding.
-        # Failing a scheduled run instead produces a red main nobody owns.
-        run: semgrep scan --config auto src --sarif --output semgrep.sarif || true
+        # Fails the run on any ERROR-severity finding in the whole tree, so a
+        # backlog item or a newly published rule cannot sit unread in the
+        # Security tab. The SARIF is still written and uploaded below
+        # (`if: always()`), so the findings are visible whichever way this goes.
+        run: |
+          set -euo pipefail
+          # Full SARIF first (every severity, never fails), then the gate on errors only,
+          # so code scanning keeps the warnings while only errors fail the run.
+          semgrep scan --config auto src --sarif --output semgrep.sarif
+          semgrep scan --config auto src --severity ERROR --error --quiet
       - name: Upload Semgrep SARIF
         if: always() && hashFiles('semgrep.sarif') != ''
         continue-on-error: true
@@ -219,20 +234,40 @@ jobs:
           sarif_file: semgrep.sarif
           category: semgrep
 
-      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+      # The Trivy steps run even when Semgrep failed above, so one red scanner
+      # does not hide the other's findings.
+      - if: always()
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
           version: ${{ env.TRIVY_VERSION }}
-      - run: trivy --version | head -1 | grep -qF "${TRIVY_VERSION#v}"
-      - name: Trivy filesystem (secrets + vuln)
-        # The whole tree, every severity, including findings with no fix — the
-        # inventory's job is to be complete, not actionable. We scan the
-        # package-lock.json manifest, not the installed node_modules tree.
+      - if: always()
+        run: trivy --version | head -1 | grep -qF "${TRIVY_VERSION#v}"
+      - name: Trivy filesystem (secrets + vuln, full report)
+        if: always()
+        # The whole tree, every severity, including findings with no fix. The
+        # SARIF is the complete inventory, so this pass never fails the run; the
+        # gate is the next step. We scan the package-lock.json manifest, not the
+        # installed node_modules tree.
         run: |
           trivy fs . \
             --scanners vuln,secret \
             --skip-dirs '**/node_modules/**,**/.next/**' \
+            --ignorefile .trivyignore.yaml \
             --format sarif --output trivy.sarif \
             --exit-code 0
+      - name: Trivy filesystem (fail on HIGH/CRITICAL)
+        if: always()
+        # Same scope, filtered to the severities that block. Reuses the database
+        # the report pass just downloaded, so both passes judge the same data.
+        run: |
+          trivy fs . \
+            --scanners vuln,secret \
+            --skip-dirs '**/node_modules/**,**/.next/**' \
+            --skip-db-update \
+            --ignorefile .trivyignore.yaml \
+            --severity HIGH,CRITICAL \
+            --format table \
+            --exit-code 1
       - name: Upload Trivy SARIF
         if: always() && hashFiles('trivy.sarif') != ''
         continue-on-error: true
