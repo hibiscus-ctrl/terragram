@@ -29,4 +29,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TERRAGRAM_PROXY_CALLBACK_SECRET` is absent and it falls back to the
   token-signing secret.
 
-[Unreleased]: https://github.com/IgnatG/diagram.infraoath-ui/commits/main
+[Unreleased]: https://github.com/hibiscus-ctrl/terragram/commits/main
