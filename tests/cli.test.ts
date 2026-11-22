@@ -324,6 +324,20 @@ describe("terragram verify", () => {
     assert.equal((await cli(["verify", dir, "--allow-unsigned"])).code, 1, "a changed plan still fails the hash");
   });
 
+  it("refuses --allow-unsigned with a trusted key, so stripping a signature cannot pass", async () => {
+    const { dir, trustedKey } = await bundleDir({ signed: true });
+    const receipt = join(dir, "receipt.json");
+    const stripped = JSON.parse(readFileSync(receipt, "utf8")) as Record<string, unknown>;
+    stripped.signed = false;
+    delete stripped.signature;
+    delete stripped.publicKey;
+    writeFileSync(receipt, JSON.stringify(stripped, null, 2));
+    const combined = await cli(["verify", dir, "--key", trustedKey, "--allow-unsigned"]);
+    assert.equal(combined.code, 2);
+    assert.match(combined.stderr, /cannot be combined/);
+    assert.equal((await cli(["verify", dir, "--key", trustedKey])).code, 1);
+  });
+
   it("never reports a signed bundle as verified without a trusted key, even with --allow-unsigned", async () => {
     const { dir } = await bundleDir({ signed: true });
     assert.equal((await cli(["verify", dir])).code, 2);

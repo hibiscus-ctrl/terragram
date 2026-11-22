@@ -29,7 +29,7 @@ Options:
   --trust <file>      JSON object of key id -> public key PEM; the receipt's key id picks the entry
   --sig <file>        detached signature of receipt.json (default: receipt.json.sig beside it,
                       when present); checked against the trusted key
-  --allow-unsigned    check the hashes only. The result says UNSIGNED, whatever the receipt
+  --allow-unsigned    check the hashes only (not with --key or --trust). The result says UNSIGNED, whatever the receipt
                       claims: nothing about who produced it has been checked
   --json              print the full report as JSON
   -h, --help          show this help
@@ -125,6 +125,9 @@ export async function verify(argv: string[], io: Io): Promise<number> {
   if (values.key !== undefined && values.trust !== undefined) throw new UsageError("give --key or --trust, not both");
   const allowUnsigned = values["allow-unsigned"];
   const haveTrust = values.key !== undefined || values.trust !== undefined;
+  // With a trusted key, a receipt must be signed by it: stripping the signature must never
+  // turn a failed check into a passing "unsigned" one.
+  if (haveTrust && allowUnsigned) throw new UsageError("--allow-unsigned cannot be combined with --key or --trust");
   if (!haveTrust && !allowUnsigned) {
     throw new UsageError(
       "no trusted key: give --key <pem> or --trust <file> (a key from outside the bundle), or --allow-unsigned to check hashes only",
@@ -185,8 +188,8 @@ export async function verify(argv: string[], io: Io): Promise<number> {
   const signedOk =
     signature.status === "pass" && key.status === "pass" && (detached === null || detached.status === "pass");
   // `unsigned` is not a pass: it says only that the hashes held. It is reachable only with
-  // --allow-unsigned, and never when a signature is present and wrong.
-  const unsignedTolerated = allowUnsigned && hashOk && (!haveTrust || (unsigned && detached?.status !== "fail"));
+  // --allow-unsigned, which excludes a trusted key, so no signature is judged on that path.
+  const unsignedTolerated = allowUnsigned && !haveTrust && hashOk;
   const finalVerdict = signedOk && hashOk ? "verified" : unsignedTolerated ? "unsigned" : "not-verified";
 
   const exit = finalVerdict === "not-verified" ? 1 : 0;
