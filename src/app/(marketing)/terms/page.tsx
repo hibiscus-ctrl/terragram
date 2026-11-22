@@ -17,7 +17,7 @@ export default function TermsPage() {
       current="/terms"
       eyebrow="Legal"
       title="Terms & Conditions"
-      updated="9 July 2026"
+      updated="22 November 2026"
       intro={
         <>
           These terms set out the agreement between you and Terragram Ltd for the Terragram website
@@ -70,8 +70,14 @@ export default function TermsPage() {
           abuse, overload, disrupt or otherwise interfere with the Service or its infrastructure;
         </li>
         <li>
-          attempt to breach the security of the Service, or probe, scan or reverse-engineer it;
+          attempt to breach the security of the Service, or probe or scan it for vulnerabilities
+          outside our responsible disclosure process;
         </li>
+        <li>
+          access or extract data from the Service by scraping, crawling or other automated means,
+          other than through our published APIs and integrations;
+        </li>
+        <li>use another person&rsquo;s account, or share your own credentials, without permission;</li>
         <li>
           circumvent or attempt to circumvent any authentication, scoping or access control; or
         </li>
@@ -138,7 +144,10 @@ export default function TermsPage() {
       <h2 id="intellectual-property">8. Intellectual property</h2>
       <p>
         We own the Terragram name, logo and marks, and we (or our licensors) own the website and the
-        Terragram workspace software. You retain ownership of your own architecture descriptions,
+        Terragram workspace software. The source code is available under the AGPL-3.0-only licence,
+        and that licence, not these terms, governs your use of the code; these terms govern only
+        your use of the hosted Service. The licence does not grant any right to our name, logo or
+        marks. You retain ownership of your own architecture descriptions,
         diagrams, code, and any Terraform generated for you by the Service. We claim no ownership
         over your content, and <strong>we never use your designs to train models</strong>; you
         simply grant us the limited rights needed to operate the Service for you.
