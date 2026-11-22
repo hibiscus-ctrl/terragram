@@ -293,12 +293,6 @@ describe("refusals and seams", () => {
     writeFileSync(join(ws, "empty.json"), '{"nodes":[],"edges":[]}');
     assert.match(action(ws, { model: "empty.json" }).stdout, /has no components to build/);
   });
-
-  it("accepts control-plane-url, says nothing was sent, and still passes", () => {
-    const result = action(workspace(), { "control-plane-url": "https://control-plane.example/ingest" });
-    assert.equal(result.status, 0, result.stdout);
-    assert.match(result.stdout, /::notice::control-plane-url is accepted, but uploading receipts is not yet supported/);
-  });
 });
 
 /* ------------------------------------------------------------ pull request -- */

@@ -35,9 +35,16 @@ inputs:
     required: false
   control-plane-url:
     description: >-
-      Optional control-plane address for receipts. Accepted, but uploading is not yet supported:
-      nothing is sent.
+      Optional control-plane address (https://, no path needed). When set, the receipt bundle is
+      uploaded after the check, authenticated with the job's GitHub identity token, so the job needs
+      `permissions: id-token: write`. Not uploaded on a pull_request run. A failed upload fails the step.
     required: false
+  control-plane-audience:
+    description: >-
+      The audience the job's identity token is requested for, which the control plane must accept.
+      Only used with control-plane-url.
+    required: false
+    default: infraharvest-api
   github-token:
     description: >-
       Token for the pull-request comment. The default is the job token, which needs
@@ -52,6 +59,8 @@ outputs:
     description: Workspace-relative path of the evidence receipt (_diagram/receipt.json). The bundle beside it verifies with terragram verify.
   content-hash:
     description: The receipt's content hash (sha256:...) over the model and the generated Terraform.
+  snapshot-id:
+    description: The id the control plane kept the uploaded bundle under; empty when nothing was uploaded.
 
 runs:
   using: node24

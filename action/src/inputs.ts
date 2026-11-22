@@ -3,6 +3,7 @@
 
 import { isAbsolute, relative, resolve } from "node:path";
 
+import { DEFAULT_AUDIENCE } from "./upload.ts";
 import { ActionError } from "./workflow.ts";
 
 type Mode = "check" | "write";
@@ -15,6 +16,8 @@ export type Inputs = {
   comment: boolean;
   signingKey: string | undefined;
   controlPlaneUrl: string | undefined;
+  /** What the identity token sent to the control plane is issued for. */
+  controlPlaneAudience: string;
   githubToken: string | undefined;
 };
 
@@ -40,6 +43,7 @@ export function readInputs(env: Readonly<Record<string, string | undefined>>): I
     comment: comment === "true",
     signingKey: input(env, "signing-key"),
     controlPlaneUrl: input(env, "control-plane-url"),
+    controlPlaneAudience: input(env, "control-plane-audience") ?? DEFAULT_AUDIENCE,
     githubToken: input(env, "github-token"),
   };
 }
