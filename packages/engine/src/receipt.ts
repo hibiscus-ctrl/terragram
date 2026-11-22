@@ -15,13 +15,16 @@ import type { TerraformFile, TerraformTool } from "./terraform.ts";
  * verifies and the code that signs can never disagree about what was hashed.
  */
 
-export const RECEIPT_SCHEMA = "terragram.receipt/v2" as const;
+export const RECEIPT_SCHEMA = "diagram.receipt/v2" as const;
 
 /** Schemas this build can still verify. v1 differs only by not carrying
  *  provenance; the hash it records is computed exactly as v2's is, so refusing to
- *  check an older bundle would be a choice, not a limitation. */
+ *  check an older bundle would be a choice, not a limitation. The `terragram.receipt/`
+ *  ids are what receipts carried before the schemas were renamed; they are accepted
+ *  here so those receipts still verify, and are never written. */
 export const VERIFIABLE_RECEIPT_SCHEMAS: readonly string[] = [
   "terragram.receipt/v1",
+  "terragram.receipt/v2",
   RECEIPT_SCHEMA,
 ];
 

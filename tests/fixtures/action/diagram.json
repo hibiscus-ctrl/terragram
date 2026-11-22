@@ -1,5 +1,5 @@
 {
-  "schema": "terragram.model/v1",
+  "schema": "diagram.model/v1",
   "cloud": "aws",
   "nodes": [
     {

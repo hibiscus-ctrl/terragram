@@ -396,7 +396,7 @@ const LAMBDA_RUNTIME: Record<string, LambdaRuntime> = {
     handler: "index.handler",
     file: "index.mjs",
     stub: [
-      "// Terragram placeholder handler — replace with your function's code.",
+      "// Placeholder handler — replace with your function's code.",
       "// `terraform plan` packages this directory (see `source_path` in main.tf), so the",
       "// directory must exist and hold the file the handler names.",
       "export const handler = async () => ({",
@@ -412,7 +412,7 @@ const LAMBDA_RUNTIME: Record<string, LambdaRuntime> = {
     handler: "lambda_function.lambda_handler",
     file: "lambda_function.py",
     stub: [
-      "\"\"\"Terragram placeholder handler — replace with your function's code.",
+      "\"\"\"Placeholder handler — replace with your function's code.",
       "",
       "`terraform plan` packages this directory (see `source_path` in main.tf), so the",
       "directory must exist and hold the file the handler names.",
@@ -437,7 +437,7 @@ const LAMBDA_RUNTIME: Record<string, LambdaRuntime> = {
     stub: [
       "package example;",
       "",
-      "// Terragram placeholder handler. A Java function deploys as a BUILT jar: compile this,",
+      "// Placeholder handler. A Java function deploys as a BUILT jar: compile this,",
       "// then point `source_path` in main.tf at the build output (or set `create_package = false`",
       "// and `local_existing_package`). As source it lets `terraform plan` run; it will not execute.",
       "import com.amazonaws.services.lambda.runtime.Context;",
@@ -936,7 +936,7 @@ function tagsBlock(slug: string): { key: string; value: string } {
     key: "tags",
     value: mapExpression([
       { key: "Name", value: quote(slug) },
-      { key: "ManagedBy", value: quote("terragram") },
+      { key: "ManagedBy", value: quote("diagram") },
     ]),
   };
 }

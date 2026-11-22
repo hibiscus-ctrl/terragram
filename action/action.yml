@@ -1,5 +1,5 @@
-name: Terragram
-description: Keep a repository's Terraform in line with a Terragram model file, and show what a pull request changes in the model.
+name: Diagram
+description: Keep a repository's Terraform in line with a diagram model file, and show what a pull request changes in the model.
 author: hibiscus-ctrl
 
 branding:
@@ -8,9 +8,9 @@ branding:
 
 inputs:
   model:
-    description: Path to the Terragram model file (terragram.model/v1), relative to the workspace.
+    description: Path to the diagram model file (diagram.model/v1), relative to the workspace.
     required: false
-    default: terragram.json
+    default: diagram.json
   terraform-dir:
     description: Directory holding the generated Terraform, relative to the workspace.
     required: false
@@ -49,7 +49,7 @@ outputs:
   changed:
     description: "true when check found the Terraform differs from the model, or write changed a file; otherwise false."
   receipt-path:
-    description: Workspace-relative path of the evidence receipt (_terragram/receipt.json). The bundle beside it verifies with terragram verify.
+    description: Workspace-relative path of the evidence receipt (_diagram/receipt.json). The bundle beside it verifies with terragram verify.
   content-hash:
     description: The receipt's content hash (sha256:...) over the model and the generated Terraform.
 

@@ -38,14 +38,14 @@ type SchemaSpec = {
 const SCHEMAS: SchemaSpec[] = [
   {
     file: "model.v1.schema.json",
-    title: "Terragram model (terragram.model/v1)",
+    title: "Diagram model (diagram.model/v1)",
     description:
-      "An infrastructure diagram as Terragram reads it: components (nodes, at most 300) and the connections between them (edges, at most 600), optionally with the cloud it targets. A bare model, as found in an evidence bundle's model.json, is valid.",
+      "An infrastructure diagram as the engine reads it: components (nodes, at most 300) and the connections between them (edges, at most 600), optionally with the cloud it targets. A bare model, as found in an evidence bundle's model.json, is valid.",
     schema: modelDocumentSchema,
   },
   {
     file: "receipt.v2.schema.json",
-    title: "Terragram evidence receipt (terragram.receipt/v2)",
+    title: "Diagram evidence receipt (diagram.receipt/v2)",
     description:
       "The receipt.json of an evidence bundle: the content hash over the approved model and plan, the detached signature and the key that checks it, and who produced what.",
     schema: evidenceReceiptSchema,

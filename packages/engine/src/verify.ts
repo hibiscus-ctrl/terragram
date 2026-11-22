@@ -186,7 +186,7 @@ export async function readBundleZip(file: File): Promise<BundleEntry[]> {
     const nameStart = offset + 30;
     const name = decoder.decode(data.subarray(nameStart, nameStart + nameLength));
     const contentStart = nameStart + nameLength + extraLength;
-    if (method !== 0) throw new Error(`${name} is compressed — export the bundle from Terragram.`);
+    if (method !== 0) throw new Error(`${name} is compressed — export the bundle again.`);
     entries.push({
       name,
       content: decoder.decode(data.subarray(contentStart, contentStart + size)),
@@ -194,6 +194,6 @@ export async function readBundleZip(file: File): Promise<BundleEntry[]> {
     offset = contentStart + size;
   }
 
-  if (entries.length === 0) throw new Error("That file does not look like a Terragram bundle.");
+  if (entries.length === 0) throw new Error("That file does not look like an evidence bundle.");
   return entries;
 }

@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/hibiscus-ctrl/terragram/schemas/receipt.v2.schema.json",
-  "title": "Terragram evidence receipt (terragram.receipt/v2)",
+  "title": "Diagram evidence receipt (diagram.receipt/v2)",
   "description": "The receipt.json of an evidence bundle: the content hash over the approved model and plan, the detached signature and the key that checks it, and who produced what.",
   "type": "object",
   "properties": {
     "schema": {
       "type": "string",
-      "const": "terragram.receipt/v2"
+      "const": "diagram.receipt/v2"
     },
     "contentHash": {
       "type": "string",

@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and format metadata, the share-link expiry check, the compose suggestions and
   the node-position and edge-removal editor helpers.
 
+### Changed
+
+- Names that end up in documents, generated code or a repository say `diagram`
+  instead of the codename: the schema ids (`diagram.model/v1`,
+  `diagram.receipt/v2`, `diagram.graph-view/v1`), the `ManagedBy = "diagram"`
+  tag and the header comment in generated Terraform, and the Action's default
+  model file (`diagram.json`), output directory (`_diagram/`), pull request
+  comment marker and heading. `terragram verify` still accepts receipts that
+  carry the `terragram.receipt/v1` and `terragram.receipt/v2` ids. The
+  repository, packages and `terragram` command keep their names.
+
 ### Added
 
 - A GitHub Action that checks or writes Terraform from a model file, and a

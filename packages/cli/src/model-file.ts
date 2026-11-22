@@ -35,7 +35,7 @@ export function readModel(io: Io, path: string): { model: InfraModel; cloud: Clo
       .slice(0, 8)
       .map((issue) => `  ${issue.path.join(".") || "(document)"}: ${issue.message}`)
       .join("\n");
-    throw new CommandError(`${path} is not a Terragram model:\n${issues}`);
+    throw new CommandError(`${path} is not a diagram model:\n${issues}`);
   }
   const { nodes, edges, topology, cloud } = parsed.data;
   return { model: { nodes, edges, topology }, cloud };

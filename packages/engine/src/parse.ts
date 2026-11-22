@@ -125,7 +125,7 @@ export function parseTerraform(source: string): ParseResult {
     return {
       ok: false,
       error:
-        "None of the resources in this file are ones Terragram can map yet. It reads the AWS and Azure services in the component palette — compute, networking, storage, identity and monitoring.",
+        "None of the resources in this file are ones that can be mapped yet. It reads the AWS and Azure services in the component palette — compute, networking, storage, identity and monitoring.",
     };
   }
 
@@ -243,7 +243,7 @@ export function parseTerraform(source: string): ParseResult {
       category: "edge",
       kind: "external",
       label: `${block.type} ${name}`,
-      flag: { reason: `Terragram read this ${block.type} block but cannot translate its contents.` },
+      flag: { reason: `This ${block.type} block was read but its contents cannot be translated.` },
     });
     untranslated.push(`${block.type}.${name}`);
   }

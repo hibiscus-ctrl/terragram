@@ -12,7 +12,7 @@ Action that keeps a repository's Terraform in line with a model file.
 | [`packages/engine`](packages/engine) | `terragram-engine`: the model and kind registry, the Terraform/OpenTofu emitter, the HCL parser, Mermaid import, verifier, explainer, evidence receipts, layout and SVG export. Pure functions: models, signing and logging come in through ports. |
 | [`packages/cli`](packages/cli) | `terragram`: the command line, bundled into one file with no runtime dependencies. |
 | [`action`](action) | The GitHub Action, one committed bundle. See [`action/README.md`](action/README.md). |
-| [`schemas`](schemas) | JSON Schemas for the model (`terragram.model/v1`) and the evidence receipt (`terragram.receipt/v2`), generated from the engine's zod schemas. |
+| [`schemas`](schemas) | JSON Schemas for the model (`diagram.model/v1`) and the evidence receipt (`diagram.receipt/v2`), generated from the engine's zod schemas. |
 | [`scripts`](scripts) | The release gates (generated-Terraform validation, module-interface check, schema generation) and the provider-version refresher. |
 
 The engine is deterministic: keyword compose, HCL parse and template emit, with no model call and no
@@ -61,7 +61,7 @@ for bad arguments; `--json` prints a machine-readable result where it helps.
 
 ## GitHub Action
 
-`hibiscus-ctrl/terragram/action@<full commit SHA>` regenerates the Terraform from a `terragram.json`
+`hibiscus-ctrl/terragram/action@<full commit SHA>` regenerates the Terraform from a `diagram.json`
 model file and fails the check when the committed Terraform differs, or writes the files. On a pull
 request it posts one comment with the model diff as a Mermaid diagram. Usage, inputs, outputs and the
 security notes are in [`action/README.md`](action/README.md).

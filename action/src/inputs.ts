@@ -34,7 +34,7 @@ export function readInputs(env: Readonly<Record<string, string | undefined>>): I
     throw new ActionError(`input comment must be "true" or "false" (got "${comment}")`);
   }
   return {
-    model: input(env, "model") ?? "terragram.json",
+    model: input(env, "model") ?? "diagram.json",
     terraformDir: input(env, "terraform-dir") ?? "infra/",
     mode,
     comment: comment === "true",

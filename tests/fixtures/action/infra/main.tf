@@ -1,4 +1,4 @@
-# Terragram — generated from the internal model
+# Generated from the diagram model
 # Target: AWS · London (eu-west-2) · Terraform
 # 3 module calls and 4 resources from 4 components
 
@@ -14,7 +14,7 @@ terraform {
 }
 
 locals {
-  tags = merge({ ManagedBy = "terragram", Environment = "dev" }, var.tags)
+  tags = merge({ ManagedBy = "diagram", Environment = "dev" }, var.tags)
 }
 
 provider "aws" {
@@ -199,7 +199,7 @@ module "app_service" {
   }
   tags = {
     Name      = "app-service"
-    ManagedBy = "terragram"
+    ManagedBy = "diagram"
   }
   depends_on = [module.redis_cache, module.postgres]
 }

@@ -75,7 +75,7 @@ export type InfraModel = z.infer<typeof infraModelSchema>;
 
 /** The id a model document carries in its `schema` field, and the name of its JSON
  *  Schema (`schemas/model.v1.schema.json`). */
-export const MODEL_SCHEMA = "terragram.model/v1" as const;
+export const MODEL_SCHEMA = "diagram.model/v1" as const;
 
 /**
  * The model as a standalone JSON document: what `terragram parse` writes and

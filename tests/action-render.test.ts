@@ -180,13 +180,13 @@ describe("unifiedDiff", () => {
 describe("renderReport", () => {
   const input: ReportInput = {
     mode: "check",
-    modelPath: "terragram.json",
+    modelPath: "diagram.json",
     terraformDir: "infra/",
     cloud: "aws",
     base: { state: "compared" },
     diff: diffModels(base, head),
     diagram: renderDiagram(diffModels(base, head)),
-    warnings: ["Odd box: No matching component in Terragram's vocabulary."],
+    warnings: ["Odd box: No matching component in the component vocabulary."],
     terraformChanged: ["main.tf"],
     files: [{ name: "main.tf", status: "different", diff: "--- a/infra/main.tf\n+++ b/infra/main.tf\n@@ -1,1 +1,1 @@\n-a\n+b\n" }],
     written: [],
@@ -202,7 +202,7 @@ describe("renderReport", () => {
     assert.match(text, /\| Feasibility warnings \| 1 \|/);
     assert.match(text, /\| Terraform files changed by this model change \| 1 \|/);
     assert.match(text, /`sha256:abc` \(unsigned\)/);
-    assert.match(text, /`infra\/` differs from `terragram\.json` in 1 file/);
+    assert.match(text, /`infra\/` differs from `diagram\.json` in 1 file/);
     assert.match(text, /```diff\n--- a\/infra\/main\.tf/);
   });
 
@@ -216,7 +216,7 @@ describe("renderReport", () => {
     const text = renderReport({ ...input, base: { state: "none" }, diff: null, diagram: { mermaid: null, scope: "none" }, files: [] });
     assert.doesNotMatch(text, /Model changes/);
     assert.doesNotMatch(text, /changed by this model change/);
-    assert.match(text, /`infra\/` matches `terragram\.json`/);
+    assert.match(text, /`infra\/` matches `diagram\.json`/);
   });
 
   it("reports what write mode wrote", () => {

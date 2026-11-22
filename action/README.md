@@ -1,20 +1,20 @@
-# Terragram GitHub Action
+# Diagram GitHub Action
 
-Keeps a repository's Terraform in line with a Terragram model file.
+Keeps a repository's Terraform in line with a diagram model file.
 
-The model file (`terragram.json`, validated against `terragram.model/v1`) is the source of truth. On every run the Action regenerates the Terraform from it with the same engine the Terragram CLI uses, then either fails when the committed Terraform differs (`check`) or writes the regenerated files (`write`). On a pull request it also posts one comment that shows what the change does to the model: a Mermaid diagram of the diff between the base and head versions of the model file, a summary table and the content hash of the receipt.
+The model file (`diagram.json`, validated against `diagram.model/v1`) is the source of truth. On every run the Action regenerates the Terraform from it with the same engine the `terragram` CLI uses, then either fails when the committed Terraform differs (`check`) or writes the regenerated files (`write`). On a pull request it also posts one comment that shows what the change does to the model: a Mermaid diagram of the diff between the base and head versions of the model file, a summary table and the content hash of the receipt.
 
 It runs from one committed bundle (`action/dist/index.mjs`) with no install step, makes no network call except to the GitHub API to post the comment, and never runs Terraform or any code from your repository.
 
 ## Use it
 
 ```yaml
-name: Terragram
+name: Diagram
 
 on:
   pull_request:
     paths:
-      - terragram.json
+      - diagram.json
       - infra/**
 
 permissions: {}
@@ -34,7 +34,7 @@ jobs:
 
       - uses: hibiscus-ctrl/terragram/action@<full commit SHA> # pin the version you reviewed
         with:
-          model: terragram.json
+          model: diagram.json
           terraform-dir: infra/
 ```
 
@@ -47,11 +47,11 @@ Pin both actions to a full commit SHA. A tag or branch can be moved; a SHA canno
 `mode: write` writes the regenerated files to `terraform-dir` and leaves committing them to the workflow, so you choose how (a commit to the branch, a pull request, or an artifact):
 
 ```yaml
-      - id: terragram
+      - id: diagram
         uses: hibiscus-ctrl/terragram/action@<full commit SHA>
         with:
           mode: write
-      - if: steps.terragram.outputs.changed == 'true'
+      - if: steps.diagram.outputs.changed == 'true'
         run: git diff --stat -- infra/
 ```
 
@@ -61,13 +61,13 @@ Pass an Ed25519 private key (PKCS#8 PEM, or the PEM base64-encoded) from a secre
 
 ```yaml
         with:
-          signing-key: ${{ secrets.TERRAGRAM_SIGNING_KEY }}
+          signing-key: ${{ secrets.DIAGRAM_SIGNING_KEY }}
 ```
 
 The key is masked in the log (`::add-mask::`, every line of it) and is used only to sign. The receipt carries the public key, and `terragram verify` checks it against a key you got from somewhere else:
 
 ```sh
-terragram verify _terragram --key trusted-public-key.pem
+terragram verify _diagram --key trusted-public-key.pem
 ```
 
 Secrets are not available to workflows triggered from a fork's pull request, so those runs write an unsigned receipt.
@@ -76,7 +76,7 @@ Secrets are not available to workflows triggered from a fork's pull request, so 
 
 | Input | Default | |
 | --- | --- | --- |
-| `model` | `terragram.json` | Path to the model file, relative to the workspace. Its `cloud` field picks `aws` or `azure`; without one, `azure`. |
+| `model` | `diagram.json` | Path to the model file, relative to the workspace. Its `cloud` field picks `aws` or `azure`; without one, `azure`. |
 | `terraform-dir` | `infra/` | Directory holding the generated Terraform, relative to the workspace. |
 | `mode` | `check` | `check` regenerates in memory and fails, printing a unified diff and one error annotation per file, when a generated file differs or is missing. `write` writes the regenerated files. Only the files Terragram generates are compared or written; anything else in the directory is left alone. Line endings are not compared. |
 | `comment` | `true` | On a `pull_request` run, post or update one sticky comment (found by an HTML marker, and only if a bot wrote it). Ignored on other events. |
@@ -89,12 +89,12 @@ Secrets are not available to workflows triggered from a fork's pull request, so 
 | Output | |
 | --- | --- |
 | `changed` | `true` when `check` found drift, or `write` changed a file; otherwise `false`. |
-| `receipt-path` | `_terragram/receipt.json`, relative to the workspace. |
+| `receipt-path` | `_diagram/receipt.json`, relative to the workspace. |
 | `content-hash` | The receipt's `sha256:` hash over the model and the generated Terraform. |
 
 ## The receipt bundle
 
-Every run writes `_terragram/` in the workspace: `receipt.json`, `model.json` and `plan/` (the generated files), plus `receipt.json.sig` and `signing-key.pem` (the public half) when signed. That is the layout `terragram verify` reads. The directory is replaced on each run, and it is meant for `actions/upload-artifact`, not for committing (the receipt carries a timestamp), so add `_terragram/` to `.gitignore`.
+Every run writes `_diagram/` in the workspace: `receipt.json`, `model.json` and `plan/` (the generated files), plus `receipt.json.sig` and `signing-key.pem` (the public half) when signed. That is the layout `terragram verify` reads. The directory is replaced on each run, and it is meant for `actions/upload-artifact`, not for committing (the receipt carries a timestamp), so add `_diagram/` to `.gitignore`.
 
 ## The pull-request comment
 
@@ -102,7 +102,7 @@ The comment holds, under a hidden marker so the next run updates it in place:
 
 - a Mermaid flowchart of the model diff: added components and edges green, removed ones red and dashed, changed ones amber (a changed label, kind, attribute or review flag);
 - a table of nodes and edges added, removed and changed;
-- the number of feasibility warnings (components Terragram cannot build on the chosen cloud, or flagged for review), the Terraform files the model change alters, the files that differ from `terraform-dir`, and the receipt hash.
+- the number of feasibility warnings (components that cannot be built on the chosen cloud, or flagged for review), the Terraform files the model change alters, the files that differ from `terraform-dir`, and the receipt hash.
 
 A model too large for Mermaid's limits is drawn as its changed part only, or not at all, with the table still there.
 

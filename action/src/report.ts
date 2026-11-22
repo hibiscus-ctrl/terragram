@@ -121,7 +121,7 @@ function modelSection(input: ReportInput): string[] {
 }
 
 export function renderReport(input: ReportInput): string {
-  const lines: string[] = ["## Terragram", "", statusLine(input), ""];
+  const lines: string[] = ["## Diagram", "", statusLine(input), ""];
   lines.push(...modelSection(input));
 
   const hasBase = input.base.state === "compared" || input.base.state === "new";
