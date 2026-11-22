@@ -662,7 +662,7 @@ export function emitTerraform(
     variables.set(TAGS.name, TAGS);
     // One line on purpose: `terraform fmt` leaves a single-line object alone,
     // and this one is short enough to read at a glance.
-    const base = `{ ManagedBy = "terragram", Environment = "${modelIsProduction(model.nodes) ? "production" : "dev"}" }`;
+    const base = `{ ManagedBy = "diagram", Environment = "${modelIsProduction(model.nodes) ? "production" : "dev"}" }`;
     scaffold.push(block("locals", [], [{ key: "tags", value: `merge(${base}, var.tags)` }]));
   }
 
@@ -728,7 +728,7 @@ export function emitTerraform(
   // Data sources are lookups, not things the plan creates, so they are not counted.
   const rawCount = [...resourceBlocks, ...wireBlocks].filter((b) => b.type === "resource").length;
   const header = [
-    `# Terragram — generated from the internal model`,
+    `# Generated from the diagram model`,
     `# Target: ${config.label} · ${config.regionLabel} · ${TOOL_LABEL[tool]}`,
     `# ${modules.length} module ${modules.length === 1 ? "call" : "calls"} and ${rawCount} resources from ${emitted.length} components`,
     ...notes.flatMap((note) => ["#", ...note.split("\n").map((line) => `# ${line}`)]),

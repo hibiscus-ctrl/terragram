@@ -27,7 +27,7 @@ describe("canonical formatting", () => {
           key: "tags",
           value: mapExpression([
             { key: "Name", value: quote("web") },
-            { key: "ManagedBy", value: quote("terragram") },
+            { key: "ManagedBy", value: quote("diagram") },
           ]),
         },
       ]),

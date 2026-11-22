@@ -190,7 +190,7 @@ describe("every resource carries the plan's tags", () => {
     assert.ok(added);
     const main = emitTerraform(added.model, "aws").files[0]?.content ?? "";
     assert.match(main, /default_tags \{\n\s+tags = local\.tags/);
-    assert.match(main, /locals \{\n\s+tags = merge\(\{ ManagedBy = "terragram"/);
+    assert.match(main, /locals \{\n\s+tags = merge\(\{ ManagedBy = "diagram"/);
   });
 
   it("applies them to every Azure module call, because Azure has no provider default", () => {
