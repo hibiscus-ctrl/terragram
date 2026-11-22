@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Unit tests for the private-repo monetization rule — now load-bearing across the
  * report ingest (gates persistence + returns 402), the per-repo + org evidence

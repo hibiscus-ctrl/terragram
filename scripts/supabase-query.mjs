@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Shared helper for the db:* scripts that run SQL against the LIVE Supabase
  * project via the Management API (the same engine as the dashboard SQL editor) —

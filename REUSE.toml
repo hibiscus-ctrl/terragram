@@ -1,0 +1,27 @@
+# Copyright 2026 Gabriel Ignat
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Copyright and licence of the files that carry no header of their own
+# (https://reuse.software/spec-3.3/): JSON, SQL, Markdown, YAML and Terraform
+# files, the lockfile, images, the generated Supabase types and anything else
+# that can't or doesn't take a comment. A file with its own header, as every
+# TypeScript and JavaScript source file has, keeps it ("closest"). The CI
+# workflow runs `reuse lint`.
+version = 1
+
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "Copyright 2026 Gabriel Ignat"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+# The Terraform module the HCL parser tests read as a fixture
+# (tests/fixtures/hcl-oracle/terraform-aws-lambda-8.8.0): terraform-aws-lambda
+# at v8.8.0 from terraform-aws-modules, copied unchanged, which is Apache-2.0
+# (its LICENSE file sits beside it). The tests that read it, and the rest of
+# the repository, stay AGPL-3.0-only.
+[[annotations]]
+path = "tests/fixtures/hcl-oracle/terraform-aws-lambda-8.8.0/**"
+precedence = "override"
+SPDX-FileCopyrightText = "Copyright The terraform-aws-modules/terraform-aws-lambda authors"
+SPDX-License-Identifier = "Apache-2.0"

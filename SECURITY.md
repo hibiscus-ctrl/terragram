@@ -18,6 +18,18 @@ Email **security@terragram.dev** with:
 We aim to acknowledge within **2 business days** and to agree a remediation timeline after triage. Please give us
 a reasonable window to fix and release before any public disclosure (coordinated disclosure).
 
+## Safe harbour
+
+If you make a good-faith effort to follow this policy while researching a vulnerability, we will not pursue or
+support legal action against you, and we will work with you to understand and resolve the issue quickly. Good
+faith means: only test against your own account and organisation, do not access, modify or retain data that
+is not yours, do not degrade the service for other tenants, give us reasonable time to fix before public
+disclosure, and stop as soon as you have enough to write the report. If you are unsure whether something is in
+bounds, ask first at <security@terragram.dev> — asking is always in bounds.
+
+This is not a bug-bounty programme; we pay no monetary rewards. We do credit researchers unless you would rather
+we didn't.
+
 ## Scope
 
 In scope for this repository (`terragram-ui`):

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The org teardown a confirmed deletion ends in. Pinned: the row is deleted FIRST
  * and a failed delete leaves billing alone (the org still exists); the

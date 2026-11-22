@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Create / converge the Terragram Stripe catalogue — the managed-cost Billing Meter,
  * the PAYG / Team products, and their prices (flat or banded base + the metered

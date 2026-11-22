@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /** Starter prompts shown in the compose empty state. */
 export const COMPOSE_SUGGESTIONS = [
   "A web app with a Postgres database and Redis cache",

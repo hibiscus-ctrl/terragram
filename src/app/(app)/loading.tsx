@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Shown instantly while a dashboard route's server data resolves (Next.js streaming).
 // This single fallback covers EVERY (app) route (Repositories, Compliance, Members,
 // Billing, SSO, Settings, Suppressions…), so it stays deliberately route-agnostic:

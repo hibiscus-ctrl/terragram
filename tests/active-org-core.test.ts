@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The active-org rules. Pinned: the cookie only ever selects among the caller's
  * own memberships — a stale or foreign id falls back to the oldest membership and

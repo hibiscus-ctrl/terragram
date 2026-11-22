@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The workspace model routes, signed out. Both are session-authed and must
  * refuse before they read a byte of the body — the 401 is asserted for bodies

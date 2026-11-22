@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Which org the dashboard acts on, when the user belongs to more than one. Pure, so
  * the rules are unit tested; `get-or-create-org.ts` reads the cookie and the

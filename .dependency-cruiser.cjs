@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Import gate: the specifier rule, no cycles, and the few edges that are security
  * properties rather than tidiness ones.

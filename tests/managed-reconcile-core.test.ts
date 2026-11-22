@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The managed-spend reconciliation tick (`/api/jobs/reconcile-managed`): which
  * orgs it flags, over which window, and that a failed read surfaces rather than

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Unit tests for the crosswalk-tier entitlement rule and the price-classification
  * helpers, keyed on Stripe `lookup_key`s. Pure — run with

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { ImageResponse } from "next/og";
 
 // Generated favicon: the Terragram mark, a monospaced "TG" on the dark ink tile,

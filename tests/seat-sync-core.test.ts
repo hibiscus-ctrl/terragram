@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The seat-sync decision. Pinned: only a live subscription with a per-seat Team
  * line is ever updated — free/OSS, PAYG-only, cancelled and foreign subscriptions

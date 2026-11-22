@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * `constantTimeEqual` guards the proxy's callback secret, the `tmpx_` token
  * signature and the Git OAuth `state`. The properties worth pinning are the ones

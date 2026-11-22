@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // The skip link is visually hidden until focused (`sr-only` → `focus:not-sr-only`).
 // The invariant is that a keyboard user can reach it FIRST and that it points at
 // a target that actually exists — a skip link aimed at a missing #main-content is

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Register a dedicated Enterprise instance in the CORE registry + mint its
  * telemetry token. Run against the core project (terragram.dev's Supabase) — the

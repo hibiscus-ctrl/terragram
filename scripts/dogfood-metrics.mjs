@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Dogfood-gate report: the merge-without-edit rate from the live `outcomes` table
  * (the 6.20 human-edit capture). Prints whether the P1 gate (≥80% over a real

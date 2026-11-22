@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 describe("Route protection", () => {
   // Every prefix the proxy guards (src/libs/supabase/supabase-middleware-client.ts):
   // the (app) workspace and (dashboard) pages, and the (account) routes.

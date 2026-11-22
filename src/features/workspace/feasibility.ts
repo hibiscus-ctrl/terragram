@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { matchKinds } from "./engine.ts";
 import { cloudSpec, KIND_LABELS } from "./kinds.ts";
 import type { Cloud, InfraModel, ModelNode } from "./model.ts";

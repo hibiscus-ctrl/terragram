@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The scheduler-facing job routes over HTTP: `x-jobs-secret`, compared in
  * constant time against `JOBS_DRAIN_SECRET` (a placeholder pinned by .env.test).

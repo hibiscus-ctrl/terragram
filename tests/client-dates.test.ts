@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -11,7 +14,8 @@ function clientComponents(dir: string): string[] {
   return readdirSync(dir, { recursive: true, encoding: "utf8" })
     .filter((file) => file.endsWith(".tsx"))
     .map((file) => join(dir, file))
-    .filter((file) => /^\s*["']use client["']/.test(readFileSync(file, "utf8")));
+    // The licence header's `//` comments may come before the directive.
+    .filter((file) => /^\s*(?:\/\/[^\n]*\n\s*)*["']use client["']/.test(readFileSync(file, "utf8")));
 }
 
 test("no client component formats a date with the host's locale or zone", () => {

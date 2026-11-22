@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { createPrivateKey, type KeyObject, sign } from "node:crypto";
 
 import { canonicalDigest } from "@infraweaver-io/core/contentHash";

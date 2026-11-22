@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The `next` path to land on after signing in, or null when the value is not a
  * path on this site. A crafted link must not turn sign-in into an open redirect.

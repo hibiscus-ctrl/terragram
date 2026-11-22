@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { makeOrgTeardown } from "@/features/app/org-teardown-core";
 import { cancelSubscriptionBestEffort } from "@/features/billing/stripe-billing";
 import { deleteOrgRow } from "@/features/data/orgs";

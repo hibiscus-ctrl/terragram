@@ -21,3 +21,12 @@ rules:
   unpinned-tools:
     ignore:
       - security-scan.yml
+
+  # cla.yml needs pull_request_target to write the signature store and set
+  # the status on fork pull requests. It has no checkout step, so the pull
+  # request's code never runs with the elevated token, and its only action
+  # (actions/github-script, with an inline script) is pinned by SHA. Scoped to
+  # that one file, so any other workflow that uses the trigger still fails.
+  dangerous-triggers:
+    ignore:
+      - cla.yml

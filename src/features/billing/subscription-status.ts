@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Stripe subscription-status classification for entitlement. Pure, dependency-free
  * (no `@/` / `stripe` imports) so it's unit-testable and the two questions — "does this

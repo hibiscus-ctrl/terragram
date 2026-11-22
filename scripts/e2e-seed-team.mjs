@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * E2E helper: undo what the members spec does to the e2e user's organisation.
  * Removes every `e2e-invitee*` member from it and deletes every pending invite to

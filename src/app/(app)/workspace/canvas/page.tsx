@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { Workspace } from "@/components/workspace/workspace";
 import { getAuthenticatedUser } from "@/features/account/controllers/get-authenticated-user";
 import { requireWorkspaceUser } from "@/features/workspace/identity";

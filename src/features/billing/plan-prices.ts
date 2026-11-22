@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The pure entitlement rules that map a Stripe subscription to a Terragram tier,
  * keyed on the stable price `lookup_key`s (not the generated price ids). The

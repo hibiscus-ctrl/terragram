@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import modelRates from "@/config/model-rates.json" with { type: "json" };
 import pricing from "@/config/pricing.json" with { type: "json" };
 

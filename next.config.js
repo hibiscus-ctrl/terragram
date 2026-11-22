@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /** @type {import('next').NextConfig} */
 
 // Baseline security headers for the authenticated workspace + account surfaces.

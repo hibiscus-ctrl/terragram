@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Every `usage_events` query and usage RPC in `src/` is scoped to terragram.
  *

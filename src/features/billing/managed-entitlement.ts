@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The managed-models entitlement gate, as a pure predicate (no I/O, no `@/` imports —
  * so it's unit-testable under the node `--test` harness and importable from anywhere).

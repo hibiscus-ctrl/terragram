@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 describe("Sign up", () => {
   it("renders the signup form and links back to sign in", () => {
     cy.visit("/signup");

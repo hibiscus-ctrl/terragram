@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, BookOpen, MapPin, Rocket, Share2, ShieldCheck } from "lucide-react";

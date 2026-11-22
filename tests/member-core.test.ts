@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The member-management decisions behind injected collaborators. Pinned: who may
  * invite and which roles the org's plan lets them hand out, the last-Admin and

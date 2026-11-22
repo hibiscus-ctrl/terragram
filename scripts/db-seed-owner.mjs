@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Make an account an org ADMIN (and super-owner-ready) without wiping anything —
  * the standalone re-seed. Useful after a fresh sign-in (the app auto-provisions

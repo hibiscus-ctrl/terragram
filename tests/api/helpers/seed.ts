@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Seeding for the suites that need a signed-in user and real rows, through the
  * service-role client — the same write path the app's data layer uses.

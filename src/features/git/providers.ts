@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The two Git hosts Terragram can open a change on, and the OAuth shape of each.
  *

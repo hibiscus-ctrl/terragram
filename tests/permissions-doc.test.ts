@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Holds `docs/permissions.md` to the code, so "what each role can do" is never a
  * document someone forgot to update.

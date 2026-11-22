@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Minimal AWS Signature Version 4 signer — enough to call the Amazon SES v2
  * HTTPS API directly, with no `@aws-sdk/*` dependency (keeps the server bundle

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Pure-logic self-tests for the network-free commercialization seams: the
  * evidence-bundle hash + Ed25519 signature, the managed-model proxy mint, and the

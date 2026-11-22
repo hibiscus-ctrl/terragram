@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Where an OAuth/SSO sign-in or an email-confirmed sign-up lands. Pinned: only a
  * same-site path is ever stored or followed — vetted when the cookie is set and

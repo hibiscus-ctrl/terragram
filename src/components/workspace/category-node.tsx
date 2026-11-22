@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { memo } from "react";
 import { Handle, type NodeProps, Position } from "@xyflow/react";
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * A small, dependency-free HCL reader and writer for the subset Terragram needs:
  * blocks with labels, attributes, nested blocks, and enough expression awareness to

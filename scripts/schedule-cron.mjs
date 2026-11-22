@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Schedule Terragram's background jobs in the LIVE Supabase project's pg_cron,
  * through the same Management API path as `db:exec`. Idempotent: re-running

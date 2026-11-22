@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Dev helper: create a CONFIRMED email/password user so you can sign in without
  * the GitHub OAuth dance (and without waiting on an email-confirmation link).

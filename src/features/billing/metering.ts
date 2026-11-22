@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { MANAGED_COST_METER_EVENT } from "@/config/pricing";
 import { logger } from "@/libs/log";
 import { stripeAdmin } from "@/libs/stripe/stripe-admin";

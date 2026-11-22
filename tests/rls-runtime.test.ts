@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Runtime proof that Postgres ENFORCES per-user isolation on Terragram's tables.
  *

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Email-match auto-join scope. A SAML account's confirmed email is whatever its
  * org's IdP asserted — Supabase marks it verified and does not check it against
