@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * `safeNextPath`: the post-sign-in landing path must stay on this site, whatever
  * spelling of an off-site URL a crafted link uses.

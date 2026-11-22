@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { matchKinds, uniqueNodeId } from "./engine.ts";
 import { kindDefinition, MODEL_KIND_IDS } from "./kinds.ts";
 import type { InfraModel, ModelEdge, ModelNode } from "./model.ts";

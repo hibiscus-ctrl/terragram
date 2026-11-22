@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { requireJobsSecret } from "@/features/api/jobs-secret";
 import { apiJson } from "@/features/api/responses";
 import { withRouteErrors } from "@/features/api/route-errors";

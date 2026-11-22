@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Refresh the provider version constraints and the registry module pins the
  * Terraform emitter writes.

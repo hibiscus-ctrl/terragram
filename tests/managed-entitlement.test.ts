@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The managed-models entitlement gate used by BOTH the `tmpx_` mint route and
  * the metering re-check, so a downgrade / opt-out stops billing immediately instead of

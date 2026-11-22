@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // A seeded, deterministic workspace (scripts/e2e-seed-workspace.mjs): it is
 // listed, opens on its latest snapshot, and its history shows every snapshot.
 // Read-mostly; the seeder resets the history on every run and the cleanup task

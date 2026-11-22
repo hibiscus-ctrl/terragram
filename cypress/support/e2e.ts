@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Loaded before every spec (see `supportFile` in cypress.config.ts).
 // Registers Testing Library queries (cy.findByRole / cy.findByLabelText) and the
 // project's custom commands.

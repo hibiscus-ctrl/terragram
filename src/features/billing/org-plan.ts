@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type Stripe from "stripe";
 
 import { crosswalkTierFromLookupKeys } from "@/features/billing/plan-prices";

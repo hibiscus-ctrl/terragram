@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The managed-models money meter (Phase D). The metering DECISION (read prior spend →
  * apply allowance → append rows) now lives in the atomic `record_managed_usage` SQL

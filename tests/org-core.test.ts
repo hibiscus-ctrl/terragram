@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The org-lifecycle actions behind injected collaborators. Pinned: the capability
  * each one requires, the typed confirmation, that the scarce limit is spent only

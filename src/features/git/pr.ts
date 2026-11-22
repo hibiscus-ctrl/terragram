@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type { EvidenceReceipt } from "@/features/workspace/receipt";
 import type { InfraModel } from "@/features/workspace/model";
 import { resourceNodes } from "@/features/workspace/model";

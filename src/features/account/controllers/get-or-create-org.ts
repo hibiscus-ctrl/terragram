@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { randomBytes } from "node:crypto";
 import { headers } from "next/headers";
 import { cache } from "react";

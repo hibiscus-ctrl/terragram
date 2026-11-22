@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Registers the `@/` alias resolver on Node's module system. Passed via
  * `--import` so it applies to the main module AND every worker thread the test

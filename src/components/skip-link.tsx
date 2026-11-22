@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Keyboard "skip to content" link — visually hidden until focused, then pinned
  * top-left. Lets keyboard and screen-reader users jump past the header/sidebar

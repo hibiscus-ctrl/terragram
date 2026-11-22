@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * E2E helper: ensure the e2e user owns ONE deterministic fixture workspace with a
  * known three-step snapshot history, so the workspace list, the canvas and the

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Drive the Supabase CLI entirely from .env.local, so the project it targets is
  * ALWAYS the one in this repo's .env.local — never a stale `supabase link` cache

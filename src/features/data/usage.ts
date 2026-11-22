@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { USAGE_PRODUCT } from "@/features/billing/managed-meter";
 import { logger } from "@/libs/log";
 import { supabaseAdminClient } from "@/libs/supabase/supabase-admin";

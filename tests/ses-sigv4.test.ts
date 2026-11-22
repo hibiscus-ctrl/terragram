@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The hand-rolled SigV4 signer against AWS's published worked example. If this
  * passes, the signing math matches AWS byte for byte.

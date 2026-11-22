@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Company + founder details for the marketing site (About page, footer, legal).
 //
 // Leave a field as "" until it is real. Every consumer guards on these values, so

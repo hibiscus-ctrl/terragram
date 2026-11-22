@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Managed-model entitlement (`payg`) is decoupled from tier/access: a `past_due`
  * org keeps its tier through the grace period but stops accruing managed Bedrock spend.

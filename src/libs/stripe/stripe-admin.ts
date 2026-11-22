@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Structural enforcement of the rule below. `server-only` resolves to an empty
 // module under the react-server condition and to a module that THROWS anywhere
 // else, so importing this file from a Client Component fails the BUILD instead

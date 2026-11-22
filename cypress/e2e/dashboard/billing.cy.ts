@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Billing renders for the e2e user's (free) org, and the portal hop never strands
 // anyone. Read-only: nothing here starts a checkout or reaches Stripe.
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Compare `database.sql`'s DECLARED columns against the LIVE schema and report
  * anything the file thinks exists but the database does not.

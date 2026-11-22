@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { GITHUB_REPO_URL, hasPublicRepo } from "@/config/company";
 import { SITE_URL } from "@/utils/site-url";
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { randomUUID } from "node:crypto";
 
 import { unstable_rethrow } from "next/navigation";

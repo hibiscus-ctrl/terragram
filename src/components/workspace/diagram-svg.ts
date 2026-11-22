@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { CATEGORY_META, type InfraModel, type NodeCategory } from "@/features/workspace/model";
 
 import { layoutModel, NODE_HEIGHT, NODE_WIDTH } from "./graph";

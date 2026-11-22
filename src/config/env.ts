@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * What this deployment is configured to do — decided once, from the environment,
  * rather than discovered one failure at a time.

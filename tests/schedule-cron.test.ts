@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The SQL `npm run cron:schedule` sends to the shared project, pinned without
  * running it. Secrets and hosts below are synthetic placeholders.

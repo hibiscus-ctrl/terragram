@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The product name and the domain its email is sent from, for the server code
  * that has to spell them out (transactional email). `terragram.dev` is the domain

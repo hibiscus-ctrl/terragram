@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Run arbitrary SQL against the LIVE Supabase project from the terminal — the
  * reusable path for a schema delta (an `alter table ...`) or a quick query,

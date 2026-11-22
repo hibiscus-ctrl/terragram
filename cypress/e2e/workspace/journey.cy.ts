@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // The core journey: create a workspace → describe it → the canvas fills → the
 // turn is saved as a snapshot → review → evidence bundle downloaded and verified
 // → a review link opened anonymously → revoked.

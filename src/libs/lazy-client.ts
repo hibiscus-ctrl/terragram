@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Wrap a client behind a lazily-initialized Proxy so its factory — which reads
  * runtime secrets — runs on first *use*, not at import time.

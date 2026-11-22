@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { USAGE_PRODUCT } from "./managed-meter.ts";
 import type { ManagedUsageResult } from "./managed-usage.ts";
 import type { TokenUsage } from "./model-cost.ts";

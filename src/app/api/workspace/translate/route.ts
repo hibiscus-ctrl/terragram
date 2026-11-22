@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { after, NextResponse } from "next/server";
 
 import { getAuthenticatedUser } from "@/features/account/controllers/get-authenticated-user";

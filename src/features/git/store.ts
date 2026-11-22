@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { supabaseAdminClient } from "@/libs/supabase/supabase-admin";
 
 import { encryptionKeyFromEnv, openToken, sealToken } from "./crypto.ts";

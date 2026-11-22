@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Which orgs a sign-in may auto-join by EMAIL MATCH — pending invites
  * (`acceptPendingInvites`) and SCIM records (`reconcileScimMemberships`) — decided

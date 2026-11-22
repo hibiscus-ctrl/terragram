@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Team management: the Members page, an invite created, shared and accepted by
 // link, a role change that makes the invitee an Admin (so Settings can hand the
 // org to them), a removal, and a revoked invite.

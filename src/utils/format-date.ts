@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Dates shown by client components. Those render twice — on the server (Railway:
 // en-US, UTC) and again in the browser (the visitor's locale and zone) — and any
 // difference in the text is a hydration mismatch (React #418). So the locale and

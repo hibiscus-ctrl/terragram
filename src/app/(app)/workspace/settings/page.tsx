@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { LeaveOrgPanel } from "@/components/app/leave-org-panel";
 import { WorkspaceSettings } from "@/components/workspace/workspace-settings";
 import { getAuthenticatedUser } from "@/features/account/controllers/get-authenticated-user";

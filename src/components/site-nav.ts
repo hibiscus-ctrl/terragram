@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /** Primary marketing/global navigation — shared by the desktop {@link SiteHeader}
  *  and the mobile {@link MobileMenu} so the two never drift. An entry with
  *  `children` renders as a dropdown on desktop and an expanded group on mobile. */

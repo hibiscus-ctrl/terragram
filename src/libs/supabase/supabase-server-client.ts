@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // ref: https://supabase.com/docs/guides/auth/server-side/nextjs
 
 // A client import already fails via `cookies()`, but with a Next-internals error;

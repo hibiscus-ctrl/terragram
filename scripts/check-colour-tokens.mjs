@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Colour-token gate: DESIGN.md's No Raw Gray Rule, made executable. "No ad-hoc
  * grays, no ad-hoc hex. Every neutral is a named warm token."

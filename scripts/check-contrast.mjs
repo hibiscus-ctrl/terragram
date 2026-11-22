@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Colour-contrast gate over the design tokens: assert what DESIGN.md promises,
  * "hold every surface to WCAG 2.2 AA", for the token pairs the product paints.

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The cases whose PREMISE is that a required key is absent: every route that
  * depends on a secret must fail CLOSED without it — refuse, never verify against

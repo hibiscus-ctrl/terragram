@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /** The stored fields of a share link that decide whether it still opens. */
 export type StoredShareLink = {
   created_by: string;

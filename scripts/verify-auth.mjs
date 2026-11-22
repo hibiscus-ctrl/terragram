@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Read-only auth/provisioning verification. Uses the service-role key from
  * .env.local to dump the auth users + orgs + memberships, so we can confirm a

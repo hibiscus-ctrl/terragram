@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Rebuild TERRAGRAM'S OWN TABLES from scratch — the answer to "if we wipe
  * Terragram's data, do we get the exact same schema back?".

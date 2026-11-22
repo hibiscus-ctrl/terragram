@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The managed-spend reconciliation tick, behind injected collaborators so it is
  * unit-testable without a database. `/api/jobs/reconcile-managed` binds the

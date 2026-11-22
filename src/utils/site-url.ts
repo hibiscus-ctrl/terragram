@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Canonical public origin for the deployment — the single source of truth for
  * `metadataBase`, `robots.txt`, `sitemap.xml`, and any absolute URL we emit.

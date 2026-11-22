@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { NextResponse } from "next/server";
 
 // Liveness probe. Intentionally dependency-free: it must succeed even if Supabase/Stripe

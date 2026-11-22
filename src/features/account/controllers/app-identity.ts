@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type { OrgChip, OrgSwitcherItem, UserChip } from "@/components/app/app-shell";
 import { resolveEntitlements, type ProductTier } from "@/features/billing/entitlements";
 import { listOrgsForUser } from "@/features/data/orgs";

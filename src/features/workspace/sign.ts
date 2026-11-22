@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { createPublicKey } from "node:crypto";
 
 import { loadSigningKey, signBytes, type SigningKey } from "@infraweaver-io/attest/signing";

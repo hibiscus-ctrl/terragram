@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { siteUrl } from "@/utils/site-url";
 
 import type { GitProvider } from "./providers.ts";

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // ref: https://github.com/vercel/next.js/blob/canary/examples/with-supabase/app/auth/callback/route.ts
 
 import { cookies } from "next/headers";

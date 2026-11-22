@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * Response-shape assertions. Status codes alone under-specify a contract: a
  * handler can keep its status while dropping a field its caller reads, so the

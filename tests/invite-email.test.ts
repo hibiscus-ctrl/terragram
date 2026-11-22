@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The invite email template: what the invitee reads, that the link is the only
  * place the token appears, and that nothing an org or a user named can inject

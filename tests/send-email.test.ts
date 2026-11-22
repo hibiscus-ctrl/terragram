@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * The SES sender's contract: no attempt at all without both SES keys, a signed
  * request to the configured region when they are set, and every failure turned

@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { STRIPE_LOOKUP_KEYS, type PlanTier } from "@/config/pricing";
 import { stripeAdmin } from "@/libs/stripe/stripe-admin";
 

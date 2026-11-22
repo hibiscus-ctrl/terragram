@@ -1,3 +1,6 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Mail, LifeBuoy, ShieldCheck, Building2 } from "lucide-react";
