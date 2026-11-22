@@ -23,6 +23,7 @@
     "lint:fix": "biome check --write .",
     "lint:lockfile": "lockfile-lint --path package-lock.json --type npm --allowed-hosts npm npm.pkg.github.com --validate-https --validate-integrity --validate-package-names",
     "test": "node --import ./scripts/register-alias.mjs --test \"tests/**/*.test.ts\"",
+    "test:packages": "node --import ./scripts/register-alias.mjs --test tests/schemas.test.ts tests/cli.test.ts tests/cli-bundle.test.ts",
     "test:api": "start-server-and-test test:api:server http://localhost:3100/api/health test:api:run",
     "test:api:server": "env-cmd -f ./.env.test next dev -p 3100",
     "test:api:run": "env-cmd -f ./.env.test node --import ./scripts/register-alias.mjs --test \"tests/api/**/*.test.ts\"",

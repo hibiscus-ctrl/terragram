@@ -83,6 +83,8 @@ npm run dev      # http://localhost:3000
 | `npm run lint` / `lint:fix` | Biome lint |
 | `npm test` | Unit tests (node built-in runner, `tests/*.test.ts`) |
 | `npm run test:cloud` | Pure-logic self-tests (proxy mint, token hashing, rate limiter, upload schema) |
+| `npm run build:packages` | Bundle the CLI (`packages/cli/dist/terragram.mjs`) and build the engine library (`packages/engine/dist`) |
+| `npm run schemas:gen` / `schemas:check` | Write / verify `schemas/*.schema.json`, generated from the engine's zod schemas |
 | `npm run db:migrate` / `db:types` / `db:link` | Apply the consolidated schema / regen types / link |
 | `npm run stripe:setup` | Idempotent Stripe products/prices/meters |
 
@@ -95,6 +97,8 @@ src/app/(account)         account + subscription management
 src/app/(app)             the workspace (/workspace) + personal /billing and /settings
 src/app/api               workspace translate, Stripe webhooks, proxy usage callback
 packages/engine           the generation engine (own package): model, kinds, terraform, hcl, receipts
+packages/cli              the `terragram` command line, bundled into one file over the engine
+schemas                   open JSON Schemas (Apache-2.0) for the model and the evidence receipt
 src/features/workspace    the app's side of it: store, actions, managed inference, signing
 src/features/billing      Stripe metering, plan flip, managed-model proxy mint
 src/features/account      auth/org controllers, action guards
@@ -102,10 +106,42 @@ src/libs                  Supabase / Stripe clients, rate limiter
 supabase/migrations       the consolidated schema (single database.sql)
 ```
 
+## Command line and schemas
+
+`packages/cli` is a `terragram` command over the same deterministic engine the workspace uses. It
+runs offline with no model and no account, and builds into one file with no runtime dependencies
+(Node 24 or later). Not published yet: build it with `npm run build:packages` and run
+`node packages/cli/dist/terragram.mjs`.
+
+```bash
+terragram generate --prompt "A web app with a Postgres database" --cloud aws -o out/   # Terraform + model.json
+terragram generate --mermaid diagram.mmd --tofu -o out/                               # from a Mermaid flowchart
+terragram parse infra/ -o model.json                                                  # Terraform -> model
+terragram render model.json -o diagram.svg
+terragram explain model.json                                                          # plain-English description
+terragram verify bundle/ --key signer.pem                                             # offline receipt check
+```
+
+`verify` reports "verified" only when the content hash recomputed from `model.json` and `plan/`
+matches **and** the receipt's signature verifies against a public key you hold: `--key signer.pem`,
+or `--trust keys.json` (a JSON object of key id to PEM, picked by the receipt's key id). The key must
+come from outside the bundle; `signing-key.pem` inside it is never used, since whoever alters a
+bundle can swap the key. The key the receipt carries must be the trusted one. An unsigned receipt
+fails; `--allow-unsigned` checks the hashes only and prints `UNSIGNED`, which is not a pass.
+
+Exit status is 0 on success, 1 when a command fails (including a receipt that does not verify)
+and 2 for bad arguments; `--json` prints a machine-readable result where it helps.
+
+The documents it reads and writes have JSON Schemas under [`schemas/`](schemas/):
+`model.v1.schema.json` (`terragram.model/v1`) and `receipt.v2.schema.json`
+(`terragram.receipt/v2`). They are Apache-2.0, so a tool can build against the formats without
+taking on the AGPL, and they are generated, not hand-written.
+
 ## Verification & CI
 
 The gates (all run in CI — `.github/workflows/ci.yml`): `tsc --noEmit`, Biome, `next build`,
-`npm test`, and the self-test. Biome handles linting only (its formatter is off; there is no
+`npm test`, the self-test, and a packages job (schemas current, CLI and engine builds, the CLI
+matching the app's output). Biome handles linting only (its formatter is off; there is no
 formatter step — match the surrounding style by hand).
 
 ## Security
