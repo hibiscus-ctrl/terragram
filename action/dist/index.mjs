@@ -23355,10 +23355,10 @@ function createWorkflow(host) {
     /**
      * A plain log line. A line that starts with `::` would be read by the runner as a
      * workflow command, and some of what is logged (component labels from a model file)
-     * comes from a pull request, so it is indented rather than passed through.
+     * comes from a pull request, so such a line is prefixed with "| " rather than passed through.
      */
     log(line) {
-      const safe = line.split(/\r\n|\r|\n|\u2028|\u2029/).map((part) => part.trimStart().startsWith("::") ? `| ${part}` : part).join("\n");
+      const safe = line.split(/\r\n|\r|\n|\u2028|\u2029/).map((part) => /^\s*(::|##\[)/.test(part) ? `| ${part}` : part).join("\n");
       host.stdout(`${safe}
 `);
     },

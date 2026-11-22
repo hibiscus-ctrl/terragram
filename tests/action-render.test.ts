@@ -246,9 +246,9 @@ describe("workflow log lines", () => {
       git: () => ({ ok: false, stdout: "" }),
       now: () => new Date(0),
     } as unknown as Parameters<typeof createWorkflow>[0]);
-    workflow.log("label\n::add-mask::x\r::set-env name=A::b\u2028  ::error::c\r\n::warning::d");
+    workflow.log("label\n::add-mask::x\r::set-env name=A::b\u2028  ::error::c\r\n::warning::d\n##[add-mask]e\r  ##[error]f");
     for (const line of out.split("\n")) {
-      assert.ok(!line.trimStart().startsWith("::"), `a command got through: ${JSON.stringify(line)}`);
+      assert.ok(!/^\s*(::|##\[)/.test(line), `a command got through: ${JSON.stringify(line)}`);
     }
     assert.ok(!out.includes("\r"));
   });

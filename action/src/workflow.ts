@@ -69,14 +69,15 @@ export function createWorkflow(host: Host) {
     /**
      * A plain log line. A line that starts with `::` would be read by the runner as a
      * workflow command, and some of what is logged (component labels from a model file)
-     * comes from a pull request, so it is indented rather than passed through.
+     * comes from a pull request, so such a line is prefixed with "| " rather than passed through.
      */
     log(line: string) {
-      // Every physical line is checked: a label may hold \n or a bare \r, and the runner
+      // Every physical line is checked for both command syntaxes (`::cmd::` and the legacy
+      // `##[cmd]`), which the runner reads only at the start of a line. A label may hold \n or a bare \r, and the runner
       // treats either as a line break before reading a workflow command.
       const safe = line
         .split(/\r\n|\r|\n|\u2028|\u2029/)
-        .map((part) => (part.trimStart().startsWith("::") ? `| ${part}` : part))
+        .map((part) => (/^\s*(::|##\[)/.test(part) ? `| ${part}` : part))
         .join("\n");
       host.stdout(`${safe}\n`);
     },
