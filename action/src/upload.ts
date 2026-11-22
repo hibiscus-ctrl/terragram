@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * The seam for sending a receipt to a control plane (Callisto).
+ * The seam for sending a receipt to a control plane.
  *
  * The ingest route does not exist yet, so nothing is sent: the Action accepts
  * `control-plane-url`, says so, and carries on. When the route lands, this is the only
