@@ -80,9 +80,14 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
   `npm run schemas:gen` from `modelDocumentSchema` (`model.ts`) and `evidenceReceiptSchema`
   (`receipt-schema.ts`); CI runs `schemas:check`. Change a document's shape in the zod schema, regenerate
   and commit the schema. `tests/schemas.test.ts` validates real documents with Ajv and ties the
-  receipt schema to the `EvidenceReceipt` type. Ids are `terragram.model/v1` and `terragram.receipt/v2`
+  receipt schema to the `EvidenceReceipt` type. Ids are `diagram.model/v1` and `diagram.receipt/v2`
   (dots, as the receipt always has); `$id` URLs sit under the repository for now and will move with
-  the name.
+  the name. `terragram verify` still accepts receipts carrying `terragram.receipt/v1` and `/v2`
+  (`VERIFIABLE_RECEIPT_SCHEMAS`); the model reader accepts only `diagram.model/v1`.
+- **Codename versus wire names.** `terragram` is the repository, package and command name for now.
+  Anything that lands in a document, generated code or a customer's repository says `diagram`:
+  the schema ids, the `ManagedBy = "diagram"` tag, the Action's `diagram.json`, `_diagram/` and
+  comment marker. Do not write the codename into any of those.
 
 ## Graph rendering: `terragram-engine/graph`, `terragram graph`
 
@@ -108,7 +113,7 @@ the CLI, so its output is a contract.
 ## The Action: `action/`
 
 `hibiscus-ctrl/terragram/action@<sha>` (`action/action.yml`, runtime `node24`) is a second host of the engine. It reads
-a model file (default `terragram.json`), regenerates the Terraform in memory and either fails on drift (`check`, with a
+a model file (default `diagram.json`), regenerates the Terraform in memory and either fails on drift (`check`, with a
 unified diff) or writes the files (`write`); on a pull request it posts one sticky comment with the model diff as Mermaid.
 Usage and the security notes are in `action/README.md`.
 
