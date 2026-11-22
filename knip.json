@@ -46,6 +46,15 @@
       "project": [
         "src/**/*.ts"
       ]
+    },
+    "action": {
+      "entry": [
+        "src/main.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "*.mjs"
+      ]
     }
   },
   "exclude": [

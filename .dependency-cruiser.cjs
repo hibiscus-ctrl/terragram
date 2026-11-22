@@ -87,7 +87,7 @@ module.exports = {
         "first, so a binding can be read before it is initialised. Move the shared piece " +
         "into a module both sides import.",
       severity: "error",
-      from: { path: "^(src|packages/engine/src|packages/cli/src)/" },
+      from: { path: "^(src|packages/engine/src|packages/cli/src|action/src)/" },
       to: { circular: true },
     },
     {
@@ -155,6 +155,29 @@ module.exports = {
         "or from node:, or add it here deliberately.",
       severity: "error",
       from: { path: "^packages/cli/src/" },
+      to: {
+        dependencyTypes: ["npm", "npm-dev", "npm-optional", "npm-peer", "npm-bundled", "npm-no-pkg", "npm-unknown"],
+      },
+    },
+    {
+      name: "action-no-app-imports",
+      comment:
+        "action/ imports something from the app (src/). The Action is built into one committed " +
+        "file that runs with nothing around it, so it can use the engine's public exports " +
+        "(`terragram-engine/<subpath>`) and Node, and nothing of this app.",
+      severity: "error",
+      from: { path: "^action/" },
+      to: { path: "^src/" },
+    },
+    {
+      name: "action-no-npm-imports",
+      comment:
+        "action/ imports an npm package. Its bundle has no runtime dependencies and the runner " +
+        "does not run `npm ci`: the engine (a workspace, which dependency-cruiser sees as a " +
+        "local path) is bundled in, and anything else would have to be bundled too. Use the " +
+        "engine's exports or node:, or add the package here deliberately.",
+      severity: "error",
+      from: { path: "^action/src/" },
       to: {
         dependencyTypes: ["npm", "npm-dev", "npm-optional", "npm-peer", "npm-bundled", "npm-no-pkg", "npm-unknown"],
       },

@@ -5,6 +5,8 @@
     "includes": [
       "src/**/*.{ts,tsx,js,jsx,mjs,cjs}",
       "packages/**/*.{ts,mts,mjs,js}",
+      "action/**/*.{ts,mts,mjs,js}",
+      "!action/dist",
       "scripts/**/*.{ts,mts,mjs,js}",
       "tests/**/*.{ts,tsx,mts,mjs,js}",
       "cypress/**/*.{ts,mts,mjs,js}",

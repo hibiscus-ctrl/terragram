@@ -1,0 +1,58 @@
+name: Terragram
+description: Keep a repository's Terraform in line with a Terragram model file, and show what a pull request changes in the model.
+author: hibiscus-ctrl
+
+branding:
+  icon: git-pull-request
+  color: green
+
+inputs:
+  model:
+    description: Path to the Terragram model file (terragram.model/v1), relative to the workspace.
+    required: false
+    default: terragram.json
+  terraform-dir:
+    description: Directory holding the generated Terraform, relative to the workspace.
+    required: false
+    default: infra/
+  mode:
+    description: >-
+      check regenerates the Terraform in memory and fails, printing a unified diff, when the files in
+      terraform-dir differ. write writes the regenerated files to terraform-dir; the workflow decides
+      whether to commit them.
+    required: false
+    default: check
+  comment:
+    description: >-
+      On a pull_request run, post or update one sticky comment with the model diff as a Mermaid
+      flowchart, a summary table and the receipt hash. Needs pull-requests: write.
+    required: false
+    default: "true"
+  signing-key:
+    description: >-
+      Optional Ed25519 private key (PKCS#8 PEM, or the PEM base64-encoded), from a secret. When set,
+      the receipt is signed. The key is masked in the log and never written anywhere.
+    required: false
+  control-plane-url:
+    description: >-
+      Optional control-plane address for receipts. Accepted, but uploading is not yet supported:
+      nothing is sent.
+    required: false
+  github-token:
+    description: >-
+      Token for the pull-request comment. The default is the job token, which needs
+      pull-requests: write.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  changed:
+    description: "true when check found the Terraform differs from the model, or write changed a file; otherwise false."
+  receipt-path:
+    description: Workspace-relative path of the evidence receipt (_terragram/receipt.json). The bundle beside it verifies with terragram verify.
+  content-hash:
+    description: The receipt's content hash (sha256:...) over the model and the generated Terraform.
+
+runs:
+  using: node24
+  main: dist/index.mjs

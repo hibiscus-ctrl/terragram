@@ -1,0 +1,17 @@
+{
+  "name": "terragram-action",
+  "version": "0.1.0",
+  "description": "A GitHub Action that keeps a repository's Terraform in line with a Terragram model file. One committed bundle, no runtime dependencies.",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "terragram-engine": "*"
+  }
+}
