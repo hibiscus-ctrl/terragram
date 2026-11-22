@@ -99,7 +99,7 @@ function buildRequest(model: string, prompt: string, prev: InfraModel) {
     .join(", ");
 
   const system = [
-    "You are Terragram's architecture translator for the UK public sector.",
+    "You are an architecture translator for the UK public sector.",
     "Turn the user's plain-English description into cloud infrastructure components,",
     `choosing only from this vocabulary: ${MODEL_KIND_IDS.map((k) => `${k} = ${KIND_LABELS[k]}`).join("; ")}.`,
     "Always call the emit_infrastructure tool. Include every component the design needs",

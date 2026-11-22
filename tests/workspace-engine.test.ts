@@ -148,7 +148,7 @@ describe("buildEvidence", () => {
     const b = buildEvidence(model, "azure", out, "deterministic");
     assert.equal(a.resourceCount, 4);
     assert.equal(a.previewId, b.previewId);
-    assert.ok(a.sbom.some((s) => s.name === "terragram-engine"));
+    assert.ok(a.sbom.some((s) => s.name === "diagram-engine"));
   });
 
   it("changes the preview id when the target cloud changes", () => {

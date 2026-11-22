@@ -10,6 +10,10 @@ import { verifyBundle } from "terragram-engine/verify";
 
 import { CommandError, type Io, isDirectory, isFile, listFiles, readText, UsageError } from "../io.ts";
 
+/** The schema ids receipts carried before they were renamed to `diagram.receipt/*`.
+ *  They hash and sign exactly as today's do, so they still verify; none is written. */
+const LEGACY_RECEIPT_SCHEMAS = ["terragram.receipt/v1", "terragram.receipt/v2"] as const;
+
 const VERIFY_HELP = `Usage: terragram verify <receipt.json | bundle-dir> --key <pem> [options]
        terragram verify <receipt.json | bundle-dir> --trust <file> [options]
        terragram verify <receipt.json | bundle-dir> --allow-unsigned
@@ -137,7 +141,7 @@ export async function verify(argv: string[], io: Io): Promise<number> {
 
   const receiptPath = isDirectory(io, target) ? join(target, "receipt.json") : target;
   const entries = bundleEntries(io, receiptPath);
-  const report = await verifyBundle(entries);
+  const report = await verifyBundle(entries, { alsoAccept: LEGACY_RECEIPT_SCHEMAS });
   if (report.error || !report.receipt) throw new CommandError(report.error ?? "receipt.json could not be read");
   const receipt = report.receipt;
   const receiptBytes = entries[0]?.content ?? "";

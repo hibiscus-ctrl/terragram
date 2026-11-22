@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { EngineKind } from "./engine.ts";
-import { ENGINE_VERSION } from "./evidence.ts";
+import { ENGINE_NAME, ENGINE_VERSION } from "./evidence.ts";
 import { explainModel } from "./explain.ts";
 import { assessFeasibility } from "./feasibility.ts";
 import type { ManagedModelId } from "./managed-models.ts";
@@ -86,7 +86,7 @@ export async function buildEvidenceReceipt(
   });
 
   const sbom: SbomEntry[] = [
-    { name: "terragram-engine", version: ENGINE_VERSION },
+    { name: ENGINE_NAME, version: ENGINE_VERSION },
     { name: terraform.provider, version: terraform.providerVersion },
     ...terraform.modules.map((m) => ({ name: m.source, version: m.version })),
   ];

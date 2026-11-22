@@ -56,7 +56,7 @@ const toolOutputSchema = z.object({
 
 export function buildImageRequest(model: string, image: DiagramImage) {
   const system = [
-    "You are Terragram's diagram reader for the UK public sector.",
+    "You are a cloud architecture diagram reader for the UK public sector.",
     "The user has supplied a picture of a cloud architecture diagram. Read every box and every",
     "arrow. Always call the emit_diagram tool.",
     "For each box give a short 'ref' (a1, a2, …), its 'label' as written in the picture, and a 'kind'",
