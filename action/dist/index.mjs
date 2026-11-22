@@ -23351,16 +23351,25 @@ function createWorkflow(host) {
     host.stdout(`::${name}${props ? ` ${props}` : ""}::${escapeData(message)}
 `);
   };
+  const untrusted = (lines2) => {
+    if (lines2.length === 0) return;
+    const token = randomUUID().replaceAll("-", "");
+    const text = lines2.join("\n").replace(/\r\n|\r|\u2028|\u2029|\u0085/g, "\n");
+    host.stdout(`::stop-commands::${token}
+${text}
+::${token}::
+`);
+  };
   return {
     /**
-     * A plain log line. A line that starts with `::` would be read by the runner as a
-     * workflow command, and some of what is logged (component labels from a model file)
-     * comes from a pull request, so such a line is prefixed with "| " rather than passed through.
+     * A plain log line. Some of what is logged (component labels, diffs) comes from a
+     * pull request, and the runner reads workflow commands in both syntaxes (`::cmd::`,
+     * and the legacy `##[cmd]` anywhere in a line). Pattern-matching that is fragile, so
+     * the text is printed inside a `stop-commands` window with an unguessable token: the
+     * runner processes no command at all until the token is echoed back.
      */
     log(line) {
-      const safe = line.split(/\r\n|\r|\n|\u2028|\u2029/).map((part) => /^\s*(::|##\[)/.test(part) ? `| ${part}` : part).join("\n");
-      host.stdout(`${safe}
-`);
+      untrusted([line]);
     },
     notice(message) {
       command("notice", message);
@@ -23377,7 +23386,7 @@ function createWorkflow(host) {
     },
     group(title, lines2) {
       command("group", title);
-      for (const line of lines2) this.log(line);
+      untrusted(lines2);
       host.stdout("::endgroup::\n");
     },
     setOutput(name, value) {

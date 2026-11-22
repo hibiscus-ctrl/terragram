@@ -234,7 +234,7 @@ describe("renderReport", () => {
 });
 
 describe("workflow log lines", () => {
-  it("neutralises workflow commands on every physical line, whatever the line break", async () => {
+  it("prints untrusted text only inside a stop-commands window with a fresh token", async () => {
     const { createWorkflow } = await import("../action/src/workflow.ts");
     let out = "";
     const workflow = createWorkflow({
@@ -246,10 +246,30 @@ describe("workflow log lines", () => {
       git: () => ({ ok: false, stdout: "" }),
       now: () => new Date(0),
     } as unknown as Parameters<typeof createWorkflow>[0]);
-    workflow.log("label\n::add-mask::x\r::set-env name=A::b\u2028  ::error::c\r\n::warning::d\n##[add-mask]e\r  ##[error]f");
+    const hostile = "label\n::add-mask::x\r::set-env name=A::b\u2028  ::error::c\r\n::warning::d\nok ##[add-mask]e\r\u0085##[error]f";
+    workflow.log(hostile);
+    workflow.log(hostile);
+
+    // Read the output the way the runner does: commands are off between
+    // ::stop-commands::<token> and ::<token>::.
+    const tokens: string[] = [];
+    let stopped: string | null = null;
     for (const line of out.split("\n")) {
-      assert.ok(!/^\s*(::|##\[)/.test(line), `a command got through: ${JSON.stringify(line)}`);
+      if (stopped !== null) {
+        if (line === `::${stopped}::`) stopped = null;
+        continue;
+      }
+      const start = /^::stop-commands::([0-9a-f]{32})$/.exec(line);
+      if (start?.[1]) {
+        stopped = start[1];
+        tokens.push(start[1]);
+        continue;
+      }
+      assert.ok(!line.includes("::") && !line.includes("##["), `a command got through: ${JSON.stringify(line)}`);
     }
+    assert.equal(stopped, null, "every window is closed");
+    assert.equal(tokens.length, 2);
+    assert.notEqual(tokens[0], tokens[1], "a fresh token per call");
     assert.ok(!out.includes("\r"));
   });
 });
