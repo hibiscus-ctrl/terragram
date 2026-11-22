@@ -214,9 +214,9 @@ describe("receipt provenance", () => {
       "managed",
       "alice",
       "2026-09-13T00:00:00Z",
-      { inferenceModel: "claude-opus-5" },
+      { inferenceModel: "claude-opus-5-5" },
     );
-    assert.equal(opus.receipt.provenance.model, "claude-opus-5");
+    assert.equal(opus.receipt.provenance.model, "claude-opus-5-5");
     assert.notEqual(opus.receipt.provenance.model, resolvedModel());
 
     // The deterministic engine still records null however it is called — no model
@@ -227,7 +227,7 @@ describe("receipt provenance", () => {
       "deterministic",
       "alice",
       "2026-09-13T00:00:00Z",
-      { inferenceModel: "claude-opus-5" },
+      { inferenceModel: "claude-opus-5-5" },
     );
     assert.equal(deterministic.receipt.provenance.model, null);
   });

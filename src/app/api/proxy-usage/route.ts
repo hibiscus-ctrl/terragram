@@ -23,6 +23,10 @@ const recordProxyUsage = makeProxyUsage({
 
 const usageSchema = z.object({
   token: z.string().min(1),
+  // The app the token was minted for. The core refuses a report that lacks it or names
+  // another product (the gateway before this field sent none: deploy the gateway first);
+  // optional here only so that refusal is logged and answered by name.
+  product: z.string().max(64).optional(),
   // the proxy's stable per-call id. Dedups a retried report so it can't
   // double-bill. Optional only to tolerate a deploy-skew window with an older proxy.
   usageId: z.string().min(1).max(200).optional(),

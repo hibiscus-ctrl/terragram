@@ -89,12 +89,13 @@ describe("mintProxyToken", () => {
   });
 
   it("round-trips the claims it was given", () => {
-    const minted = mintProxyToken("org-1", "claude-opus-5", 2_500);
+    const minted = mintProxyToken("org-1", "claude-opus-5-5", 2_500);
     const claims = verifyProxyToken(minted.token);
     assert.equal(claims?.org, "org-1");
-    assert.equal(claims?.model, "claude-opus-5");
+    assert.equal(claims?.model, "claude-opus-5-5");
     assert.equal(claims?.budget_pence, 2_500);
     assert.equal(claims?.scope, "model-proxy");
+    assert.equal(claims?.product, "terragram");
     assert.equal(minted.endpoint, URL);
   });
 
@@ -123,7 +124,7 @@ describe("mintProxyToken", () => {
 
 describe("verifyProxyToken — what it must reject", () => {
   it("rejects a token signed with a different secret", () => {
-    assert.equal(verifyProxyToken(signed({ org: "o", model: null, scope: "model-proxy", exp: future() }, OTHER_SECRET)), null);
+    assert.equal(verifyProxyToken(signed({ org: "o", model: null, scope: "model-proxy", product: "terragram", exp: future() }, OTHER_SECRET)), null);
   });
 
   it("rejects an edited payload", () => {
@@ -149,9 +150,19 @@ describe("verifyProxyToken — what it must reject", () => {
   });
 
   it("rejects claims that are structurally wrong", () => {
-    assert.equal(verifyProxyToken(signed({ org: "", model: null, scope: "model-proxy", exp: future() })), null);
-    assert.equal(verifyProxyToken(signed({ model: null, scope: "model-proxy", exp: future() })), null);
-    assert.equal(verifyProxyToken(signed({ org: "o", model: null, scope: "model-proxy", exp: "soon" })), null);
+    assert.equal(verifyProxyToken(signed({ org: "", model: null, scope: "model-proxy", product: "terragram", exp: future() })), null);
+    assert.equal(verifyProxyToken(signed({ model: null, scope: "model-proxy", product: "terragram", exp: future() })), null);
+    assert.equal(verifyProxyToken(signed({ org: "o", model: null, scope: "model-proxy", product: "terragram", exp: "soon" })), null);
+  });
+
+  it("rejects a token with no product claim, or one minted for the other product", () => {
+    // The gateway serves both products on one signing secret, and the claim is what
+    // keeps one product's token from being spent against the other's meter.
+    const claims = { org: "o", model: null, scope: "model-proxy", exp: future() };
+    assert.equal(verifyProxyToken(signed(claims)), null);
+    assert.equal(verifyProxyToken(signed({ ...claims, product: "infraweaver" })), null);
+    assert.equal(verifyProxyToken(signed({ ...claims, product: "other" })), null);
+    assert.ok(verifyProxyToken(signed({ ...claims, product: "terragram" })));
   });
 
   it("rejects anything not carrying the prefix", () => {
@@ -202,7 +213,7 @@ describe("verifyProxyToken — what it must reject", () => {
 describe("verifyProxyToken — the deploy-skew allowance", () => {
   it("still accepts a token minted before the spend cap shipped", () => {
     // Tokens without `budget_pence` are in flight during a deploy; they must verify.
-    const claims = verifyProxyToken(signed({ org: "o", model: null, scope: "model-proxy", exp: future() }));
+    const claims = verifyProxyToken(signed({ org: "o", model: null, scope: "model-proxy", product: "terragram", exp: future() }));
     assert.equal(claims?.org, "o");
     assert.equal(claims?.budget_pence, undefined);
   });

@@ -4,9 +4,11 @@
  * Terragram mints the managed-model token in `src/features/billing/proxy.ts` and
  * the EU gateway verifies it in `infraweaver-proxy/src/token.ts`. The two share no
  * code, so the fixture does: the same secret, the same claims, the exact token
- * bytes. The file is a byte-for-byte copy of the gateway's own fixture — there is
- * one gateway, so there is one wire format — and the last test re-reads the
- * sibling checkout to prove the copy has not drifted.
+ * bytes. The gateway serves both products, so there is one wire format, and every
+ * token carries a `product` claim. The file is a copy of the gateway's own fixture
+ * with that one claim changed (`terragram` here, `infraweaver` there) and the token
+ * re-signed to match; the last test re-reads the sibling checkout to prove nothing
+ * else has drifted.
  *
  * When `../infraweaver-proxy` is checked out, a token minted HERE is also handed
  * to the gateway's real verifier. That is the assertion that matters most: it
@@ -28,6 +30,7 @@ const contract = JSON.parse(own) as {
     org: string;
     model: string;
     scope: "model-proxy";
+    product: "terragram";
     iat: number;
     exp: number;
     budget_pence: number;
@@ -66,6 +69,7 @@ describe("proxy-token contract", () => {
     assert.equal(claims.org, contract.claims.org);
     assert.equal(claims.model, contract.claims.model);
     assert.equal(claims.scope, contract.claims.scope);
+    assert.equal(claims.product, "terragram");
     assert.equal(claims.exp, contract.claims.exp);
     assert.equal(claims.budget_pence, contract.claims.budget_pence);
   });
@@ -94,7 +98,7 @@ describe("proxy-token contract", () => {
 
   it("mints iat in whole seconds, one TTL before exp", () => {
     const before = Math.floor(Date.now() / 1000);
-    const minted = withProxyEnv(() => mintProxyToken("org_contract_fixture", "claude-sonnet-5", 250));
+    const minted = withProxyEnv(() => mintProxyToken("org_contract_fixture", "claude-sonnet-5-5", 250));
     const after = Math.floor(Date.now() / 1000);
     const { iat, exp } = payloadOf(minted.token) as { iat: number; exp: number };
     assert.ok(Number.isInteger(iat) && iat >= before && iat <= after, `iat ${iat} is not now in seconds`);
@@ -118,21 +122,29 @@ describe("proxy-token contract", () => {
         nowMs?: number,
       ) => Record<string, unknown> | null;
     };
-    const minted = withProxyEnv(() => mintProxyToken("org_contract_fixture", "claude-sonnet-5", 250));
+    const minted = withProxyEnv(() => mintProxyToken("org_contract_fixture", "claude-sonnet-5-5", 250));
     const claims = gatewayVerify(minted.token, contract.secret);
     assert.ok(claims, "the gateway rejects a token Terragram minted");
     assert.equal(claims.org, "org_contract_fixture");
-    assert.equal(claims.model, "claude-sonnet-5");
+    assert.equal(claims.model, "claude-sonnet-5-5");
     assert.equal(gatewayVerify(minted.token, `${contract.secret}x`), null);
   });
 
-  it("matches the sibling repo's copy byte-for-byte", (t) => {
+  it("matches the sibling repo's copy in everything but the product", (t) => {
     let sibling: string;
     try {
       sibling = readFileSync(join(proxyDir, "contracts", "proxy-token.json"), "utf8");
     } catch {
       return t.skip("../infraweaver-proxy not checked out");
     }
-    assert.equal(sibling, own);
+    // The two copies cannot be byte-identical any more: the product claim differs, so
+    // the signed token does too. Everything the gateway reads besides it must agree.
+    const theirs = JSON.parse(sibling) as { secret: string; claims: Record<string, unknown> };
+    const { product: ownProduct, ...ownClaims } = contract.claims;
+    const { product: theirProduct, ...theirClaims } = theirs.claims;
+    assert.equal(ownProduct, "terragram");
+    assert.equal(theirProduct, "infraweaver");
+    assert.equal(theirs.secret, contract.secret);
+    assert.deepEqual(theirClaims, ownClaims);
   });
 });

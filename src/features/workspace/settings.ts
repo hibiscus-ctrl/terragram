@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { DEFAULT_MANAGED_MODEL, MANAGED_MODEL_IDS } from "./managed-models.ts";
+import {
+  DEFAULT_MANAGED_MODEL,
+  MANAGED_MODEL_IDS,
+  migrateManagedModelId,
+} from "./managed-models.ts";
 import { CLOUDS } from "./model.ts";
 import { WORKSPACE_MODES } from "./modes.ts";
 
@@ -41,7 +45,9 @@ export const workspaceSettingsSchema = z.object({
   /** Which managed model a managed turn runs on. Inert where managed inference is
    *  off — the deterministic engine takes no model, which is why the settings page
    *  hides this control there rather than offering a choice that changes nothing. */
-  inferenceModel: z.enum(MANAGED_MODEL_IDS).default(DEFAULT_MANAGED_MODEL),
+  inferenceModel: z
+    .preprocess(migrateManagedModelId, z.enum(MANAGED_MODEL_IDS))
+    .default(DEFAULT_MANAGED_MODEL),
 });
 
 export type WorkspaceSettings = z.infer<typeof workspaceSettingsSchema>;

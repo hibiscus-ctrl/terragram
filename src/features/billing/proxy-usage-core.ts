@@ -1,3 +1,4 @@
+import { USAGE_PRODUCT } from "./managed-meter.ts";
 import type { ManagedUsageResult } from "./managed-usage.ts";
 import type { TokenUsage } from "./model-cost.ts";
 import type { ProxyTokenClaims } from "./proxy.ts";
@@ -22,6 +23,10 @@ export const PROXY_USAGE_EXPIRY_GRACE_MS = 15 * 60_000;
 
 export type ProxyUsageBody = {
   token: string;
+  /** The app the token was minted for; the gateway sends it so each Cloud can check a
+   *  report reached the right one. Typed optional so a report lacking it is answered by
+   *  name rather than as a malformed body. */
+  product?: string | undefined;
   usageId?: string | undefined;
   model?: string | undefined;
   inputTokens: number;
@@ -43,7 +48,8 @@ export type ProxyUsageDeps = {
 
 export type ProxyUsageResult =
   | { ok: true; body: { ok: true } & ManagedUsageResult }
-  | { ok: false; status: 401; code: "invalid_or_expired_proxy_token" };
+  | { ok: false; status: 401; code: "invalid_or_expired_proxy_token" }
+  | { ok: false; status: 400; code: "product_required" | "wrong_product" };
 
 export function makeProxyUsage(deps: ProxyUsageDeps) {
   // Deliberately no per-org rate limit: a limit keyed on the org the usage is
@@ -53,6 +59,23 @@ export function makeProxyUsage(deps: ProxyUsageDeps) {
     body: ProxyUsageBody,
     nowMs: number = Date.now(),
   ): Promise<ProxyUsageResult> {
+    // One gateway serves several apps and reports to the Cloud of the token's product.
+    // A report for another product, or one naming none, is refused before anything is
+    // recorded: it would land on this app's meter and bill this app's org for someone
+    // else's call. A logged 400, so a mis-routed gateway is seen.
+    if (body.product !== USAGE_PRODUCT) {
+      deps.warn("usage report refused — it is not for this product", {
+        reported: body.product ?? null,
+        expected: USAGE_PRODUCT,
+        usageId: body.usageId ?? null,
+      });
+      return {
+        ok: false,
+        status: 400,
+        code: body.product === undefined ? "product_required" : "wrong_product",
+      };
+    }
+
     const claims = deps.verifyProxyToken(body.token, nowMs - PROXY_USAGE_EXPIRY_GRACE_MS);
     if (!claims) return { ok: false, status: 401, code: "invalid_or_expired_proxy_token" };
 

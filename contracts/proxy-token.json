@@ -1,13 +1,14 @@
 {
-  "note": "Cross-repo contract for the tmpx_ managed-model token. The Cloud MINTS (infraweaver-ui src/features/billing/proxy.ts) and the EU gateway VERIFIES (infraweaver-proxy src/token.ts); the two share no code, so a byte-for-byte fixture is the only thing that pins them. The secret is a fixture value, never a real key. Committed in BOTH repos; each side reads its own copy and byte-compares the sibling's when checked out.",
+  "note": "Cross-repo contract for the tmpx_ managed-model token. Terragram MINTS (src/features/billing/proxy.ts) and the EU gateway VERIFIES (infraweaver-proxy src/token.ts); the two share no code, so a fixture is the only thing that pins them. The gateway serves two products and every token carries a `product` claim: this copy carries \"terragram\", the gateway's own copy (and infraweaver-ui's) carries \"infraweaver\". Everything else is identical, and the sibling check compares everything except `product` and the token bytes it derives. The secret is a fixture value, never a real key.",
   "secret": "contract-fixture-secret-not-a-real-key",
   "claims": {
     "org": "org_contract_fixture",
     "model": "eu.anthropic.claude-opus",
     "scope": "model-proxy",
+    "product": "terragram",
     "iat": 4102441200,
     "exp": 4102444800,
     "budget_pence": 12345
   },
-  "token": "tmpx_eyJvcmciOiJvcmdfY29udHJhY3RfZml4dHVyZSIsIm1vZGVsIjoiZXUuYW50aHJvcGljLmNsYXVkZS1vcHVzIiwic2NvcGUiOiJtb2RlbC1wcm94eSIsImlhdCI6NDEwMjQ0MTIwMCwiZXhwIjo0MTAyNDQ0ODAwLCJidWRnZXRfcGVuY2UiOjEyMzQ1fQ.Wv3ANsHY-rRbDuztsAjshHndTnPNTex9bVnPwd24E5A"
+  "token": "tmpx_eyJvcmciOiJvcmdfY29udHJhY3RfZml4dHVyZSIsIm1vZGVsIjoiZXUuYW50aHJvcGljLmNsYXVkZS1vcHVzIiwic2NvcGUiOiJtb2RlbC1wcm94eSIsInByb2R1Y3QiOiJ0ZXJyYWdyYW0iLCJpYXQiOjQxMDI0NDEyMDAsImV4cCI6NDEwMjQ0NDgwMCwiYnVkZ2V0X3BlbmNlIjoxMjM0NX0.3mPL4n12ackNcpqfH5OXl5wamBG9mHc2batLkNKWtdk"
 }

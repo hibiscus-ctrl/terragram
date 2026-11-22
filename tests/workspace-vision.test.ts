@@ -14,7 +14,7 @@ const MINT_DEPS = {
 
 describe("diagram picture request", () => {
   it("sends the image as a base64 block and forces the emit_diagram tool", () => {
-    const req = buildImageRequest("claude-sonnet-5", IMAGE) as {
+    const req = buildImageRequest("claude-sonnet-5-5", IMAGE) as {
       messages: Array<{ content: Array<{ type: string; source?: { media_type: string; data: string } }> }>;
       tool_choice: { name: string };
       tools: Array<{ input_schema: { properties: { components: { items: { properties: { kind: { enum: unknown[] } } } } } } }>;
