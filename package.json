@@ -4,12 +4,14 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "action"
   ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "build:packages": "npm run build -w terragram-engine -w terragram",
+    "build:action": "npm run build -w terragram-action",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
@@ -17,7 +19,8 @@
     "typecheck:e2e": "tsc -p cypress/tsconfig.json --noEmit",
     "typecheck:engine": "tsc -p packages/engine --noEmit",
     "typecheck:cli": "tsc -p packages/cli --noEmit",
-    "typecheck:all": "tsc --noEmit && tsc -p packages/engine --noEmit && tsc -p packages/cli --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.scripts.json --noEmit && tsc -p cypress/tsconfig.json --noEmit",
+    "typecheck:action": "tsc -p action --noEmit",
+    "typecheck:all": "tsc --noEmit && tsc -p packages/engine --noEmit && tsc -p packages/cli --noEmit && tsc -p action --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.scripts.json --noEmit && tsc -p cypress/tsconfig.json --noEmit",
     "lint": "biome check .",
     "lint:ci": "biome ci .",
     "lint:fix": "biome check --write .",
@@ -58,7 +61,7 @@
     "check:colours": "node scripts/check-colour-tokens.mjs",
     "check:design-doc": "node scripts/check-design-doc.mjs",
     "check:design": "npm run check:contrast && npm run check:colours && npm run check:design-doc",
-    "check:imports": "depcruise src packages/engine/src packages/cli/src --output-type err-long && node scripts/check-engine-env.mjs",
+    "check:imports": "depcruise src packages/engine/src packages/cli/src action/src --output-type err-long && node scripts/check-engine-env.mjs",
     "knip": "knip",
     "stripe:setup": "env-cmd -f ./.env.local node --use-system-ca scripts/stripe-setup.mjs",
     "db:verify-auth": "env-cmd -f ./.env.local node --use-system-ca scripts/verify-auth.mjs",

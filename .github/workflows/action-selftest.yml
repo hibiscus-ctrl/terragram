@@ -1,0 +1,77 @@
+name: Action self-test
+
+# Runs the Action from this checkout (`uses: ./action`) over a fixture: a model file and
+# the Terraform the engine generates for it. The first step proves check mode passes on
+# matching Terraform; the second edits a copy and proves it fails, flags a change and
+# prints the diff. The Action runs from its committed bundle, so there is no install here;
+# ci.yml's `action-dist` job proves the bundle is what the source builds to.
+#
+# Only a change to the Action, the engine it bundles, the fixture or this file can move
+# the result, so only those run it.
+
+on:
+  pull_request:
+    paths:
+      - action/**
+      - packages/**
+      - tests/fixtures/action/**
+      - .github/workflows/action-selftest.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  selftest:
+    name: Check mode on the fixture
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Terraform matches the model
+        id: match
+        uses: ./action
+        with:
+          model: tests/fixtures/action/terragram.json
+          terraform-dir: tests/fixtures/action/infra
+          # The comment needs pull-requests: write, which this job does not hold.
+          comment: "false"
+
+      - name: Expect no change
+        env:
+          CHANGED: ${{ steps.match.outputs.changed }}
+          RECEIPT: ${{ steps.match.outputs.receipt-path }}
+          HASH: ${{ steps.match.outputs.content-hash }}
+        run: |
+          test "$CHANGED" = "false"
+          test -f "$RECEIPT"
+          case "$HASH" in sha256:*) ;; *) echo "unexpected content-hash: $HASH"; exit 1 ;; esac
+
+      - name: Drift the fixture's copy
+        run: |
+          cp -r tests/fixtures/action drifted
+          printf '\nresource "terraform_data" "rogue" {}\n' >> drifted/infra/main.tf
+
+      - name: Terraform no longer matches
+        id: drift
+        continue-on-error: true
+        uses: ./action
+        with:
+          model: drifted/terragram.json
+          terraform-dir: drifted/infra
+          comment: "false"
+
+      - name: Expect the check to fail and report the change
+        env:
+          OUTCOME: ${{ steps.drift.outcome }}
+          CHANGED: ${{ steps.drift.outputs.changed }}
+        run: |
+          test "$OUTCOME" = "failure"
+          test "$CHANGED" = "true"

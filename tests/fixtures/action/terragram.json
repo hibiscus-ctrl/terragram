@@ -1,0 +1,72 @@
+{
+  "schema": "terragram.model/v1",
+  "cloud": "aws",
+  "nodes": [
+    {
+      "id": "internet",
+      "category": "edge",
+      "kind": "internet",
+      "label": "Internet",
+      "flag": null
+    },
+    {
+      "id": "front-door",
+      "category": "network",
+      "kind": "front-door",
+      "label": "Front Door + WAF",
+      "flag": null
+    },
+    {
+      "id": "app-service",
+      "category": "compute",
+      "kind": "app-service",
+      "label": "App Service",
+      "flag": null
+    },
+    {
+      "id": "redis-cache",
+      "category": "storage",
+      "kind": "redis-cache",
+      "label": "Cache for Redis",
+      "flag": {
+        "reason": "Cache SKU and size were not specified in the prompt."
+      }
+    },
+    {
+      "id": "postgres",
+      "category": "storage",
+      "kind": "postgres",
+      "label": "PostgreSQL",
+      "flag": {
+        "reason": "Compute tier is ambiguous — confirm sizing before generating."
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "internet->front-door",
+      "source": "internet",
+      "target": "front-door",
+      "origin": "derived"
+    },
+    {
+      "id": "front-door->app-service",
+      "source": "front-door",
+      "target": "app-service",
+      "origin": "derived"
+    },
+    {
+      "id": "app-service->redis-cache",
+      "source": "app-service",
+      "target": "redis-cache",
+      "origin": "derived"
+    },
+    {
+      "id": "app-service->postgres",
+      "source": "app-service",
+      "target": "postgres",
+      "origin": "derived"
+    }
+  ],
+  "topology": "derived"
+}

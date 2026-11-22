@@ -30,3 +30,12 @@ rules:
   dangerous-triggers:
     ignore:
       - cla.yml
+
+  # action-selftest.yml runs this pull request's own copy of the Action with
+  # `uses: ./action`, which is the point of the test: it must exercise the code
+  # under review, not a published ref. Newer zizmor suggests a self-repository
+  # form instead; keep the local path until that form is documented by GitHub.
+  # Scoped to that one workflow.
+  self-repository:
+    ignore:
+      - action-selftest.yml

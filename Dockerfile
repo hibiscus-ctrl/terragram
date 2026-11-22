@@ -14,10 +14,11 @@ WORKDIR /app
 # libc compat for any native deps Next pulls in.
 RUN apk add --no-cache libc6-compat
 COPY package.json package-lock.json .npmrc ./
-# The workspace manifests, so `npm ci` links packages/engine and packages/cli into
-# node_modules (the lockfile lists both; the app itself imports only the engine).
+# The workspace manifests, so `npm ci` links packages/engine, packages/cli and action into
+# node_modules (the lockfile lists all three; the app itself imports only the engine).
 COPY packages/engine/package.json ./packages/engine/package.json
 COPY packages/cli/package.json ./packages/cli/package.json
+COPY action/package.json ./action/package.json
 
 # `@infraweaver-io/*` resolves to GitHub Packages (see .npmrc), which needs a
 # read token even for a package published to the org — so this layer, unlike

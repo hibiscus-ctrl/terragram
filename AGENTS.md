@@ -18,6 +18,7 @@ CI runs the same set, plus:
 - `test:coverage`: the unit suite under c8 `--all` with floors.
 - `test:components`: React components under happy-dom.
 - The **Packages** job: `schemas:check`, `build:packages`, then the schema, CLI and bundle tests with Terraform installed.
+- The **action-dist** job: `build:action`, then `git diff --exit-code -- action/dist`. `action-selftest.yml` runs the Action on the fixture for changes under `action/` or `packages/`.
 - The **Generated Terraform** job: `validate:emit` runs `fmt`, `validate`, tflint, trivy and
   checkov over every brief and template, and `check:modules` checks every pinned module call
   against its published interface.
@@ -119,6 +120,30 @@ outside the app, so it holds the boundary honestly.
   receipt schema to the `EvidenceReceipt` type. Ids are `terragram.model/v1` and `terragram.receipt/v2`
   (dots, as the receipt always has); `$id` URLs sit under the repository for now and will move with
   the name.
+
+## The Action: `action/`
+
+`hibiscus-ctrl/terragram/action@<sha>` (`action/action.yml`, runtime `node24`) is a third host of the engine. It reads
+a model file (default `terragram.json`), regenerates the Terraform in memory and either fails on drift (`check`, with a
+unified diff) or writes the files (`write`); on a pull request it posts one sticky comment with the model diff as Mermaid.
+Usage and the security notes are in `action/README.md`.
+
+- **Same boundary as the CLI.** Engine public exports (`terragram-engine/<subpath>`) and Node only: `action-*` rules in
+  `.dependency-cruiser.cjs`, and `tests/action-bundle.test.ts` checks every specifier against the engine's `exports`. No
+  `@actions/*`: the runner protocol (`workflow.ts`) and the REST calls (`comment.ts`) are small enough to own.
+- **`action/dist/index.mjs` is committed**, because a workflow runs it from the checkout. Rebuild it with
+  `npm run build:action` after any change to `action/src` or the engine, and commit it with the change. The `action-dist`
+  CI job and `tests/action-bundle.test.ts` fail when it is stale. It is deliberately not minified.
+- **Seams.** `Host` (`workflow.ts`) carries the environment, fetch, git and clock, so `tests/action-e2e.test.ts` runs the
+  built bundle against a local fake of GitHub. `upload.ts` is the only place a control plane will be called: today it
+  sends nothing.
+- **Hostile text.** Component labels come from the pull request. They are entity-encoded before Mermaid or markdown, and
+  `Workflow.log` never lets a line start a workflow command. The comment is only ever updated when a bot wrote it, and
+  the Action refuses `pull_request_target`. Keep those tests (`tests/action-render.test.ts`, `tests/action-comment.test.ts`).
+- **The fixture** (`tests/fixtures/action/`) is a model and the Terraform the engine generates for it; `action-selftest.yml`
+  and the e2e test both run the Action over it. A generator change that alters the Terraform makes both fail:
+  regenerate the fixture by running the built Action with `INPUT_MODE=write` over a copy.
+- **The signing key** (`signing-key`) is masked line by line and never logged or written. Errors about it do not quote it.
 
 ## Database: one project, two products
 

@@ -175,6 +175,36 @@ jobs:
       - name: CLI smoke test
         run: node packages/cli/dist/terragram.mjs --version
 
+  # A workflow runs the Action from the bundle committed at action/dist, not from the
+  # source beside it, so a source change that did not rebuild the bundle would ship
+  # nothing. Rebuild it here and fail on any difference.
+  action-dist:
+    name: Action bundle is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read # @infraweaver-io/* from GitHub Packages for npm ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          # @infraweaver-io/* is on GitHub Packages; this writes the auth line into
+          # the runner npmrc, which NODE_AUTH_TOKEN below fills.
+          registry-url: "https://npm.pkg.github.com"
+      - run: npm ci
+        env:
+          # Outside the infraweaver-io org — see the verify job.
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: Rebuild action/dist
+        run: npm run build:action
+      - name: Fail if the committed bundle differs
+        run: git diff --exit-code -- action/dist
+
   lint:
     name: Lint (Biome · oxlint · lockfile)
     runs-on: ubuntu-latest
