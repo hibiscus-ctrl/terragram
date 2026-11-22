@@ -72,7 +72,13 @@ export function createWorkflow(host: Host) {
      * comes from a pull request, so it is indented rather than passed through.
      */
     log(line: string) {
-      host.stdout(`${line.startsWith("::") ? ` ${line}` : line}\n`);
+      // Every physical line is checked: a label may hold \n or a bare \r, and the runner
+      // treats either as a line break before reading a workflow command.
+      const safe = line
+        .split(/\r\n|\r|\n|\u2028|\u2029/)
+        .map((part) => (part.trimStart().startsWith("::") ? `| ${part}` : part))
+        .join("\n");
+      host.stdout(`${safe}\n`);
     },
     notice(message: string) {
       command("notice", message);

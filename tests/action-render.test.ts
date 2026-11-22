@@ -232,3 +232,24 @@ describe("renderReport", () => {
     assert.match(text, /`````diff\n/);
   });
 });
+
+describe("workflow log lines", () => {
+  it("neutralises workflow commands on every physical line, whatever the line break", async () => {
+    const { createWorkflow } = await import("../action/src/workflow.ts");
+    let out = "";
+    const workflow = createWorkflow({
+      env: {},
+      cwd: "/",
+      stdout: (text: string) => {
+        out += text;
+      },
+      git: () => ({ ok: false, stdout: "" }),
+      now: () => new Date(0),
+    } as unknown as Parameters<typeof createWorkflow>[0]);
+    workflow.log("label\n::add-mask::x\r::set-env name=A::b\u2028  ::error::c\r\n::warning::d");
+    for (const line of out.split("\n")) {
+      assert.ok(!line.trimStart().startsWith("::"), `a command got through: ${JSON.stringify(line)}`);
+    }
+    assert.ok(!out.includes("\r"));
+  });
+});

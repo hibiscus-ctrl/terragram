@@ -8,9 +8,6 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// src/run.ts
-import { readFileSync as readFileSync3 } from "node:fs";
-
 // ../node_modules/zod/v4/classic/external.js
 var external_exports = {};
 __export(external_exports, {
@@ -5078,7 +5075,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve3) {
+function isRecursive(inst, stack, resolve4) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -5088,7 +5085,7 @@ function isRecursive(inst, stack, resolve3) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve3);
+      const answer = isRecursive(child, stack, resolve4);
       if (answer > result)
         result = answer;
     }
@@ -5099,7 +5096,7 @@ function isRecursive(inst, stack, resolve3) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve3) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve4) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -5163,7 +5160,7 @@ function isRecursive(inst, stack, resolve3) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve3 ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve4 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -23361,7 +23358,8 @@ function createWorkflow(host) {
      * comes from a pull request, so it is indented rather than passed through.
      */
     log(line) {
-      host.stdout(`${line.startsWith("::") ? ` ${line}` : line}
+      const safe = line.split(/\r\n|\r|\n|\u2028|\u2029/).map((part) => part.trimStart().startsWith("::") ? `| ${part}` : part).join("\n");
+      host.stdout(`${safe}
 `);
     },
     notice(message) {
@@ -23516,6 +23514,52 @@ function renderDiagram(diff) {
   return { mermaid: null, scope: "omitted" };
 }
 
+// src/safe-fs.ts
+import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
+import { dirname, relative as relative2, resolve as resolve2, sep } from "node:path";
+function inside(root, target) {
+  const rel = relative2(root, target);
+  return rel === "" || !rel.startsWith("..") && !rel.startsWith(sep) && rel !== "..";
+}
+function assertNoSymlinks(root, target, label) {
+  const base = resolve2(root);
+  const full = resolve2(target);
+  if (!inside(base, full)) throw new ActionError(`${label} is outside the workspace`);
+  const parts = relative2(base, full).split(sep).filter((p) => p !== "");
+  let current = base;
+  for (const part of parts) {
+    current = resolve2(current, part);
+    let stat;
+    try {
+      stat = lstatSync(current);
+    } catch {
+      return;
+    }
+    if (stat.isSymbolicLink()) throw new ActionError(`${label}: refusing to follow the symlink ${relative2(base, current)}`);
+  }
+}
+function regularFileExists(root, target, label) {
+  assertNoSymlinks(root, target, label);
+  if (!existsSync(target)) return false;
+  if (!lstatSync(target).isFile()) throw new ActionError(`${label}: ${relative2(resolve2(root), target)} is not a regular file`);
+  return true;
+}
+function readRegularFile(root, target, label) {
+  if (!regularFileExists(root, target, label)) throw new ActionError(`${label}: ${relative2(resolve2(root), target)} does not exist`);
+  return readFileSync(target, "utf8");
+}
+function writeRegularFile(root, target, content, label) {
+  assertNoSymlinks(root, target, label);
+  mkdirSync(dirname(target), { recursive: true });
+  assertNoSymlinks(root, target, label);
+  const fd = openSync(target, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 420);
+  try {
+    writeSync(fd, content);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 // src/model-diff.ts
 function nodeSignature(node2) {
   const attributes = Object.entries(node2.attributes ?? {}).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
@@ -23570,8 +23614,8 @@ ${issues}` };
 }
 
 // src/pull-request.ts
-import { readFileSync } from "node:fs";
-import { relative as relative2 } from "node:path";
+import { readFileSync as readFileSync2 } from "node:fs";
+import { relative as relative3 } from "node:path";
 var SHA = /^[0-9a-f]{40,64}$/;
 function readPullRequest(host) {
   const event = host.env.GITHUB_EVENT_NAME;
@@ -23579,7 +23623,7 @@ function readPullRequest(host) {
   if (event !== "pull_request" || !path) return null;
   let payload;
   try {
-    payload = JSON.parse(readFileSync(path, "utf8"));
+    payload = JSON.parse(readFileSync2(path, "utf8"));
   } catch {
     return null;
   }
@@ -23598,7 +23642,7 @@ function readBaseModel(host, root, baseSha, modelPath) {
       reason: `the base commit ${baseSha.slice(0, 7)} is not in the checkout; use actions/checkout with fetch-depth: 0 (or fetch the base) so the model's history is available`
     };
   }
-  const spec = `${baseSha}:./${relative2(root, modelPath).replaceAll("\\", "/")}`;
+  const spec = `${baseSha}:./${relative3(root, modelPath).replaceAll("\\", "/")}`;
   if (!git(["cat-file", "-e", spec]).ok) return { state: "absent" };
   const shown = git(["show", spec]);
   if (!shown.ok) return { state: "unavailable", reason: "git could not read the model file at the base commit" };
@@ -23754,8 +23798,8 @@ function loadSigner(raw, signedAt) {
 }
 
 // src/terraform-files.ts
-import { existsSync, mkdirSync, readFileSync as readFileSync2, rmSync, writeFileSync } from "node:fs";
-import { dirname, resolve as resolve2 } from "node:path";
+import { lstatSync as lstatSync2, rmSync } from "node:fs";
+import { resolve as resolve3 } from "node:path";
 
 // src/text-diff.ts
 var MAX_EDIT_DISTANCE = 3e3;
@@ -23866,41 +23910,45 @@ function unifiedDiff(before, after, beforeName, afterName, context = 3) {
 
 // src/terraform-files.ts
 function pathUnder(dir, name) {
-  const target = resolve2(dir, name);
-  if (!target.startsWith(`${resolve2(dir)}/`) && !target.startsWith(`${resolve2(dir)}\\`)) {
+  const target = resolve3(dir, name);
+  if (!target.startsWith(`${resolve3(dir)}/`) && !target.startsWith(`${resolve3(dir)}\\`)) {
     throw new ActionError(`refusing to write outside ${dir}: ${name}`);
   }
   return target;
 }
-function compareFiles(dir, shownDir, generated) {
+function compareFiles(root, dir, shownDir, generated) {
   return generated.map((file2) => {
     const target = pathUnder(dir, file2.name);
     const shown = `${shownDir.replace(/\/+$/, "")}/${file2.name}`;
-    if (!existsSync(target)) {
+    if (!regularFileExists(root, target, shown)) {
       return { name: file2.name, status: "missing", diff: unifiedDiff("", file2.content, "/dev/null", `b/${shown}`) };
     }
-    const committed = readFileSync2(target, "utf8");
+    const committed = readRegularFile(root, target, shown);
     const diff = unifiedDiff(committed, file2.content, `a/${shown}`, `b/${shown}`);
     return { name: file2.name, status: diff === "" ? "same" : "different", diff };
   });
 }
-function writeFiles(dir, generated, states) {
+function writeFiles(root, dir, generated, states) {
   const written = [];
   for (const file2 of generated) {
     if (states.find((s) => s.name === file2.name)?.status === "same") continue;
-    const target = pathUnder(dir, file2.name);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, file2.content);
+    writeRegularFile(root, pathUnder(dir, file2.name), file2.content, file2.name);
     written.push(file2.name);
   }
   return written;
 }
-function replaceDirectory(dir, entries) {
+function replaceDirectory(root, dir, entries) {
+  assertNoSymlinks(root, dir, "receipt directory");
+  let existing = null;
+  try {
+    existing = lstatSync2(dir);
+  } catch {
+    existing = null;
+  }
+  if (existing && !existing.isDirectory()) throw new ActionError(`${dir} exists and is not a directory`);
   rmSync(dir, { recursive: true, force: true });
   for (const entry of entries) {
-    const target = pathUnder(dir, entry.name);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, entry.content);
+    writeRegularFile(root, pathUnder(dir, entry.name), entry.content, entry.name);
   }
 }
 
@@ -23935,7 +23983,7 @@ async function execute(host, workflow) {
   const bundleDir = resolveInside(root, BUNDLE_DIR, "receipt directory");
   let text;
   try {
-    text = readFileSync3(modelPath, "utf8");
+    text = readRegularFile(root, modelPath, inputs.model);
   } catch {
     throw new ActionError(`cannot read the model file ${inputs.model}`);
   }
@@ -23944,16 +23992,16 @@ async function execute(host, workflow) {
   const { model, cloud } = parsed.document;
   if (resourceNodes(model).length === 0) throw new ActionError(`${inputs.model} has no components to build`);
   const terraform = emitTerraform(model, cloud, "terraform");
-  const files = compareFiles(terraformDir, inputs.terraformDir, terraform.files);
+  const files = compareFiles(root, terraformDir, inputs.terraformDir, terraform.files);
   const drifted = files.filter((f) => f.status !== "same");
-  const written = inputs.mode === "write" ? writeFiles(terraformDir, terraform.files, files) : [];
+  const written = inputs.mode === "write" ? writeFiles(root, terraformDir, terraform.files, files) : [];
   const signer = inputs.signingKey ? loadSigner(inputs.signingKey, host.now().toISOString()) : null;
   const { receipt, attestation } = await buildEvidenceReceipt(model, cloud, "deterministic", "terragram-action", host.now().toISOString(), {
     tool: "terraform",
     signer,
     nodeVersion: process.version
   });
-  replaceDirectory(bundleDir, buildBundle(receipt, model, terraform.files, attestation));
+  replaceDirectory(root, bundleDir, buildBundle(receipt, model, terraform.files, attestation));
   const receiptPath = `${BUNDLE_DIR}/receipt.json`;
   const feasibility = assessFeasibility(model, cloud);
   const warnings = feasibility.components.filter((c) => c.status !== "buildable").map((c) => `${c.label || c.id}: ${c.reason ?? "needs review"}`);
