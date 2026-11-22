@@ -7,10 +7,13 @@ import { describe, it } from "node:test";
 import { composeFromPrompt } from "terragram-engine/engine";
 import {
   attributeValue,
+  connectNodes,
   fieldsForKind,
+  removeEdges,
   resolveNodeFlag,
   setNodeAttribute,
   setNodeLabel,
+  setNodePosition,
 } from "terragram-engine/inspector";
 import { countFlags } from "terragram-engine/model";
 import { emitTerraform } from "terragram-engine/terraform";
@@ -56,6 +59,39 @@ describe("setNodeLabel", () => {
     assert.equal(setNodeLabel(model, pg.id, "  ").nodes.find((n) => n.id === pg.id)!.label, pg.label);
     const renamed = setNodeLabel(model, pg.id, "Primary DB");
     assert.equal(renamed.nodes.find((n) => n.id === pg.id)!.label, "Primary DB");
+  });
+});
+
+describe("setNodePosition", () => {
+  it("moves one node and leaves the rest of the model as it was", () => {
+    const { model } = composeFromPrompt(WEB_PROMPT);
+    const pg = model.nodes.find((n) => n.kind === "postgres")!;
+    const moved = setNodePosition(model, pg.id, { x: 120, y: -40 });
+    assert.deepEqual(moved.nodes.find((n) => n.id === pg.id)!.position, { x: 120, y: -40 });
+    assert.deepEqual(
+      moved.nodes.filter((n) => n.id !== pg.id),
+      model.nodes.filter((n) => n.id !== pg.id),
+    );
+    assert.equal(moved.topology, model.topology);
+  });
+});
+
+describe("removeEdges", () => {
+  it("drops the named edges and marks the topology manual", () => {
+    const { model } = composeFromPrompt(WEB_PROMPT);
+    const [a, b] = model.nodes;
+    const linked = connectNodes(model, a!.id, b!.id);
+    const id = `${a!.id}->${b!.id}`;
+    assert.ok(linked.edges.some((e) => e.id === id));
+    const cut = removeEdges(linked, [id]);
+    assert.ok(!cut.edges.some((e) => e.id === id));
+    assert.equal(cut.edges.length, linked.edges.length - 1);
+    assert.equal(cut.topology, "manual");
+  });
+
+  it("returns the model unchanged when no ids are given", () => {
+    const { model } = composeFromPrompt(WEB_PROMPT);
+    assert.equal(removeEdges(model, []), model);
   });
 });
 
