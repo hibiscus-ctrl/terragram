@@ -7,7 +7,7 @@ import { getAuthenticatedUser } from "@/features/account/controllers/get-authent
 import { getLeaveView } from "@/features/app/reads/members";
 import { gitProviderStatusAction } from "@/features/git/actions";
 import { requireWorkspaceUser } from "@/features/workspace/identity";
-import { DEFAULT_SETTINGS } from "@/features/workspace/settings";
+import { DEFAULT_SETTINGS } from "terragram-engine/settings";
 import { getSettings } from "@/features/workspace/store";
 import { managedEngineEnabled } from "@/features/workspace/translate";
 

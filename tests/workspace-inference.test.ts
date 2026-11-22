@@ -4,12 +4,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { assembleModel, MODEL_KIND_IDS } from "../src/features/workspace/engine.ts";
+import { assembleModel, MODEL_KIND_IDS } from "terragram-engine/engine";
 import {
   ManagedCapReachedError,
   runManagedCompose,
 } from "../src/features/workspace/inference.ts";
-import { countFlags } from "../src/features/workspace/model.ts";
+import { countFlags } from "terragram-engine/model";
 import { translateChat, translateRequestSchema } from "../src/features/workspace/translate.ts";
 
 function fakeMint() {

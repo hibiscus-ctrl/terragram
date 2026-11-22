@@ -11,7 +11,7 @@ the marketing site, the diagram workspace, and the account/billing backend.
 - **The workspace** (`/workspace`) — a three-pane translator (compose/parse · React Flow canvas ·
   code/evidence) with four modes: Chat → Diagram, Chat → Terraform, Diagram → Terraform,
   Terraform → Diagram. Words, diagram, and code never drift because all three flow through one
-  internal model (`src/features/workspace/model.ts`).
+  internal model (`packages/engine/src/model.ts`).
 - **The engine** — deterministic by default (keyword compose + HCL parse + template emit, no LLM,
   no keys). Managed UK inference (AWS Bedrock via the EU proxy) is opt-in per deployment with
   `WORKSPACE_ENGINE=managed`; on any gateway error it falls back to the deterministic engine.
@@ -94,7 +94,8 @@ src/app/(auth)            sign-in / sign-up (GitHub OAuth + email)
 src/app/(account)         account + subscription management
 src/app/(app)             the workspace (/workspace) + personal /billing and /settings
 src/app/api               workspace translate, Stripe webhooks, proxy usage callback
-src/features/workspace    the model boundary: model, modes, engine, terraform, evidence, store
+packages/engine           the generation engine (own package): model, kinds, terraform, hcl, receipts
+src/features/workspace    the app's side of it: store, actions, managed inference, signing
 src/features/billing      Stripe metering, plan flip, managed-model proxy mint
 src/features/account      auth/org controllers, action guards
 src/libs                  Supabase / Stripe clients, rate limiter

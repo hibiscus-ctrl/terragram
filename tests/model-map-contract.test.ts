@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { isManagedModelId, MANAGED_MODEL_IDS } from "../src/features/workspace/managed-models.ts";
+import { isManagedModelId, MANAGED_MODEL_IDS } from "terragram-engine/managed-models";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const own = readFileSync(join(here, "..", "contracts", "model-map.json"), "utf8");

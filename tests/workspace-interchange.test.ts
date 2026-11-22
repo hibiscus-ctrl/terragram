@@ -8,9 +8,9 @@ import {
   type InterchangeResult,
   looksLikeMermaid,
   parseMermaid,
-} from "../src/features/workspace/interchange.ts";
-import { SAMPLE_MERMAID } from "../src/features/workspace/samples.ts";
-import { emitTerraform } from "../src/features/workspace/terraform.ts";
+} from "terragram-engine/interchange";
+import { SAMPLE_MERMAID } from "terragram-engine/samples";
+import { emitTerraform } from "terragram-engine/terraform";
 
 /**
  * The importer's promise: what you drew is what you get. Every box lands on the

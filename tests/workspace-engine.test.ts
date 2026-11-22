@@ -4,12 +4,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { composeFromPrompt } from "../src/features/workspace/engine.ts";
-import { buildEvidence } from "../src/features/workspace/evidence.ts";
-import { countFlags, resourceNodes } from "../src/features/workspace/model.ts";
-import { parseTerraform } from "../src/features/workspace/parse.ts";
-import { SAMPLE_TERRAFORM } from "../src/features/workspace/samples.ts";
-import { emitTerraform } from "../src/features/workspace/terraform.ts";
+import { composeFromPrompt } from "terragram-engine/engine";
+import { buildEvidence } from "terragram-engine/evidence";
+import { countFlags, resourceNodes } from "terragram-engine/model";
+import { parseTerraform } from "terragram-engine/parse";
+import { SAMPLE_TERRAFORM } from "terragram-engine/samples";
+import { emitTerraform } from "terragram-engine/terraform";
 
 const WEB_PROMPT = "A web app with a Postgres database and Redis cache";
 

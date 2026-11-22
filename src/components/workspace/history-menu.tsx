@@ -16,7 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { listSnapshotsAction, restoreSnapshotAction } from "@/features/workspace/actions";
-import type { InfraModel } from "@/features/workspace/model";
+import type { InfraModel } from "terragram-engine/model";
 import type { SnapshotSummary } from "@/features/workspace/store";
 import { formatDateTime } from "@/utils/format-date";
 

@@ -4,16 +4,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { addNode } from "../src/features/workspace/inspector.ts";
+import { addNode } from "terragram-engine/inspector";
 import {
   cloudSpec,
   KIND_DEFINITIONS,
   MODEL_KIND_IDS,
   resourceTypeToKind,
-} from "../src/features/workspace/kinds.ts";
-import { type Cloud, CLOUDS, EMPTY_MODEL, type InfraModel } from "../src/features/workspace/model.ts";
-import { parseTerraform } from "../src/features/workspace/parse.ts";
-import { emitTerraform } from "../src/features/workspace/terraform.ts";
+} from "terragram-engine/kinds";
+import { type Cloud, CLOUDS, EMPTY_MODEL, type InfraModel } from "terragram-engine/model";
+import { parseTerraform } from "terragram-engine/parse";
+import { emitTerraform } from "terragram-engine/terraform";
 
 /**
  * The invariant the registry exists to enforce. Before it, adding a kind meant

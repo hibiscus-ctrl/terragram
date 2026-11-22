@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "license": "AGPL-3.0-only",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,7 +14,8 @@
     "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
     "typecheck:e2e": "tsc -p cypress/tsconfig.json --noEmit",
-    "typecheck:all": "tsc --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.scripts.json --noEmit && tsc -p cypress/tsconfig.json --noEmit",
+    "typecheck:engine": "tsc -p packages/engine --noEmit",
+    "typecheck:all": "tsc --noEmit && tsc -p packages/engine --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.scripts.json --noEmit && tsc -p cypress/tsconfig.json --noEmit",
     "lint": "biome check .",
     "lint:ci": "biome ci .",
     "lint:fix": "biome check --write .",
@@ -49,7 +53,7 @@
     "check:colours": "node scripts/check-colour-tokens.mjs",
     "check:design-doc": "node scripts/check-design-doc.mjs",
     "check:design": "npm run check:contrast && npm run check:colours && npm run check:design-doc",
-    "check:imports": "depcruise src --output-type err-long",
+    "check:imports": "depcruise src packages/engine/src --output-type err-long",
     "knip": "knip",
     "stripe:setup": "env-cmd -f ./.env.local node --use-system-ca scripts/stripe-setup.mjs",
     "db:verify-auth": "env-cmd -f ./.env.local node --use-system-ca scripts/verify-auth.mjs",
@@ -57,7 +61,7 @@
     "instance:create": "env-cmd -f ./.env.local node --use-system-ca scripts/instance-create.mjs",
     "stripe:listen": "stripe listen --forward-to=localhost:3000/api/webhooks --project-name=terragram",
     "lint:ox": "oxlint",
-    "test:coverage": "c8 --all --src src --include \"src/features/workspace/**\" --include \"src/features/billing/**\" --include \"src/features/git/**\" --include \"src/libs/rate-limit.ts\" --include \"src/utils/csp.ts\" --include \"src/utils/zip.ts\" --exclude \"src/features/*/actions.ts\" --exclude \"src/features/*/store.ts\" --exclude \"src/features/billing/actions/**\" --exclude \"src/features/workspace/identity.ts\" --exclude \"src/features/billing/{managed-usage,metering,org-plan,seat-sync,seats,stripe-billing,stripe-catalog}.ts\" --check-coverage --lines 96 --statements 96 --branches 85 --functions 90 --reporter text --reporter text-summary node --import ./scripts/register-alias.mjs --test \"tests/**/*.test.ts\"",
+    "test:coverage": "c8 --all --src src --src packages/engine/src --include \"src/features/workspace/**\" --include \"packages/engine/src/**\" --include \"src/features/billing/**\" --include \"src/features/git/**\" --include \"src/libs/rate-limit.ts\" --include \"src/utils/csp.ts\" --include \"src/utils/zip.ts\" --exclude \"src/features/*/actions.ts\" --exclude \"src/features/*/store.ts\" --exclude \"src/features/billing/actions/**\" --exclude \"src/features/workspace/identity.ts\" --exclude \"src/features/billing/{managed-usage,metering,org-plan,seat-sync,seats,stripe-billing,stripe-catalog}.ts\" --check-coverage --lines 96 --statements 96 --branches 85 --functions 90 --reporter text --reporter text-summary node --import ./scripts/register-alias.mjs --test \"tests/**/*.test.ts\"",
     "test:components": "tsx --experimental-test-module-mocks --test \"tests/component/*.test.tsx\""
   },
   "dependencies": {
@@ -73,7 +77,6 @@
     "@xyflow/react": "^12.12.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "dagre": "^0.8.5",
     "lucide-react": "^1.77.0",
     "next": "^16.4.6",
     "react": "^19.3.1",
@@ -82,6 +85,7 @@
     "sonner": "^2.0.8",
     "stripe": "^23.0.0",
     "tailwind-merge": "^3.7.0",
+    "terragram-engine": "*",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -93,7 +97,6 @@
     "@testing-library/cypress": "^10.1.3",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
-    "@types/dagre": "^0.7.54",
     "@types/node": "^26.6.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",

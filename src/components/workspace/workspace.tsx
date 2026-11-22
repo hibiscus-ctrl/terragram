@@ -17,10 +17,10 @@ import {
   saveWorkspaceAction,
   updateWorkspaceAction,
 } from "@/features/workspace/actions";
-import { composeFromPrompt, type ComposeResult, type EngineKind } from "@/features/workspace/engine";
-import { assessFeasibility } from "@/features/workspace/feasibility";
-import { buildEvidence, inferenceModeLabel } from "@/features/workspace/evidence";
-import { explainModel } from "@/features/workspace/explain";
+import { composeFromPrompt, type ComposeResult, type EngineKind } from "terragram-engine/engine";
+import { assessFeasibility } from "terragram-engine/feasibility";
+import { buildEvidence, inferenceModeLabel } from "terragram-engine/evidence";
+import { explainModel } from "terragram-engine/explain";
 import {
   addNode,
   connectNodes,
@@ -30,32 +30,32 @@ import {
   setNodeAttribute,
   setNodeLabel,
   setNodePosition,
-} from "@/features/workspace/inspector";
-import { kindDefinition } from "@/features/workspace/kinds";
+} from "terragram-engine/inspector";
+import { kindDefinition } from "terragram-engine/kinds";
 import {
   type Cloud,
   countFlags,
   EMPTY_MODEL,
   type InfraModel,
   type NodeCategory,
-} from "@/features/workspace/model";
+} from "terragram-engine/model";
 import {
   MODE_META,
   startsFromArtefact,
   targetsTerraform,
   type WorkspaceMode,
-} from "@/features/workspace/modes";
-import { parseMermaid } from "@/features/workspace/interchange";
-import { parseTerraform } from "@/features/workspace/parse";
-import type { BundleEntry, EvidenceReceipt } from "@/features/workspace/receipt";
-import { DEFAULT_SETTINGS, type WorkspaceSettings } from "@/features/workspace/settings";
-import { templateById, templateModel } from "@/features/workspace/templates";
-import { emitTerraform, type TerraformTool } from "@/features/workspace/terraform";
+} from "terragram-engine/modes";
+import { parseMermaid } from "terragram-engine/interchange";
+import { parseTerraform } from "terragram-engine/parse";
+import type { BundleEntry, EvidenceReceipt } from "terragram-engine/receipt";
+import { DEFAULT_SETTINGS, type WorkspaceSettings } from "terragram-engine/settings";
+import { templateById, templateModel } from "terragram-engine/templates";
+import { emitTerraform, type TerraformTool } from "terragram-engine/terraform";
 import { downloadBlob, makeZip } from "@/utils/zip";
 import { CanvasHeader } from "./canvas-header";
 import { CodePane } from "./code-pane";
 import { ComposePane } from "./compose-pane";
-import { modelToSvg } from "./diagram-svg";
+import { modelToSvg } from "terragram-engine/diagram-svg";
 import { ErrorDialog } from "./error-dialog";
 import { EvidencePane } from "./evidence-pane";
 import { GeneratingScreen, GenerationTimeout } from "./generating";
@@ -392,7 +392,7 @@ export function Workspace({
   /* ------------------------------------------------------------- generation -- */
 
   function exportDiagram() {
-    const svg = modelToSvg(model, hidden);
+    const svg = modelToSvg(model);
     if (!svg) {
       toast.error("Nothing to export yet", { description: "Add resources to the model first." });
       return;

@@ -16,7 +16,7 @@ import {
   MODE_LIST,
   modeArrowLabel,
   type WorkspaceMode,
-} from "@/features/workspace/modes";
+} from "terragram-engine/modes";
 import { cn } from "@/utils/cn";
 
 export function ModeMenu({

@@ -10,15 +10,15 @@ import {
   type ComponentRequest,
   type ComposeResult,
   describeTurn,
-} from "./engine.ts";
-import { KIND_BY_ID, KIND_LABELS, MODEL_KIND_IDS } from "./kinds.ts";
+} from "terragram-engine/engine";
+import { KIND_BY_ID, KIND_LABELS, MODEL_KIND_IDS } from "terragram-engine/kinds";
 import {
   DEFAULT_MANAGED_MODEL,
   isManagedModelId,
   type ManagedModelId,
   migrateManagedModelId,
-} from "./managed-models.ts";
-import { CLOUDS, EMPTY_MODEL, type InfraModel } from "./model.ts";
+} from "terragram-engine/managed-models";
+import { CLOUDS, EMPTY_MODEL, type InfraModel } from "terragram-engine/model";
 
 /**
  * Managed UK inference for Chat → Model. Reuses the same EU Bedrock gateway the

@@ -9,9 +9,9 @@ import Link from "next/link";
 import { Eye, ShieldCheck } from "lucide-react";
 
 import { LogoMark } from "@/components/logo";
-import type { InfraModel, NodeCategory } from "@/features/workspace/model";
-import { DEFAULT_SETTINGS } from "@/features/workspace/settings";
-import type { TerraformFile } from "@/features/workspace/terraform";
+import type { InfraModel, NodeCategory } from "terragram-engine/model";
+import { DEFAULT_SETTINGS } from "terragram-engine/settings";
+import type { TerraformFile } from "terragram-engine/terraform";
 import { formatDate } from "@/utils/format-date";
 import { CodePane } from "./code-pane";
 import { Legend } from "./legend";

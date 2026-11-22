@@ -1,10 +1,10 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import type { EvidenceReceipt } from "@/features/workspace/receipt";
-import type { InfraModel } from "@/features/workspace/model";
-import { resourceNodes } from "@/features/workspace/model";
-import type { TerraformFile } from "@/features/workspace/terraform";
+import type { EvidenceReceipt } from "terragram-engine/receipt";
+import type { InfraModel } from "terragram-engine/model";
+import { resourceNodes } from "terragram-engine/model";
+import type { TerraformFile } from "terragram-engine/terraform";
 
 /**
  * What a Terragram change looks like on a Git host — pure, so the branch name,

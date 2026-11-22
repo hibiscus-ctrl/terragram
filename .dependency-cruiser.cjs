@@ -44,7 +44,9 @@ const noParentRelative = sourceDirs.map((dir) => ({
   from: { path: `^${escapeRegex(dir)}/[^/]+$` },
   to: {
     dependencyTypes: ["local"],
-    pathNot: `^${escapeRegex(dir)}/`,
+    // The workspace package resolves to its real path, so `terragram-engine/…` reads as
+    // local; it is imported by name, never by path.
+    pathNot: [`^${escapeRegex(dir)}/`, "^packages/engine/src/"],
   },
 }));
 
@@ -81,7 +83,7 @@ module.exports = {
         "first, so a binding can be read before it is initialised. Move the shared piece " +
         "into a module both sides import.",
       severity: "error",
-      from: { path: "^src/" },
+      from: { path: "^(src|packages/engine/src)/" },
       to: { circular: true },
     },
     {

@@ -3,10 +3,10 @@
 
 import { z } from "zod";
 
-import { buildGraphModel } from "./graph-build.ts";
+import { buildGraphModel } from "terragram-engine/graph-build";
 import { type InferenceDeps, managedToolCall, type MintLedger, resolvedModel } from "./inference.ts";
-import { KIND_LABELS, MODEL_KIND_IDS } from "./kinds.ts";
-import { type Cloud, CLOUDS, type InfraModel } from "./model.ts";
+import { KIND_LABELS, MODEL_KIND_IDS } from "terragram-engine/kinds";
+import { type Cloud, CLOUDS, type InfraModel } from "terragram-engine/model";
 
 /**
  * A screenshot or photo of an architecture diagram → model, through managed

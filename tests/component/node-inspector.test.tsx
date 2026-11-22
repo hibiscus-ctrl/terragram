@@ -10,8 +10,8 @@ import { afterEach, describe, it } from "node:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import { NodeInspector } from "../../src/components/workspace/node-inspector.tsx";
-import { fieldsForKind } from "../../src/features/workspace/inspector.ts";
-import type { ModelNode } from "../../src/features/workspace/model.ts";
+import { fieldsForKind } from "terragram-engine/inspector";
+import type { ModelNode } from "terragram-engine/model";
 
 /**
  * The inspector is what makes the review gate real: a flagged node asks for the

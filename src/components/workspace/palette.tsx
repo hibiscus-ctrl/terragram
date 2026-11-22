@@ -6,8 +6,8 @@
 import { useState } from "react";
 import { Plus, Search } from "lucide-react";
 
-import { KIND_DEFINITIONS } from "@/features/workspace/kinds";
-import { CATEGORY_META, type NodeCategory } from "@/features/workspace/model";
+import { KIND_DEFINITIONS } from "terragram-engine/kinds";
+import { CATEGORY_META, type NodeCategory } from "terragram-engine/model";
 import { cn } from "@/utils/cn";
 
 /**

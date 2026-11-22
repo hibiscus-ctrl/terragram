@@ -6,9 +6,9 @@ import { ArrowRight } from "lucide-react";
 
 import { LogoMark } from "@/components/logo";
 import { createWorkspaceAction } from "@/features/workspace/actions";
-import { FORMAT_CHIP, formatLabel, MODE_LIST, MODE_META } from "@/features/workspace/modes";
+import { FORMAT_CHIP, formatLabel, MODE_LIST, MODE_META } from "terragram-engine/modes";
 import type { WorkspaceSummary } from "@/features/workspace/store";
-import { WORKSPACE_TEMPLATES } from "@/features/workspace/templates";
+import { WORKSPACE_TEMPLATES } from "terragram-engine/templates";
 import { WorkspaceRow } from "./workspace-row";
 
 function ModeCard({ mode }: { mode: (typeof MODE_LIST)[number] }) {

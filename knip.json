@@ -1,28 +1,41 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "next": true,
-  "entry": [
-    "tests/**/*.test.{ts,tsx}",
-    "scripts/*.{ts,mjs}"
-  ],
-  "project": [
-    "src/**/*.{ts,tsx}",
-    "tests/**/*.{ts,tsx}",
-    "scripts/**/*.{ts,mjs}",
-    "*.{ts,js,mjs,cjs}"
-  ],
-  "ignore": [
-    "src/libs/supabase/types.ts"
-  ],
-  "ignoreDependencies": [
-    "@swc/core",
-    "@cdktf/hcl2json",
-    "infraweaver",
-    "postcss-load-config"
-  ],
-  "ignoreBinaries": [
-    "stripe"
-  ],
+  "workspaces": {
+    ".": {
+      "next": true,
+      "entry": [
+        "tests/**/*.test.{ts,tsx}",
+        "scripts/*.{ts,mjs}"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "tests/**/*.{ts,tsx}",
+        "scripts/**/*.{ts,mjs}",
+        "*.{ts,js,mjs,cjs}"
+      ],
+      "ignore": [
+        "src/libs/supabase/types.ts"
+      ],
+      "ignoreDependencies": [
+        "@swc/core",
+        "@cdktf/hcl2json",
+        "infraweaver",
+        "postcss-load-config"
+      ],
+      "ignoreBinaries": [
+        "stripe"
+      ]
+    },
+    "packages/engine": {
+      "entry": [
+        "src/*.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ],
+      "includeEntryExports": true
+    }
+  },
   "exclude": [
     "nsExports",
     "nsTypes",

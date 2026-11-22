@@ -3,7 +3,7 @@
 
 import { z } from "zod";
 
-import { composeFromPrompt, type ComposeResult } from "./engine.ts";
+import { composeFromPrompt, type ComposeResult } from "terragram-engine/engine";
 import {
   isManagedInferenceConfigured,
   ManagedCapReachedError,
@@ -11,8 +11,8 @@ import {
   runManagedCompose,
 } from "./inference.ts";
 import { logger } from "@/libs/log";
-import type { ManagedModelId } from "./managed-models.ts";
-import { EMPTY_MODEL, type InfraModel, infraModelSchema } from "./model.ts";
+import type { ManagedModelId } from "terragram-engine/managed-models";
+import { EMPTY_MODEL, type InfraModel, infraModelSchema } from "terragram-engine/model";
 
 const log = logger("workspace/translate");
 

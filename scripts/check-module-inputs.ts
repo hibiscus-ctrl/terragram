@@ -28,11 +28,11 @@
  */
 import { errorMessage } from "@infraweaver-io/core/errors";
 
-import { attributeOf, type HclBlock, parseHcl, stringValue } from "../src/features/workspace/hcl.ts";
-import { KIND_DEFINITIONS } from "../src/features/workspace/kinds.ts";
-import { addNode } from "../src/features/workspace/inspector.ts";
-import { type Cloud, CLOUDS, EMPTY_MODEL } from "../src/features/workspace/model.ts";
-import { emitTerraform } from "../src/features/workspace/terraform.ts";
+import { attributeOf, type HclBlock, parseHcl, stringValue } from "terragram-engine/hcl";
+import { KIND_DEFINITIONS } from "terragram-engine/kinds";
+import { addNode } from "terragram-engine/inspector";
+import { type Cloud, CLOUDS, EMPTY_MODEL } from "terragram-engine/model";
+import { emitTerraform } from "terragram-engine/terraform";
 
 const REGISTRY = "https://registry.terraform.io/v1/modules";
 

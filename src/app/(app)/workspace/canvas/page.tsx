@@ -4,10 +4,10 @@
 import { Workspace } from "@/components/workspace/workspace";
 import { getAuthenticatedUser } from "@/features/account/controllers/get-authenticated-user";
 import { requireWorkspaceUser } from "@/features/workspace/identity";
-import { isWorkspaceMode, type WorkspaceMode } from "@/features/workspace/modes";
-import { DEFAULT_SETTINGS } from "@/features/workspace/settings";
+import { isWorkspaceMode, type WorkspaceMode } from "terragram-engine/modes";
+import { DEFAULT_SETTINGS } from "terragram-engine/settings";
 import { getSettings, getWorkspace } from "@/features/workspace/store";
-import { templateById, templateModel } from "@/features/workspace/templates";
+import { templateById, templateModel } from "terragram-engine/templates";
 
 export default async function WorkspaceCanvasPage({
   searchParams,

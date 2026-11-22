@@ -5,10 +5,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { SharedWorkspace } from "@/components/workspace/shared-workspace";
-import { CLOUD_LABEL, MODE_META } from "@/features/workspace/modes";
+import { CLOUD_LABEL, MODE_META } from "terragram-engine/modes";
 import { resolveShareLink } from "@/features/workspace/store";
-import { emitTerraform } from "@/features/workspace/terraform";
-import { explainModel } from "@/features/workspace/explain";
+import { emitTerraform } from "terragram-engine/terraform";
+import { explainModel } from "terragram-engine/explain";
 
 /** A review link is not a publication. Keep it out of search results. */
 export const metadata: Metadata = {

@@ -6,12 +6,12 @@ import { createHash, randomBytes } from "node:crypto";
 import { supabaseAdminClient } from "@/libs/supabase/supabase-admin";
 import type { Database, Json } from "@/libs/supabase/types";
 
-import { EMPTY_MODEL, type InfraModel, infraModelSchema } from "./model.ts";
-import { isWorkspaceMode, type WorkspaceMode } from "./modes.ts";
-import type { EvidenceReceipt } from "./receipt.ts";
-import { parseSettings, type WorkspaceSettings } from "./settings.ts";
-import { shareLinkOpens } from "./share-link.ts";
-import type { TerraformFile, TerraformTool } from "./terraform.ts";
+import { EMPTY_MODEL, type InfraModel, infraModelSchema } from "terragram-engine/model";
+import { isWorkspaceMode, type WorkspaceMode } from "terragram-engine/modes";
+import type { EvidenceReceipt } from "terragram-engine/receipt";
+import { parseSettings, type WorkspaceSettings } from "terragram-engine/settings";
+import { shareLinkOpens } from "terragram-engine/share-link";
+import type { TerraformFile, TerraformTool } from "terragram-engine/terraform";
 
 /**
  * Workspace persistence — the single place the workspace read/write path touches the

@@ -4,6 +4,7 @@
   "files": {
     "includes": [
       "src/**/*.{ts,tsx,js,jsx,mjs,cjs}",
+      "packages/**/*.{ts,mts,mjs,js}",
       "scripts/**/*.{ts,mts,mjs,js}",
       "tests/**/*.{ts,tsx,mts,mjs,js}",
       "cypress/**/*.{ts,mts,mjs,js}",

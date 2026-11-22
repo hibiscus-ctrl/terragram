@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { shareLinkOpens } from "../src/features/workspace/share-link.ts";
+import { shareLinkOpens } from "terragram-engine/share-link";
 
 /**
  * The decision `resolveShareLink` makes about a stored link before it serves a

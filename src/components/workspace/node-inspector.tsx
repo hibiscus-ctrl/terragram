@@ -11,8 +11,8 @@ import {
   attributeValue,
   fieldsForKind,
   type NodeField,
-} from "@/features/workspace/inspector";
-import { CATEGORY_META, type ModelNode } from "@/features/workspace/model";
+} from "terragram-engine/inspector";
+import { CATEGORY_META, type ModelNode } from "terragram-engine/model";
 
 /**
  * The node inspector — click a node on the canvas to edit its confirmed attributes

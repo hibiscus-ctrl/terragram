@@ -7,7 +7,7 @@ import { Fragment } from "react";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
 
-import type { TerraformFile } from "@/features/workspace/terraform";
+import type { TerraformFile } from "terragram-engine/terraform";
 import { cn } from "@/utils/cn";
 
 const KEYWORDS = new Set([

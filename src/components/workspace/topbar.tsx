@@ -14,9 +14,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Cloud } from "@/features/workspace/model";
-import { CLOUD_LABEL } from "@/features/workspace/modes";
-import type { TerraformTool } from "@/features/workspace/terraform";
+import type { Cloud } from "terragram-engine/model";
+import { CLOUD_LABEL } from "terragram-engine/modes";
+import type { TerraformTool } from "terragram-engine/terraform";
 import { cn } from "@/utils/cn";
 import { LogoMark } from "@/components/logo";
 import type { DemoState, WorkspaceStep } from "./types";

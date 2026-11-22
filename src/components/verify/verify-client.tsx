@@ -7,8 +7,8 @@ import { useRef, useState } from "react";
 import { CheckCircle2, HelpCircle, Upload, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { BundleEntry } from "@/features/workspace/receipt";
-import { readBundleZip, type VerifyReport, type VerifyStatus, verifyBundle } from "@/features/workspace/verify";
+import type { BundleEntry } from "terragram-engine/receipt";
+import { readBundleZip, type VerifyReport, type VerifyStatus, verifyBundle } from "terragram-engine/verify";
 import { cn } from "@/utils/cn";
 import { formatDateTime } from "@/utils/format-date";
 

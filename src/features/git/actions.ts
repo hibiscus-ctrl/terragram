@@ -12,10 +12,10 @@ import { siteUrl } from "@/utils/site-url";
 
 import { callbackUrl } from "./oauth-state.ts";
 
-import type { EngineKind } from "@/features/workspace/engine";
-import { type Cloud, type InfraModel, infraModelSchema } from "@/features/workspace/model";
+import type { EngineKind } from "terragram-engine/engine";
+import { type Cloud, type InfraModel, infraModelSchema } from "terragram-engine/model";
 import { buildEvidenceReceipt } from "@/features/workspace/sign";
-import type { TerraformTool } from "@/features/workspace/terraform";
+import type { TerraformTool } from "terragram-engine/terraform";
 import { githubOpenPullRequest, githubRepositories, type OpenedChange } from "./github.ts";
 import { gitlabOpenMergeRequest, gitlabProjects } from "./gitlab.ts";
 import { branchName, changeBody, changeFiles, changeTitle, commitMessage, normaliseDirectory } from "./pr.ts";

@@ -7,13 +7,13 @@ import { loadSigningKey, signBytes, type SigningKey } from "@infraweaver-io/atte
 
 import { evidenceSignerFromEnv } from "@/features/api/evidence";
 
-import { ENGINE_VERSION } from "./evidence.ts";
-import type { EngineKind } from "./engine.ts";
+import { ENGINE_VERSION } from "terragram-engine/evidence";
+import type { EngineKind } from "terragram-engine/engine";
 import { resolvedModel } from "./inference.ts";
-import type { ManagedModelId } from "./managed-models.ts";
-import { explainModel } from "./explain.ts";
-import { assessFeasibility } from "./feasibility.ts";
-import { type Cloud, type InfraModel, resourceNodes } from "./model.ts";
+import type { ManagedModelId } from "terragram-engine/managed-models";
+import { explainModel } from "terragram-engine/explain";
+import { assessFeasibility } from "terragram-engine/feasibility";
+import { type Cloud, type InfraModel, resourceNodes } from "terragram-engine/model";
 import {
   contentHashFor,
   type EvidenceReceipt,
@@ -21,10 +21,10 @@ import {
   RECEIPT_SCHEMA,
   receiptJson,
   type SbomEntry,
-} from "./receipt.ts";
-import { emitTerraform, type TerraformFile, type TerraformOutput, type TerraformTool } from "./terraform.ts";
+} from "terragram-engine/receipt";
+import { emitTerraform, type TerraformFile, type TerraformOutput, type TerraformTool } from "terragram-engine/terraform";
 
-export type { EvidenceReceipt } from "./receipt.ts";
+export type { EvidenceReceipt } from "terragram-engine/receipt";
 
 /**
  * The signed evidence receipt Terragram emits when a reviewer confirms the gate.

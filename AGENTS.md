@@ -3,7 +3,7 @@
 Next.js 16 App Router + React 19, Supabase, Stripe, Tailwind 4, Biome, tests via `node --test`.
 Deployed on Railway. Terragram turns a diagram or brief into reviewed Terraform: the model
 proposes component *kinds*, and the HCL comes from the deterministic registry in
-`src/features/workspace/kinds.ts`. Node **24** is the floor (`engines`, `.nvmrc`, Dockerfile, CI
+`packages/engine/src/kinds.ts`. Node **24** is the floor (`engines`, `.nvmrc`, Dockerfile, CI
 all agree). npm, not pnpm: use `npm ci`, and a lockfile mismatch is a real failure to fix in the
 commit.
 
@@ -162,7 +162,7 @@ Nothing catches these except the fixtures named here.
     `overCap` are the gateway's contract.
   - Pinned by `contracts/proxy-token.json`. The contract tests byte-compare the sibling checkout
     at `../infraweaver-proxy` when it is present.
-- `src/features/workspace/managed-models.ts` `MANAGED_MODEL_IDS` <=> the gateway's `bedrock_model_map`, pinned by
+- `packages/engine/src/managed-models.ts` `MANAGED_MODEL_IDS` <=> the gateway's `bedrock_model_map`, pinned by
   `contracts/model-map.json`.
 - The shared schema <=> `infraweaver-ui/supabase/migrations/` (see Database).
 

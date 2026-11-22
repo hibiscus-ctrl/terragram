@@ -7,15 +7,15 @@ import { redirect } from "next/navigation";
 
 import { getAuthenticatedUser } from "@/features/account/controllers/get-authenticated-user";
 
-import type { EngineKind } from "./engine.ts";
-import { type Cloud, type InfraModel, infraModelSchema } from "./model.ts";
-import { isManagedModelId } from "./managed-models.ts";
-import { isWorkspaceMode, MODE_META, type WorkspaceMode } from "./modes.ts";
-import { buildBundle, type BundleEntry, type EvidenceReceipt } from "./receipt.ts";
+import type { EngineKind } from "terragram-engine/engine";
+import { type Cloud, type InfraModel, infraModelSchema } from "terragram-engine/model";
+import { isManagedModelId } from "terragram-engine/managed-models";
+import { isWorkspaceMode, MODE_META, type WorkspaceMode } from "terragram-engine/modes";
+import { buildBundle, type BundleEntry, type EvidenceReceipt } from "terragram-engine/receipt";
 import {
   type WorkspaceSettings,
   workspaceSettingsSchema,
-} from "./settings.ts";
+} from "terragram-engine/settings";
 import { buildEvidenceReceipt } from "./sign.ts";
 import {
   createShareLink,
@@ -35,8 +35,8 @@ import {
   type TranscriptTurn,
   updateWorkspace,
 } from "./store.ts";
-import type { TerraformTool } from "./terraform.ts";
-import { templateById, templateModel } from "./templates.ts";
+import type { TerraformTool } from "terragram-engine/terraform";
+import { templateById, templateModel } from "terragram-engine/templates";
 
 /**
  * Server actions for the workspace. Every one of them re-derives the acting user
