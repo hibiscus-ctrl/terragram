@@ -141,17 +141,14 @@ file, inspects `git diff --cached`, and returns a paste-ready message.
 ## This repository
 
 **Types do not cut releases here** — this repo has no release-please setup and
-is deployed, not published. Pick the type accurately anyway: it is what makes
+nothing is published from it yet. Pick the type accurately anyway: it is what makes
 `git log` and `git blame` readable, and it is the only signal of intent a
 reviewer gets before opening the diff.
 
-**Scopes in use:** `account`, `api`, `app`, `auth`, `billing`, `deps`, `docs`,
-`git`, `marketing`, `scim`, `security`, `ui`, `workspace`
+**Scopes in use:** `action`, `ci`, `cli`, `deps`, `docs`, `engine`, `schemas`,
+`security`
 
 **Call these out in the body when the diff touches them:**
 
-- **Supabase migrations.** The project is shared: say whether the migration has
-  been applied, to which environment, and whether it is reversible. The
-  migration here owns only `terragram_*` objects.
-- **Generated Terraform.** A change to what the workspace emits should say
+- **Generated Terraform.** A change to what the engine emits should say
   whether `npm run validate:emit` and `npm run check:modules` were re-run.

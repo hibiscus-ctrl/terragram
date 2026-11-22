@@ -3,6 +3,3 @@ contact_links:
   - name: Security vulnerability
     url: https://github.com/hibiscus-ctrl/terragram/security/advisories/new
     about: Do NOT open a public issue for security problems. Report privately via GitHub's private vulnerability reporting (or email security@terragram.dev).
-  - name: Support & general questions
-    url: https://terragram.dev/contact
-    about: Account, billing, or usage help — contact us here.

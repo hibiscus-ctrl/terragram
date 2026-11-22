@@ -22,21 +22,12 @@ permissions: {}
 
 jobs:
   verify:
-    name: Typecheck · Self-test · Build
+    name: Typecheck · Unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
       packages: read # @infraweaver-io/* from GitHub Packages for npm ci
-    # Dummy values so the Supabase/Stripe admin clients can initialise at build
-    # time. They are NOT secrets — the build never reaches the network.
-    env:
-      NEXT_PUBLIC_SUPABASE_URL: https://dummy.supabase.co
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_dummy0000000000000000
-      SUPABASE_SECRET_KEY: sb_secret_dummy0000000000000000
-      STRIPE_SECRET_KEY: sk_test_dummy
-      STRIPE_WEBHOOK_SECRET: whsec_dummy
-      NEXT_PUBLIC_SITE_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,38 +50,21 @@ jobs:
           # share an org, at which point the secret can be dropped.
           NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
-      # `typecheck:all`, not a bare `tsc --noEmit`: the app tsconfig EXCLUDES
-      # `tests` and `scripts`, so the narrow form left the test suite and the
-      # release gates in scripts/ with no type gate in CI.
-      - name: Typecheck (app + tests + scripts)
+      # `typecheck:all`: the tests and the release gates in scripts/ (the root
+      # tsconfig), then the engine, the CLI and the Action, each on its own terms.
+      - name: Typecheck (tests + scripts + engine + CLI + Action)
         run: npm run typecheck:all
 
-      # Through the npm script rather than a bare `node`: the script is the one
-      # place the invocation (and its path-alias loader) is defined.
-      - name: Self-tests (OIDC / App-JWT / webhook HMAC / evidence / proxy / tokens / rate limiter)
-        run: npm run test:cloud
-
       - name: Unit tests (with coverage floor)
-        # Runs the same suite as `npm test` and then fails if coverage drops below
-        # the floor. The percentages describe the files the tests actually load —
-        # the pure engine, emitter, receipt, token and money math — not the React
-        # tree, so treat a drop here as "logic lost a test", not "UI went untested".
+        # Runs the whole suite and then fails if coverage of the engine and the CLI
+        # drops below the floor in package.json. A drop here means logic lost a test.
         run: npm run test:coverage
-
-      - name: Component tests
-        # React components, rendered in happy-dom via tsx (JSX needs a transform the
-        # type-stripping runner does not do). Kept a separate step from the pure
-        # suite so a DOM failure is never mistaken for a logic failure.
-        run: npm run test:components
-
-      - name: Build
-        run: npm run build
 
   # The generated-Terraform gate: every brief and template, both clouds, through
   # terraform fmt/init/validate, the three scanners (tflint/trivy/checkov run in
   # their pinned containers here — the runner has Docker), and Infraweaver's own
   # assess, then every module call against its published interface. This is
-  # the check that the product's output is Terraform a reviewer can apply; it
+  # the check that the engine's output is Terraform a reviewer can apply; it
   # needs the registry, so it is its own job and does not gate the unit tests.
   generated-terraform:
     name: Generated Terraform (fmt · validate · scanners · assess · modules)
@@ -131,7 +105,7 @@ jobs:
   # What a user installs rather than what runs from the repo: the generated JSON
   # Schemas are current, the CLI bundles into one file that runs on a bare Node with
   # no @infraweaver-io import left in it, the engine builds as ESM + declarations,
-  # and the CLI's output equals the app's emit path (terraform fmt included). The
+  # and the CLI's output equals the engine's emit path (terraform fmt included). The
   # unit-test job runs these tests too, without Terraform installed; this one
   # installs it so the fmt check is not skipped.
   packages:
@@ -167,7 +141,7 @@ jobs:
       - name: Build the CLI bundle and the engine library
         run: npm run build:packages
 
-      # The bundle and library tests, the CLI-against-the-app comparison and the
+      # The bundle and library tests, the CLI-against-the-engine comparison and the
       # schema validation, on the freshly built packages.
       - name: Package tests
         run: npm run test:packages
@@ -230,8 +204,7 @@ jobs:
       # `biome ci`: the read-only, CI-reporting form of `biome check`.
       - run: npm run lint:ci
 
-      # Catches what Biome does not: React and Next.js correctness (components
-      # defined during render, <a> where a Link belongs) and JSX a11y. Config in
+      # Catches what Biome does not (oxlint's correctness rules). Config in
       # .oxlintrc.json — errors gate, warnings are advisory.
       - run: npm run lint:ox
 
@@ -239,14 +212,9 @@ jobs:
       # over https, with an integrity hash and a URL that matches its name.
       - run: npm run lint:lockfile
 
-      # Design-token gates: every token pair the app paints clears WCAG AA
-      # (check-contrast), no raw hex or stock Tailwind gray in src/ (DESIGN.md's
-      # No Raw Gray Rule), and DESIGN.md names the colours globals.css declares.
-      - run: npm run check:design
-
-      # Import gate (.dependency-cruiser.cjs): `@/` across directories and never
-      # `../`, no cycles, no privileged client in a component or a "use client"
-      # file, and the Stripe secret key only behind features/billing.
+      # Import gate (.dependency-cruiser.cjs): no cycles, the engine's dependency
+      # allow-list, and no npm import in the CLI or the Action (their bundles carry
+      # none), plus the engine-reads-no-environment check.
       - run: npm run check:imports
 
       # Unused files, exports and dependencies (knip.json). An export kept for a
