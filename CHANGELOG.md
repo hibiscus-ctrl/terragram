@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The Action's `control-plane-url` now uploads the receipt bundle: it exchanges the job's GitHub
+  identity token (`id-token: write`) for a repository-pinned token and sends the bundle to the
+  control plane's `/api/v1/ingest/diagram`, failing the step with the control plane's reason when it
+  is refused. New input `control-plane-audience` and output `snapshot-id`.
+
 ### Removed
 
 - The Next.js web app: the marketing site, the diagram workspace, account and

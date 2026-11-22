@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 
+import { relative, sep } from "node:path";
+
 import { buildEvidenceReceipt } from "terragram-engine/build-receipt";
 import { assessFeasibility } from "terragram-engine/feasibility";
 import { resourceNodes } from "terragram-engine/model";
@@ -18,7 +20,7 @@ import { type BaseModel, readBaseModel, readPullRequest } from "./pull-request.t
 import { type BaseState, commentBody, renderReport } from "./report.ts";
 import { loadSigner, maskableParts } from "./signer.ts";
 import { compareFiles, replaceDirectory, writeFiles } from "./terraform-files.ts";
-import { uploadReceipt } from "./upload.ts";
+import { uploadBundle } from "./upload.ts";
 import { ActionError, createWorkflow, type Host, type Workflow } from "./workflow.ts";
 
 /** Where the receipt bundle goes, under the workspace: for `terragram verify` and upload-artifact. */
@@ -77,7 +79,8 @@ async function execute(host: Host, workflow: Workflow): Promise<number> {
     signer,
     nodeVersion: process.version,
   });
-  replaceDirectory(root, bundleDir, buildBundle(receipt, model, terraform.files, attestation));
+  const bundleFiles = buildBundle(receipt, model, terraform.files, attestation);
+  replaceDirectory(root, bundleDir, bundleFiles);
   const receiptPath = `${BUNDLE_DIR}/receipt.json`;
 
   const feasibility = assessFeasibility(model, cloud);
@@ -137,9 +140,30 @@ async function execute(host: Host, workflow: Workflow): Promise<number> {
     await postComment(host, workflow, inputs.githubToken, pr.number, commentBody(report));
   }
 
+  // A failed upload fails the step, but after the drift check below has had its say: both are reported.
+  let uploadFailed = false;
   if (inputs.controlPlaneUrl) {
-    const result = await uploadReceipt({ url: inputs.controlPlaneUrl, receiptPath, contentHash: receipt.contentHash, signed: receipt.signed });
-    if (result.status === "unsupported") workflow.notice("control-plane-url is accepted, but uploading receipts is not yet supported: nothing was sent");
+    if (eventName === "pull_request") {
+      workflow.notice("the bundle was not uploaded: a pull request's model is not approved yet. Upload from a push to the default branch.");
+    } else {
+      try {
+        const sent = await uploadBundle(
+          {
+            url: inputs.controlPlaneUrl,
+            audience: inputs.controlPlaneAudience,
+            modelPath: relative(root, modelPath).split(sep).join("/"),
+            sha: host.env.GITHUB_SHA,
+            files: bundleFiles,
+          },
+          { host, workflow },
+        );
+        workflow.setOutput("snapshot-id", sent.snapshotId);
+        workflow.log(`${sent.replayed ? "the control plane already had this bundle" : "uploaded the bundle"}: snapshot ${sent.snapshotId}`);
+      } catch (error) {
+        uploadFailed = true;
+        workflow.error(error instanceof ActionError ? error.message : `upload failed: ${(error as Error).message}`);
+      }
+    }
   }
 
   if (inputs.mode === "check" && drifted.length > 0) {
@@ -150,6 +174,7 @@ async function execute(host: Host, workflow: Workflow): Promise<number> {
     }
     return 1;
   }
+  if (uploadFailed) return 1;
   workflow.log(inputs.mode === "check" ? `${inputs.terraformDir} matches ${inputs.model}` : "done");
   return 0;
 }

@@ -4,7 +4,7 @@ Keeps a repository's Terraform in line with a diagram model file.
 
 The model file (`diagram.json`, validated against `diagram.model/v1`) is the source of truth. On every run the Action regenerates the Terraform from it with the same engine the `terragram` CLI uses, then either fails when the committed Terraform differs (`check`) or writes the regenerated files (`write`). On a pull request it also posts one comment that shows what the change does to the model: a Mermaid diagram of the diff between the base and head versions of the model file, a summary table and the content hash of the receipt.
 
-It runs from one committed bundle (`action/dist/index.mjs`) with no install step, makes no network call except to the GitHub API to post the comment, and never runs Terraform or any code from your repository.
+It runs from one committed bundle (`action/dist/index.mjs`) with no install step, makes no network call except to the GitHub API to post the comment (and to your control plane, only if you set `control-plane-url`), and never runs Terraform or any code from your repository.
 
 ## Use it
 
@@ -72,6 +72,29 @@ terragram verify _diagram --key trusted-public-key.pem
 
 Secrets are not available to workflows triggered from a fork's pull request, so those runs write an unsigned receipt.
 
+### Uploading the bundle to a control plane
+
+Set `control-plane-url` to keep each approved bundle (receipt, signature, model and plan) with a control plane that accepts it. The job needs **`permissions: id-token: write`**: the Action asks GitHub for the job's identity token and exchanges it, with no stored secret, for a short-lived token pinned to this repository.
+
+```yaml
+    permissions:
+      contents: read
+      id-token: write # GitHub's identity token, which proves which repository is sending
+    steps:
+      - uses: hibiscus-ctrl/terragram/action@<full commit SHA> # pin the version you reviewed
+        with:
+          signing-key: ${{ secrets.DIAGRAM_SIGNING_KEY }}
+          control-plane-url: https://control-plane.example
+```
+
+What it does, in order: requests the identity token from `ACTIONS_ID_TOKEN_REQUEST_URL` for the audience `control-plane-audience` (default `infraharvest-api`); sends it in `X-GitHub-OIDC-Token` to `POST <url>/api/v1/session`, which answers a run token; then sends the bundle, gzip-compressed, to `POST <url>/api/v1/ingest/diagram` with that token as the bearer. The control plane checks the receipt against the engine (its schema, the content hash recomputed from the model and plan, and the signatures) and keeps it as an approval of the diagram for this repository and model path. The same bundle again is a replay, not a second approval.
+
+- Both tokens are masked in the log the moment they are received, and neither is written anywhere.
+- The address must be `https://` (a machine's own loopback excepted), with no credentials or query. Redirects are not followed, so a token is never sent to a place you did not name.
+- A request that gets a 429 or a 5xx, or no answer within 30 seconds, is tried up to three times. Anything else fails the step with the control plane's own reason, and with what to fix for a missing `id-token: write`, a plan that does not keep uploads (402) or a token that is not a repository's (403).
+- The upload happens before the drift check reports, so a drifted repository is still reported and still fails the step, and so does a failed upload. Nothing is uploaded from a `pull_request` run (the model is not approved yet, and a fork's pull request gets no identity token anyway): upload from a push to the default branch.
+- The `snapshot-id` output holds the id the control plane kept the bundle under.
+
 ## Inputs
 
 | Input | Default | |
@@ -81,7 +104,8 @@ Secrets are not available to workflows triggered from a fork's pull request, so 
 | `mode` | `check` | `check` regenerates in memory and fails, printing a unified diff and one error annotation per file, when a generated file differs or is missing. `write` writes the regenerated files. Only the files Terragram generates are compared or written; anything else in the directory is left alone. Line endings are not compared. |
 | `comment` | `true` | On a `pull_request` run, post or update one sticky comment (found by an HTML marker, and only if a bot wrote it). Ignored on other events. |
 | `signing-key` | none | Ed25519 private key to sign the receipt with. |
-| `control-plane-url` | none | Accepted, but uploading receipts is not yet supported: nothing is sent, and the log says so. |
+| `control-plane-url` | none | Address of a control plane to upload the bundle to after the check; see above. Needs `id-token: write`. |
+| `control-plane-audience` | `infraharvest-api` | The audience the identity token is requested for. The control plane must accept it. |
 | `github-token` | `${{ github.token }}` | Token for the comment. It needs `pull-requests: write` and nothing else. |
 
 ## Outputs
@@ -91,6 +115,7 @@ Secrets are not available to workflows triggered from a fork's pull request, so 
 | `changed` | `true` when `check` found drift, or `write` changed a file; otherwise `false`. |
 | `receipt-path` | `_diagram/receipt.json`, relative to the workspace. |
 | `content-hash` | The receipt's `sha256:` hash over the model and the generated Terraform. |
+| `snapshot-id` | The id the control plane kept the uploaded bundle under; empty when nothing was uploaded. |
 
 ## The receipt bundle
 
@@ -110,7 +135,7 @@ A model too large for Mermaid's limits is drawn as its changed part only, or not
 
 **Do not use this Action with `pull_request_target`, and it refuses to run under it.** That trigger runs in the context of the base repository with a token that can write, while the files it would read come from the pull request. Use `pull_request`. For a pull request from a fork, `pull_request` gives the job a read-only token and no secrets: the check still runs, the comment is skipped with a warning, and the receipt is unsigned.
 
-- **Permissions.** `contents: read` to check out, `pull-requests: write` for the comment. Nothing else is used.
+- **Permissions.** `contents: read` to check out, `pull-requests: write` for the comment, and `id-token: write` only if you upload to a control plane. Nothing else is used.
 - **Untrusted text.** The model file is part of the pull request, so its labels are untrusted. They are entity-encoded before they reach Mermaid or markdown, so a label cannot close the code fence, add markup or mention a user, and they never start a workflow command in the log.
 - **Which comment is edited.** Only a comment authored by a bot account that carries the marker. A person who pastes the marker into their own comment does not make the Action edit it.
 - **Paths.** `model` and `terraform-dir` must resolve inside the workspace; a path that leaves it is an error.

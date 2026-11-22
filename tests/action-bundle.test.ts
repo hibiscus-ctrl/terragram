@@ -112,10 +112,11 @@ describe("action.yml", () => {
   });
 
   it("declares the inputs and outputs the code reads and writes, with the documented defaults", () => {
-    assert.deepEqual([...section("outputs").keys()].sort(), ["changed", "content-hash", "receipt-path"]);
+    assert.deepEqual([...section("outputs").keys()].sort(), ["changed", "content-hash", "receipt-path", "snapshot-id"]);
     const inputs = section("inputs");
     assert.deepEqual([...inputs.keys()].sort(), [
       "comment",
+      "control-plane-audience",
       "control-plane-url",
       "github-token",
       "mode",
@@ -129,6 +130,8 @@ describe("action.yml", () => {
     assert.equal(defaultOf(inputs.get("comment")), '"true"');
     assert.equal(defaultOf(inputs.get("github-token")), "${{ github.token }}");
     assert.equal(defaultOf(inputs.get("signing-key")), undefined);
+    assert.equal(defaultOf(inputs.get("control-plane-audience")), "infraharvest-api");
+    assert.equal(defaultOf(inputs.get("control-plane-url")), undefined);
     for (const [name, lines] of inputs) assert.ok(!lines.includes("    required: true"), `${name} must be optional`);
   });
 });
