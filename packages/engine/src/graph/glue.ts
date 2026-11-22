@@ -19,7 +19,11 @@
 export type GlueRule = {
   /** Resource types hidden by exact name. */
   types: readonly string[];
-  /** Regular expressions (source text, matched anywhere in the type) for types hidden by shape. */
+  /**
+   * Globs for types hidden by shape, matched against the whole type: `*` stands for any run of
+   * characters and nothing else is special. Globs, not regular expressions, so a pattern from
+   * a command line or a config can never cost more than linear time.
+   */
   patterns: readonly string[];
   /** Types never hidden, whatever the other two say. */
   keep: readonly string[];
@@ -41,17 +45,19 @@ export const DEFAULT_GLUE: Readonly<GlueRule> = {
   patterns: [
     // Attachments and associations: a route table association, a policy attachment,
     // a volume attachment, a security group association.
-    "_attachment$",
-    "_association$",
+    "*_attachment",
+    "*_association",
     // IAM bindings on a Google resource.
-    "^google_.+_iam_(binding|member|policy)$",
+    "google_*_iam_binding",
+    "google_*_iam_member",
+    "google_*_iam_policy",
     // Terraform's own plumbing.
-    "^random_",
-    "^time_",
-    "^null_resource$",
-    "^terraform_data$",
+    "random_*",
+    "time_*",
+    "null_resource",
+    "terraform_data",
     // Data sources, if a document ever names one.
-    "^data\\.",
+    "data.*",
   ],
   keep: [],
 };
@@ -61,6 +67,23 @@ export function glueMatcher(rule: Readonly<GlueRule> | false): (type: string) =>
   if (rule === false) return () => false;
   const types = new Set(rule.types);
   const keep = new Set(rule.keep);
-  const patterns = rule.patterns.map((source) => new RegExp(source));
-  return (type) => !keep.has(type) && (types.has(type) || patterns.some((pattern) => pattern.test(type)));
+  const patterns = rule.patterns.map((glob) => glob.split("*"));
+  return (type) => !keep.has(type) && (types.has(type) || patterns.some((parts) => globMatches(parts, type)));
 }
+
+/** Whether `text` matches a glob already split on `*`: the whole text, in one linear pass. */
+function globMatches(parts: readonly string[], text: string): boolean {
+  const first = parts[0] ?? "";
+  if (parts.length === 1) return text === first;
+  const last = parts[parts.length - 1] ?? "";
+  if (!text.startsWith(first) || text.length < first.length + last.length) return false;
+  let at = first.length;
+  const end = text.length - last.length;
+  for (const part of parts.slice(1, -1)) {
+    const found = text.indexOf(part, at);
+    if (found < 0 || found + part.length > end) return false;
+    at = found + part.length;
+  }
+  return text.endsWith(last);
+}
+

@@ -32,7 +32,7 @@ Options:
   --title <text>           a title for the picture
   --show-glue              draw the resources that are hidden as glue (attachments,
                            associations, random_*, null_resource, ...)
-  --hide <regex>           also hide resource types matching this expression (repeatable)
+  --hide <glob>            also hide resource types matching this glob, e.g. aws_cloudwatch_* (repeatable)
   --keep <type>            never hide this resource type (repeatable)
   -o, --output <file>      where to write it (default: standard output)
   -h, --help               show this help
@@ -79,13 +79,6 @@ export async function graph(argv: string[], io: Io): Promise<number> {
   if (values.delta && values.base === undefined) throw new UsageError("--delta needs --base");
 
   const hide = values.hide ?? [];
-  for (const pattern of hide) {
-    try {
-      new RegExp(pattern);
-    } catch {
-      throw new UsageError(`--hide ${pattern} is not a regular expression`);
-    }
-  }
   const glue = values["show-glue"]
     ? false
     : { ...DEFAULT_GLUE, patterns: [...DEFAULT_GLUE.patterns, ...hide], keep: [...DEFAULT_GLUE.keep, ...(values.keep ?? [])] };

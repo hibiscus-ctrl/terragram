@@ -231,10 +231,25 @@ describe("glue", () => {
     const keepPermission = view(medium, { glue: keepRule });
     assert.equal(keepPermission.hidden.count, 10);
     assert.ok(keepPermission.nodes.some((n) => n.type === "aws_lambda_permission"));
-    const hideMore = view(medium, { glue: { ...DEFAULT_GLUE, patterns: [...DEFAULT_GLUE.patterns, "^aws_cloudwatch_"] } });
+    const hideMore = view(medium, { glue: { ...DEFAULT_GLUE, patterns: [...DEFAULT_GLUE.patterns, "aws_cloudwatch_*"] } });
     assert.equal(hideMore.hidden.count, 13);
     const exact = view(medium, { glue: { types: ["aws_eip"], patterns: [], keep: [] } });
     assert.deepEqual(exact.hidden.types, [{ type: "aws_eip", count: 1 }]);
+  });
+
+  it("matches glue globs against the whole type, with `*` the only special character", async () => {
+    const { glueMatcher } = await import("../packages/engine/src/graph/glue.ts");
+    const glue = glueMatcher({ types: [], patterns: ["*_attachment", "google_*_iam_member", "data.*", "a*b*c"], keep: [] });
+    for (const type of ["aws_iam_role_policy_attachment", "google_storage_bucket_iam_member", "data.aws_ami", "abc", "a_b_c"]) {
+      assert.ok(glue(type), type);
+    }
+    for (const type of ["aws_attachment_thing", "google_iam_member", "data", "dataXaws", "acb", "ab"]) {
+      assert.ok(!glue(type), type);
+    }
+    // Regular-expression syntax is literal text, so a hostile pattern costs nothing.
+    const literal = glueMatcher({ types: [], patterns: ["(a+)+$"], keep: [] });
+    assert.ok(!literal(`${"a".repeat(50_000)}!`));
+    assert.ok(literal("(a+)+$"));
   });
 
   it("never hides a module call, and treats Google IAM bindings as glue", () => {

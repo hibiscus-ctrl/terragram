@@ -86,11 +86,11 @@ describe("terragram graph", () => {
     assert.equal(await count(), 11);
     assert.equal(await count("--show-glue"), 0);
     assert.equal(await count("--keep", "aws_lambda_permission"), 10);
-    assert.equal(await count("--hide", "^aws_cloudwatch_", "--hide", "^aws_eip$"), 14);
+    assert.equal(await count("--hide", "aws_cloudwatch_*", "--hide", "aws_eip"), 14);
   });
 
   it("exits 2 on bad arguments", async () => {
-    for (const args of [["graph"], ["graph", small, medium], ["graph", small, "--format", "png"], ["graph", small, "--delta"], ["graph", small, "--hide", "("], ["graph", small, "--nope"]]) {
+    for (const args of [["graph"], ["graph", small, medium], ["graph", small, "--format", "png"], ["graph", small, "--delta"], ["graph", small, "--nope"]]) {
       const result = await cli(...args);
       assert.equal(result.code, 2, args.join(" "));
       assert.match(result.stderr, /^terragram: /);
