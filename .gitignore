@@ -48,3 +48,6 @@ next-env.d.ts
 # local API test env files (kept out of the public repo)
 .env.test
 .env.test.unconfigured
+
+# built packages
+/packages/*/dist

@@ -9,6 +9,9 @@
   "engines": {
     "node": ">=24"
   },
+  "scripts": {
+    "build": "node build.mjs && tsc -p tsconfig.build.json && node rewrite-declarations.mjs"
+  },
   "exports": {
     "./build-receipt": "./src/build-receipt.ts",
     "./diagram-svg": "./src/diagram-svg.ts",
