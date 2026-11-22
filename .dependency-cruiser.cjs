@@ -74,7 +74,7 @@ const PRIVILEGED_CLIENT = "^src/libs/(supabase/supabase-admin|stripe/stripe-admi
 
 /** The engine's own source, and the only npm packages it may import. */
 const ENGINE = "^packages/engine/";
-const ENGINE_ALLOWED_PACKAGES = ["zod", "dagre", "@infraweaver-io/attest"];
+const ENGINE_ALLOWED_PACKAGES = ["zod", "dagre"];
 
 /** @type {import("dependency-cruiser").IConfiguration} */
 module.exports = {
@@ -87,7 +87,7 @@ module.exports = {
         "first, so a binding can be read before it is initialised. Move the shared piece " +
         "into a module both sides import.",
       severity: "error",
-      from: { path: "^(src|packages/engine/src)/" },
+      from: { path: "^(src|packages/engine/src|packages/cli/src)/" },
       to: { circular: true },
     },
     {
@@ -135,6 +135,29 @@ module.exports = {
       severity: "error",
       from: { path: "^packages/engine/src/" },
       to: { dependencyTypes: ["local"], pathNot: "^packages/engine/src/" },
+    },
+    {
+      name: "cli-no-app-imports",
+      comment:
+        "packages/cli imports something from the app (src/). The CLI is built into one file " +
+        "that runs with nothing around it, so it can use the engine's public exports " +
+        "(`terragram-engine/<subpath>`) and Node, and nothing of this app.",
+      severity: "error",
+      from: { path: "^packages/cli/" },
+      to: { path: "^src/" },
+    },
+    {
+      name: "cli-no-npm-imports",
+      comment:
+        "packages/cli imports an npm package. Its bundle has no runtime dependencies: the " +
+        "engine (which dependency-cruiser sees as a local path, being a workspace) is " +
+        "bundled in, and anything else would have to be bundled too. Take it from the engine " +
+        "or from node:, or add it here deliberately.",
+      severity: "error",
+      from: { path: "^packages/cli/src/" },
+      to: {
+        dependencyTypes: ["npm", "npm-dev", "npm-optional", "npm-peer", "npm-bundled", "npm-no-pkg", "npm-unknown"],
+      },
     },
     {
       name: "components-no-privileged-client",

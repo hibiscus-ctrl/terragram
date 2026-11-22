@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hibiscus-ctrl/terragram/schemas/model.v1.schema.json",
+  "title": "Terragram model (terragram.model/v1)",
+  "description": "An infrastructure diagram as Terragram reads it: components (nodes, at most 300) and the connections between them (edges, at most 600), optionally with the cloud it targets. A bare model, as found in an evidence bundle's model.json, is valid.",
+  "type": "object",
+  "properties": {
+    "nodes": {
+      "maxItems": 300,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "compute",
+              "network",
+              "storage",
+              "identity",
+              "observability",
+              "edge"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "flag": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 400
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attributes": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          "position": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "kind",
+          "label"
+        ]
+      }
+    },
+    "edges": {
+      "maxItems": 600,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "origin": {
+            "default": "derived",
+            "type": "string",
+            "enum": [
+              "derived",
+              "user"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "target"
+        ]
+      }
+    },
+    "topology": {
+      "default": "derived",
+      "type": "string",
+      "enum": [
+        "derived",
+        "manual"
+      ]
+    },
+    "schema": {
+      "type": "string",
+      "const": "terragram.model/v1"
+    },
+    "cloud": {
+      "type": "string",
+      "enum": [
+        "azure",
+        "aws"
+      ]
+    }
+  },
+  "required": [
+    "nodes",
+    "edges"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "terragram",
+  "version": "0.1.0",
+  "description": "Terragram on the command line: a brief or a diagram to reviewed Terraform, Terraform back to a diagram, and offline checks of evidence receipts. One bundled file, no runtime dependencies.",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "bin": {
+    "terragram": "./dist/terragram.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "terragram-engine": "*"
+  }
+}

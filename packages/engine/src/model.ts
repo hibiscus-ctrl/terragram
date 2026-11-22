@@ -73,6 +73,22 @@ export const infraModelSchema = z.object({
 });
 export type InfraModel = z.infer<typeof infraModelSchema>;
 
+/** The id a model document carries in its `schema` field, and the name of its JSON
+ *  Schema (`schemas/model.v1.schema.json`). */
+export const MODEL_SCHEMA = "terragram.model/v1" as const;
+
+/**
+ * The model as a standalone JSON document: what `terragram parse` writes and
+ * `terragram generate` reads back. It is `infraModelSchema` plus two optional
+ * envelope fields, so a bare model (the `model.json` in an evidence bundle, which
+ * the content hash covers) is a valid document too. The target cloud rides along
+ * because a model alone does not say which cloud it is for.
+ */
+export const modelDocumentSchema = infraModelSchema.extend({
+  schema: z.literal(MODEL_SCHEMA).optional(),
+  cloud: z.enum(CLOUDS).optional(),
+});
+
 export const EMPTY_MODEL: InfraModel = { nodes: [], edges: [], topology: "derived" };
 
 /** Category presentation — colours match the node-category legend in globals.css. */

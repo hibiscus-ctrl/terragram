@@ -23,17 +23,29 @@
         "postcss-load-config"
       ],
       "ignoreBinaries": [
-        "stripe"
+        "stripe",
+        "terraform"
       ]
     },
     "packages/engine": {
       "entry": [
-        "src/*.ts"
+        "src/*.ts",
+        "build.mjs",
+        "rewrite-declarations.mjs"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "*.mjs"
+      ],
+      "includeEntryExports": true
+    },
+    "packages/cli": {
+      "entry": [
+        "src/main.ts"
       ],
       "project": [
         "src/**/*.ts"
-      ],
-      "includeEntryExports": true
+      ]
     }
   },
   "exclude": [

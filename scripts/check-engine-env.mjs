@@ -32,7 +32,7 @@ function maskComments(source) {
 const files = readdirSync(engineDir, { recursive: true, withFileTypes: true })
   .filter((e) => e.isFile() && /\.(ts|mjs|js)$/.test(e.name))
   .map((e) => join(e.parentPath, e.name))
-  .filter((file) => !file.split("/").includes("node_modules"))
+  .filter((file) => !file.split("/").some((part) => part === "node_modules" || part === "dist"))
   .sort();
 
 const errors = [];

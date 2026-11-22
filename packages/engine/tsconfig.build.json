@@ -1,0 +1,12 @@
+{
+  // The declarations for `build.mjs`'s bundle: .d.ts files only, mirroring src/.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  }
+}
