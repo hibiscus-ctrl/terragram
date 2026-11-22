@@ -69,6 +69,8 @@ jobs:
             // Exact bot logins, not a *[bot] pattern, which would exempt any
             // GitHub App that pushes a commit.
             const bots = new Set(['dependabot[bot]', 'github-actions[bot]', 'coderabbitai[bot]']);
+            // The copyright holder's accounts need no CLA: the code is theirs.
+            const holders = new Set(['hibiscus-ctrl', 'IgnatG']);
             const marker = '<!-- terragram-cla -->';
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request
@@ -113,7 +115,7 @@ jobs:
               const unknown = new Set();
               for (const c of commits) {
                 if (c.author && c.author.login) {
-                  if (!bots.has(c.author.login)) {
+                  if (!bots.has(c.author.login) && !holders.has(c.author.login)) {
                     users.set(c.author.login, c.author.id);
                   }
                 } else {
