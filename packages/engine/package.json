@@ -19,6 +19,7 @@
     "./evidence": "./src/evidence.ts",
     "./explain": "./src/explain.ts",
     "./feasibility": "./src/feasibility.ts",
+    "./graph": "./src/graph.ts",
     "./graph-build": "./src/graph-build.ts",
     "./hcl": "./src/hcl.ts",
     "./inspector": "./src/inspector.ts",

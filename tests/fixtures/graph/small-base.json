@@ -1,0 +1,97 @@
+{
+  "schema": "infraharvest/graph/v1",
+  "run_id": "6f1c9d3e-0a52-5b8e-9c47-2d1f3a5b7c90",
+  "generated_at": "2026-11-20T10:00:00Z",
+  "tool": {
+    "name": "infraharvest",
+    "version": "0.4.0"
+  },
+  "cloud": "aws",
+  "nodes": [
+    {
+      "kind": "module",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "source": "terraform-aws-modules/vpc/aws",
+      "version": "5.12.0"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_vpc",
+      "id": "vpc-0a1b2c3d",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0f1e2d3c",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_instance",
+      "id": "i-0abc123def456",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role",
+      "id": "web-role",
+      "account": "123456789012"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role_policy_attachment",
+      "id": "web-role/arn:aws:iam::aws:policy/ReadOnlyAccess",
+      "account": "123456789012"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_policy",
+      "id": "arn:aws:iam::aws:policy/ReadOnlyAccess",
+      "account": "123456789012"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_instance",
+      "id": "i-0old999",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    }
+  ],
+  "edges": [
+    {
+      "from": 2,
+      "to": 1
+    },
+    {
+      "from": 3,
+      "to": 2
+    },
+    {
+      "from": 3,
+      "to": 4
+    },
+    {
+      "from": 4,
+      "to": 5
+    },
+    {
+      "from": 5,
+      "to": 6
+    },
+    {
+      "from": 7,
+      "to": 2
+    }
+  ],
+  "redaction": {
+    "ids_hashed": false,
+    "hash_alg": "hmac-sha256"
+  }
+}

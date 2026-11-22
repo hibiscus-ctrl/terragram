@@ -1,0 +1,31 @@
+flowchart TB
+  subgraph g0["AWS account 123456789012"]
+    subgraph g1["module terraform-aws-modules/vpc/aws 5.13.0 [changed]"]
+      n0["~ module call<br/>terraform-aws-modules/vpc/aws"]
+      n6["aws_subnet<br/>subnet-0f1e2d3c"]
+      n7["aws_vpc<br/>vpc-0a1b2c3d"]
+    end
+    n1["aws_iam_policy<br/>ReadOnlyAccess"]
+    n2["aws_iam_role<br/>web-role"]
+    n3["aws_instance<br/>i-0abc123def456"]
+    n4["- aws_instance<br/>i-0old999"]
+    n5["+ aws_security_group<br/>sg-0123abcd"]
+  end
+  n2 --> n1
+  n3 ==> n0
+  n3 --> n2
+  n3 ==> n5
+  n3 --> n6
+  n4 -.-> n6
+  n5 ==> n7
+  n6 --> n7
+  linkStyle 1 stroke:#15803d,stroke-width:2px
+  linkStyle 3 stroke:#15803d,stroke-width:2px
+  linkStyle 5 stroke:#b91c1c,stroke-width:2px
+  linkStyle 6 stroke:#15803d,stroke-width:2px
+  classDef added fill:#f0fdf4,stroke:#15803d,color:#14532d
+  class n5 added
+  classDef removed fill:#fef2f2,stroke:#b91c1c,color:#7f1d1d,stroke-dasharray:4 3
+  class n4 removed
+  classDef changed fill:#fffbeb,stroke:#b45309,color:#78350f
+  class n0 changed
