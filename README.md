@@ -1,6 +1,4 @@
-# Terragram
-
-**Terragram** turns a plain-English brief, a Mermaid flowchart or an architecture diagram into reviewed
+# Terragram**Terragram** turns a plain-English brief, a Mermaid flowchart or an architecture diagram into reviewed
 Terraform or OpenTofu, and reads Terraform back into a diagram, through one auditable internal model.
 This repository holds the TypeScript engine that does it, a command line over that engine, and a GitHub
 Action that keeps a repository's Terraform in line with a model file.
@@ -47,6 +45,7 @@ terragram generate --mermaid diagram.mmd --tofu -o out/                         
 terragram parse infra/ -o model.json                                                  # Terraform -> model
 terragram render model.json -o diagram.svg
 terragram explain model.json                                                          # plain-English description
+terragram graph graph.json -o estate.svg                                              # an existing estate, from infraharvest
 terragram verify bundle/ --key signer.pem                                             # offline receipt check
 ```
 
@@ -61,6 +60,39 @@ Exit status is 0 on success, 1 when a command fails (including a receipt that do
 for bad arguments; `--json` prints a machine-readable result where it helps.
 
 ## GitHub Action
+
+
+
+## Graph rendering
+
+`terragram graph` draws an estate that already exists, from the `graph/v1` document
+`infraharvest export --schema graph` writes (its JSON Schema is vendored in
+[`schemas/vendor/infraharvest/`](schemas/vendor/infraharvest/)). It is the one diagram renderer
+for pull request comments and for the platform's web app: the same document gives the same bytes,
+whatever order it lists its nodes in.
+
+```bash
+terragram graph graph.json -o estate.svg                       # SVG (default); --format mermaid | json
+terragram graph graph.json --base main/graph.json              # mark what was added, removed, changed
+terragram graph graph.json --base main/graph.json --delta      # only the changes and one reference of context
+terragram graph graph.json --findings ocsf-findings.json       # lay findings over it
+```
+
+An account (or subscription, or project) is a box, a module call is a box inside it, and an arrow
+runs from a resource to what it refers to. **Glue is hidden**: attachments and associations
+(`*_attachment`, `*_association`), `aws_iam_role_policy` and its kin, Google IAM bindings,
+`random_*`, `time_*`, `null_resource`, `terraform_data`; a line that went through one still joins
+the two ends, and the footer counts what was hidden. The rule is `DEFAULT_GLUE`, which
+`projectGraph` takes a replacement for (`glue: false` hides nothing; the CLI has `--show-glue`,
+`--hide` and `--keep`).
+
+Findings are placed by what `graph/v1` can name: a resource by its `type` and `id`, a scope by its
+`account`. infraharvest's `ocsf-findings` land on the account of the root they were found in.
+A finding that only has a Terraform address is counted as not placed unless the caller resolves it
+(`resolveAddress`), never guessed at.
+
+In code, import `terragram-engine/graph`: `parseGraphDocument`, `projectGraph(doc, options)` (a view
+model), `renderGraphSvg(view)`, `renderGraphMermaid(view)` and `diffGraphs(base, head)`.
 
 `hibiscus-ctrl/terragram/action@<full commit SHA>` regenerates the Terraform from a `terragram.json`
 model file and fails the check when the committed Terraform differs, or writes the files. On a pull
