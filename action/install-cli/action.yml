@@ -1,0 +1,135 @@
+name: Install the Terragram CLI
+description: >-
+  Downloads a released terragram CLI (one .mjs file) from this repository's GitHub releases, checks it against the
+  SHA-256 you pin, optionally verifies its build provenance, and puts a `terragram` command on PATH. Needs Node.js 24
+  on the runner (actions/setup-node first) and a Linux or macOS runner.
+author: hibiscus-ctrl
+
+branding:
+  icon: download
+  color: green
+
+inputs:
+  version:
+    description: The CLI version to install, as in the release tag cli-v<version> (for example 0.1.0).
+    required: true
+  sha256:
+    description: >-
+      The SHA-256 of terragram-<version>.mjs as a 64-character hex string, taken from the release's SHA256SUMS and kept
+      in your workflow, so a changed release asset fails the install instead of running.
+    required: true
+  verify-attestation:
+    description: >-
+      Also run `gh attestation verify` on the file, requiring that this repository's release-cli.yml workflow built it
+      from the tag cli-v<version>. When true and the check fails, the install fails. The check needs the gh CLI
+      (preinstalled on GitHub-hosted runners); without gh it is skipped with a warning, and the SHA-256 check still runs.
+    required: false
+    default: "true"
+
+outputs:
+  path:
+    description: The installed terragram-<version>.mjs file.
+    value: ${{ steps.install.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    # Everything an input or the runner supplies reaches the scripts through env, never through
+    # ${{ }} in the script text, and is checked against a strict pattern before it is used.
+    - name: Check the inputs and the runner
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
+        VERIFY: ${{ inputs.verify-attestation }}
+      run: |
+        set -euo pipefail
+        if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+          echo "::error::version must look like 1.2.3 or 1.2.3-rc.1, got '$VERSION'"
+          exit 1
+        fi
+        if ! [[ "$SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then
+          echo "::error::sha256 must be the 64 hex characters of the file's SHA-256 (the first column of the release's SHA256SUMS)"
+          exit 1
+        fi
+        if [[ "$VERIFY" != true && "$VERIFY" != false ]]; then
+          echo "::error::verify-attestation must be true or false, got '$VERIFY'"
+          exit 1
+        fi
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          echo "::error::the terragram wrapper needs a Linux or macOS runner"
+          exit 1
+        fi
+        if ! command -v node > /dev/null; then
+          echo "::error::Node.js 24 or later is required and node is not on PATH: run actions/setup-node with node-version: 24 before this step"
+          exit 1
+        fi
+        major=$(node -p 'process.versions.node.split(".")[0]')
+        if [ "$major" -lt 24 ]; then
+          echo "::error::Node.js 24 or later is required, this runner has $(node --version): run actions/setup-node with node-version: 24 before this step"
+          exit 1
+        fi
+
+    - name: Download and check the file
+      id: install
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
+        VERIFY: ${{ inputs.verify-attestation }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        repo=hibiscus-ctrl/terragram
+        dir="$RUNNER_TEMP/terragram-cli-$VERSION"
+        file="$dir/terragram-$VERSION.mjs"
+        mkdir -p "$dir"
+
+        curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 3 \
+          --output "$file" "https://github.com/$repo/releases/download/cli-v$VERSION/terragram-$VERSION.mjs"
+
+        if command -v sha256sum > /dev/null; then
+          actual=$(sha256sum "$file" | cut -d ' ' -f 1)
+        else
+          actual=$(shasum -a 256 "$file" | cut -d ' ' -f 1)
+        fi
+        expected=$(printf '%s' "$SHA256" | tr 'A-F' 'a-f')
+        if [ "$actual" != "$expected" ]; then
+          rm -f "$file"
+          echo "::error::terragram-$VERSION.mjs has the SHA-256 $actual, not the pinned $expected; nothing was installed"
+          exit 1
+        fi
+
+        if [ "$VERIFY" = true ]; then
+          if command -v gh > /dev/null; then
+            # Fails the step (set -e) when no attestation matches: the file must have been built by
+            # this repository's release workflow from the version's tag.
+            gh attestation verify "$file" --repo "$repo" \
+              --signer-workflow "$repo/.github/workflows/release-cli.yml" \
+              --source-ref "refs/tags/cli-v$VERSION"
+          else
+            echo "::warning::gh is not installed, so the build provenance of terragram-$VERSION.mjs was not verified; its SHA-256 was"
+          fi
+        fi
+
+        # The wrapper is what goes on PATH.
+        printf '#!/bin/sh\nexec node %q "$@"\n' "$file" > "$dir/terragram"
+        chmod 0755 "$dir/terragram"
+        echo "path=$file" >> "$GITHUB_OUTPUT"
+        echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+        installed=$("$dir/terragram" --version)
+        if [ "$installed" != "$VERSION" ]; then
+          echo "::error::terragram --version printed '$installed', not $VERSION"
+          exit 1
+        fi
+        echo "Installed terragram $installed ($file)"
+
+    # Putting the wrapper on PATH is this action's job. The directory is the one the step above made under
+    # RUNNER_TEMP, named from a version checked against a strict pattern; zizmor flags every write to GITHUB_PATH
+    # in a composite action, at low confidence, because it cannot see what the value is.
+    - name: Put terragram on PATH
+      shell: bash
+      env:
+        TERRAGRAM_DIR: ${{ steps.install.outputs.dir }}
+      run: echo "$TERRAGRAM_DIR" >> "$GITHUB_PATH" # zizmor: ignore[github-env]
