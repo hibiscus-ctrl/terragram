@@ -222,14 +222,15 @@ describe("receipt provenance", () => {
     ["before provenance existed", "terragram.receipt/v1"],
     ["under the codename schema id", "terragram.receipt/v2"],
   ] as const) {
-    it(`still verifies a receipt written ${name}`, async () => {
+    it(`verifies a receipt written ${name} only when the caller accepts its id`, async () => {
       const { bundle } = await signedBundle();
       const older = bundle.map((entry) =>
         entry.name === "receipt.json"
           ? { ...entry, content: entry.content.replace("diagram.receipt/v2", oldId) }
           : entry,
       );
-      const report = await verifyBundle(older);
+      assert.equal((await verifyBundle(older)).error, `Unrecognised receipt schema: ${oldId}.`);
+      const report = await verifyBundle(older, { alsoAccept: [oldId] });
       // The hash covers the model and the plan, neither of which the schema id
       // touched — so refusing an older bundle would be a choice, not a limitation.
       assert.equal(report.hash.status, "pass", report.hash.detail);

@@ -19827,6 +19827,7 @@ function resourceNodes(model) {
 }
 
 // ../packages/engine/src/evidence.ts
+var ENGINE_NAME = "diagram-engine";
 var ENGINE_VERSION = "0.1.0";
 
 // ../packages/engine/src/hcl.ts
@@ -23206,7 +23207,7 @@ async function buildEvidenceReceipt(model, cloud, engine, approver, nowIso, opti
     planText: planText(terraform.files, order)
   });
   const sbom = [
-    { name: "terragram-engine", version: ENGINE_VERSION },
+    { name: ENGINE_NAME, version: ENGINE_VERSION },
     { name: terraform.provider, version: terraform.providerVersion },
     ...terraform.modules.map((m) => ({ name: m.source, version: m.version }))
   ];

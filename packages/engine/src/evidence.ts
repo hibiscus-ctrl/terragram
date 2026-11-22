@@ -14,6 +14,9 @@ import type { TerraformOutput } from "./terraform.ts";
  * and which translator answered.
  */
 
+/** How receipts and previews name the engine in their SBOM: by what it does, like the
+ *  `diagram.*` schema ids, so the name holds wherever the engine is built in. */
+export const ENGINE_NAME = "diagram-engine";
 export const ENGINE_VERSION = "0.1.0";
 
 export type { EngineKind };
@@ -73,7 +76,7 @@ export function buildEvidence(
     region: terraform.regionLabel,
     inferenceMode: inferenceModeLabel(engine),
     sbom: [
-      { name: "terragram-engine", version: ENGINE_VERSION },
+      { name: ENGINE_NAME, version: ENGINE_VERSION },
       { name: terraform.provider, version: providerVersion },
       ...terraform.modules.map((m) => ({ name: m.source, version: m.version })),
     ],

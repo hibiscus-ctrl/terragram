@@ -61,9 +61,14 @@ function failure(error: string): VerifyReport {
 /**
  * Verify a bundle's entries. `entries` is whatever the reader dropped in: the files
  * from the zip, or a pasted `receipt.json` on its own (in which case the hash cannot
- * be recomputed and we say so rather than reporting a pass).
+ * be recomputed and we say so rather than reporting a pass). `alsoAccept` names receipt
+ * schema ids beyond this build's own that the caller still trusts, such as an older
+ * schema name its receipts were written under.
  */
-export async function verifyBundle(entries: BundleEntry[]): Promise<VerifyReport> {
+export async function verifyBundle(
+  entries: BundleEntry[],
+  options: { alsoAccept?: readonly string[] } = {},
+): Promise<VerifyReport> {
   const receiptEntry = entries.find((e) => e.name.endsWith("receipt.json"));
   if (!receiptEntry) return failure("No receipt.json found in what you provided.");
 
@@ -75,7 +80,8 @@ export async function verifyBundle(entries: BundleEntry[]): Promise<VerifyReport
   }
   // Older receipts still verify: the schema grew a provenance section, but the
   // bytes it hashes and the way it signs them never changed.
-  if (!VERIFIABLE_RECEIPT_SCHEMAS.includes(receipt?.schema as string)) {
+  const schema = receipt?.schema as string;
+  if (!VERIFIABLE_RECEIPT_SCHEMAS.includes(schema) && !(options.alsoAccept ?? []).includes(schema)) {
     return failure(`Unrecognised receipt schema: ${String(receipt?.schema ?? "missing")}.`);
   }
 
