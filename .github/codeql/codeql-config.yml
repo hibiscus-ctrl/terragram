@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Test and fixture code builds URLs and strings to assert on, which CodeQL's
+# sanitisation queries read as product code. Scan what ships.
+paths-ignore:
+  - tests
+  - cypress
+  - contracts
