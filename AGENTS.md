@@ -84,6 +84,27 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
   (dots, as the receipt always has); `$id` URLs sit under the repository for now and will move with
   the name.
 
+## Graph rendering: `terragram-engine/graph`, `terragram graph`
+
+The one renderer of an *existing* estate (the design features draw a model; this draws infraharvest's
+`graph/v1`). The platform web app imports the module and infraharvest's and Infraweaver's Actions call
+the CLI, so its output is a contract.
+
+- **Pipeline.** `parseGraphDocument` (zod, mirrors `schemas/vendor/infraharvest/graph-v1.schema.json`)
+  → `normalizeGraph` (index-free keys, glue folded away) → `projectGraph` (the `GraphView`: groups,
+  nodes, edges, statuses, finding tallies) → `renderGraphSvg` / `renderGraphMermaid`. Layout is
+  dagre as a compound graph, boxes drawn around members (`graph/layout.ts`).
+- **Deterministic by construction.** Every order is by key with `compareText` (never `localeCompare`),
+  ids are assigned after sorting, coordinates are rounded, nothing reads the clock or the environment.
+  `tests/graph.test.ts` shuffles the input and requires identical bytes; keep that when adding output.
+- **Goldens** are in `tests/fixtures/graph/golden/`; `UPDATE_GOLDEN=1 npm test` rewrites them, then read
+  the diff. The vendored schema is copied unchanged from infraharvest (commit in its README); to
+  update it, copy it and change the commit.
+- **Glue** is data (`graph/glue.ts`, `DEFAULT_GLUE`): a type list, patterns and a keep list. Changing
+  it changes every picture, so change the goldens with it and say why in the PR.
+- **graph/v1 has no addresses and no environments**, so findings match by `type` + `id` or `account`
+  only; do not add a heuristic that guesses from an address.
+
 ## The Action: `action/`
 
 `hibiscus-ctrl/terragram/action@<sha>` (`action/action.yml`, runtime `node24`) is a second host of the engine. It reads

@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="934" height="558" viewBox="0 0 934 558" role="img" aria-labelledby="tg-title tg-desc">
+<title id="tg-title">Infrastructure graph</title>
+<desc id="tg-desc">8 resources in 2 groups, 8 references.</desc>
+<defs><marker id="tg-arrow-unchanged" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a8a090"/></marker><marker id="tg-arrow-added" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#15803d"/></marker><marker id="tg-arrow-removed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#b91c1c"/></marker></defs>
+<rect width="934" height="558" fill="#faf8f4"/>
+<text x="24" y="24" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" font-weight="400" fill="#665e4f">Resources +1 -1 ~1, references +3 -1</text>
+<g><rect x="24" y="48" width="886" height="430" rx="12" fill="#f6f3ec" stroke="#cfc7b4" stroke-width="1.25"/>
+<text x="36" y="63" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#665e4f">AWS account 123456789012</text>
+</g>
+<g><rect x="256" y="218" width="422" height="246" rx="12" fill="#fffbeb" stroke="#b45309" stroke-width="1.25" stroke-dasharray="6 4"/>
+<text x="268" y="233" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#665e4f">module terraform-aws-modules/vpc/aws 5.13.0 [changed]</text>
+</g>
+<path d="M 810 316 Q 810 352 810 370 L 810 388" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 361 146 Q 356 182 356 200 Q 356 218 356 236 L 356 254" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#tg-arrow-added)"/>
+<path d="M 452 128 Q 810 182 810 200 Q 810 218 810 236 L 810 254" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 280 139 Q 124 182 124 200 Q 124 218 124 236 L 124 254" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#tg-arrow-added)"/>
+<path d="M 415 146 Q 472 182 472 200 Q 472 218 500.5 236 L 529 254" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 652 146 Q 626 182 626 200 Q 626 218 613 236 L 600 254" fill="none" stroke="#b91c1c" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#tg-arrow-removed)"/>
+<path d="M 210 306 Q 404 352 445.5 370 L 487 388" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#tg-arrow-added)"/>
+<path d="M 578 316 Q 578 352 572.5 370 L 567 388" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<g><title>module call terraform-aws-modules/vpc/aws, changed</title>
+<rect x="270" y="254" width="172" height="62" rx="9" fill="#fffbeb" stroke="#b45309" stroke-width="1.5"/>
+<rect x="270" y="264" width="4" height="42" rx="2" fill="#665e4f"/>
+<text x="284" y="278" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#665e4f" letter-spacing="0.3">module call</text>
+<text x="284" y="300" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">terraform-aws-modul…</text><circle cx="270" cy="254" r="8" fill="#b45309"/><text x="270" y="258" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#ffffff">~</text>
+</g>
+<g><title>aws_iam_policy ReadOnlyAccess</title>
+<rect x="724" y="388" width="172" height="62" rx="9" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
+<rect x="724" y="398" width="4" height="42" rx="2" fill="#b45309"/>
+<text x="738" y="412" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#b45309" letter-spacing="0.3">aws_iam_policy</text>
+<text x="738" y="434" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">ReadOnlyAccess</text>
+</g>
+<g><title>aws_iam_role web-role</title>
+<rect x="724" y="254" width="172" height="62" rx="9" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
+<rect x="724" y="264" width="4" height="42" rx="2" fill="#b45309"/>
+<text x="738" y="278" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#b45309" letter-spacing="0.3">aws_iam_role</text>
+<text x="738" y="300" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">web-role</text>
+</g>
+<g><title>aws_instance i-0abc123def456, region eu-west-1</title>
+<rect x="280" y="84" width="172" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
+<rect x="280" y="94" width="4" height="42" rx="2" fill="#047857"/>
+<text x="294" y="108" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.3">aws_instance</text>
+<text x="294" y="130" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">i-0abc123def456</text>
+</g>
+<g><title>aws_instance i-0old999, region eu-west-1, removed</title>
+<rect x="588" y="84" width="172" height="62" rx="9" fill="#fef2f2" stroke="#b91c1c" stroke-width="1.5" stroke-dasharray="4 3"/>
+<rect x="588" y="94" width="4" height="42" rx="2" fill="#047857"/>
+<text x="602" y="108" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.3" text-decoration="line-through">aws_instance</text>
+<text x="602" y="130" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16" text-decoration="line-through">i-0old999</text><circle cx="588" cy="84" r="8" fill="#b91c1c"/><text x="588" y="88" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#ffffff">-</text>
+</g>
+<g><title>aws_security_group sg-0123abcd, region eu-west-1, added</title>
+<rect x="38" y="254" width="172" height="62" rx="9" fill="#f0fdf4" stroke="#15803d" stroke-width="1.5"/>
+<rect x="38" y="264" width="4" height="42" rx="2" fill="#2563eb"/>
+<text x="52" y="278" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">aws_security_group</text>
+<text x="52" y="300" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">sg-0123abcd</text><circle cx="38" cy="254" r="8" fill="#15803d"/><text x="38" y="258" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#ffffff">+</text>
+</g>
+<g><title>aws_subnet subnet-0f1e2d3c, region eu-west-1</title>
+<rect x="492" y="254" width="172" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+<rect x="492" y="264" width="4" height="42" rx="2" fill="#2563eb"/>
+<text x="506" y="278" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">aws_subnet</text>
+<text x="506" y="300" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">subnet-0f1e2d3c</text>
+</g>
+<g><title>aws_vpc vpc-0a1b2c3d, region eu-west-1</title>
+<rect x="472" y="388" width="172" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+<rect x="472" y="398" width="4" height="42" rx="2" fill="#2563eb"/>
+<text x="486" y="412" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">aws_vpc</text>
+<text x="486" y="434" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">vpc-0a1b2c3d</text>
+</g>
+<text x="24" y="518" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">1 glue resource hidden: aws_iam_role_policy_attachment x1.</text>
+<rect x="24" y="533" width="10" height="10" rx="2" fill="#15803d"/><text x="39" y="542" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">+ added</text>
+<rect x="96.4" y="533" width="10" height="10" rx="2" fill="#b91c1c"/><text x="111.4" y="542" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">- removed</text>
+<rect x="181.2" y="533" width="10" height="10" rx="2" fill="#b45309"/><text x="196.2" y="542" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">~ changed</text>
+</svg>

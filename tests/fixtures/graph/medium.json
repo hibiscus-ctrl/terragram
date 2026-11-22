@@ -1,0 +1,624 @@
+{
+  "schema": "infraharvest/graph/v1",
+  "run_id": "6f1c9d3e-0a52-5b8e-9c47-2d1f3a5b7c90",
+  "generated_at": "2026-11-20T10:00:00Z",
+  "tool": {
+    "name": "infraharvest",
+    "version": "0.4.0"
+  },
+  "cloud": "aws",
+  "nodes": [
+    {
+      "kind": "module",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "source": "terraform-aws-modules/vpc/aws",
+      "version": "5.13.0"
+    },
+    {
+      "kind": "module",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "source": "terraform-aws-modules/s3-bucket/aws",
+      "version": "4.1.0"
+    },
+    {
+      "kind": "module",
+      "account": "210987654321",
+      "region": "us-east-1",
+      "source": "terraform-aws-modules/vpc/aws",
+      "version": "5.13.0"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_vpc",
+      "id": "vpc-0a1b2c3d",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0a1",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0a2",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0b1",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0b2",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_internet_gateway",
+      "id": "igw-0a1",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_nat_gateway",
+      "id": "nat-0a1",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_eip",
+      "id": "eipalloc-0a1",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route_table",
+      "id": "rtb-0a1",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route_table",
+      "id": "rtb-0a2",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route_table_association",
+      "id": "rtbassoc-0a1",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route_table_association",
+      "id": "rtbassoc-0a2",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route_table_association",
+      "id": "rtbassoc-0b1",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route_table_association",
+      "id": "rtbassoc-0b2",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group",
+      "id": "sg-0web",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group",
+      "id": "sg-0db",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_instance",
+      "id": "i-0web1",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_instance",
+      "id": "i-0web2",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lb",
+      "id": "arn:aws:elasticloadbalancing:eu-west-1:123456789012:loadbalancer/app/web/50dc6c495c0c9188",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lb_target_group",
+      "id": "arn:aws:elasticloadbalancing:eu-west-1:123456789012:targetgroup/web/73e2d6bc24d8a067",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lb_listener",
+      "id": "arn:aws:elasticloadbalancing:eu-west-1:123456789012:listener/app/web/50dc6c495c0c9188/f2f7dc8efc522ab2",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lb_target_group_attachment",
+      "id": "arn:tga1",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lb_target_group_attachment",
+      "id": "arn:tga2",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_db_subnet_group",
+      "id": "main-db",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_db_instance",
+      "id": "db-main",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_s3_bucket",
+      "id": "acme-logs-eu",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 1
+    },
+    {
+      "kind": "resource",
+      "type": "aws_s3_bucket_policy",
+      "id": "acme-logs-eu",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 1
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role",
+      "id": "app-role",
+      "account": "123456789012"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_policy",
+      "id": "arn:aws:iam::123456789012:policy/app",
+      "account": "123456789012"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role_policy_attachment",
+      "id": "app-role/app",
+      "account": "123456789012"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_instance_profile",
+      "id": "app-profile",
+      "account": "123456789012"
+    },
+    {
+      "kind": "resource",
+      "type": "random_id",
+      "id": "AbCdEf",
+      "account": "123456789012"
+    },
+    {
+      "kind": "resource",
+      "type": "null_resource",
+      "id": "1234567890",
+      "account": "123456789012"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_vpc",
+      "id": "vpc-0b1b2c3d",
+      "account": "210987654321",
+      "region": "us-east-1",
+      "parent": 2
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0b1",
+      "account": "210987654321",
+      "region": "us-east-1",
+      "parent": 2
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0b2",
+      "account": "210987654321",
+      "region": "us-east-1",
+      "parent": 2
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lambda_function",
+      "id": "ingest",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lambda_function",
+      "id": "report",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lambda_permission",
+      "id": "ingest/AllowS3",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_dynamodb_table",
+      "id": "events",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_cloudwatch_log_group",
+      "id": "/aws/lambda/ingest",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_cloudwatch_log_group",
+      "id": "/aws/lambda/report",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role",
+      "id": "lambda-role",
+      "account": "210987654321"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role_policy_attachment",
+      "id": "lambda-role/basic",
+      "account": "210987654321"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_policy",
+      "id": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+      "account": "210987654321"
+    }
+  ],
+  "edges": [
+    {
+      "from": 4,
+      "to": 3
+    },
+    {
+      "from": 5,
+      "to": 3
+    },
+    {
+      "from": 6,
+      "to": 3
+    },
+    {
+      "from": 7,
+      "to": 3
+    },
+    {
+      "from": 8,
+      "to": 3
+    },
+    {
+      "from": 9,
+      "to": 4
+    },
+    {
+      "from": 9,
+      "to": 10
+    },
+    {
+      "from": 11,
+      "to": 3
+    },
+    {
+      "from": 12,
+      "to": 3
+    },
+    {
+      "from": 11,
+      "to": 8
+    },
+    {
+      "from": 12,
+      "to": 9
+    },
+    {
+      "from": 13,
+      "to": 4
+    },
+    {
+      "from": 14,
+      "to": 5
+    },
+    {
+      "from": 15,
+      "to": 6
+    },
+    {
+      "from": 16,
+      "to": 7
+    },
+    {
+      "from": 13,
+      "to": 11
+    },
+    {
+      "from": 14,
+      "to": 11
+    },
+    {
+      "from": 15,
+      "to": 12
+    },
+    {
+      "from": 16,
+      "to": 12
+    },
+    {
+      "from": 17,
+      "to": 3
+    },
+    {
+      "from": 18,
+      "to": 3
+    },
+    {
+      "from": 18,
+      "to": 17
+    },
+    {
+      "from": 19,
+      "to": 4
+    },
+    {
+      "from": 20,
+      "to": 5
+    },
+    {
+      "from": 19,
+      "to": 17
+    },
+    {
+      "from": 20,
+      "to": 17
+    },
+    {
+      "from": 19,
+      "to": 33
+    },
+    {
+      "from": 20,
+      "to": 33
+    },
+    {
+      "from": 33,
+      "to": 30
+    },
+    {
+      "from": 21,
+      "to": 4
+    },
+    {
+      "from": 21,
+      "to": 5
+    },
+    {
+      "from": 21,
+      "to": 17
+    },
+    {
+      "from": 22,
+      "to": 3
+    },
+    {
+      "from": 23,
+      "to": 21
+    },
+    {
+      "from": 23,
+      "to": 22
+    },
+    {
+      "from": 24,
+      "to": 22
+    },
+    {
+      "from": 24,
+      "to": 19
+    },
+    {
+      "from": 25,
+      "to": 22
+    },
+    {
+      "from": 25,
+      "to": 20
+    },
+    {
+      "from": 26,
+      "to": 6
+    },
+    {
+      "from": 26,
+      "to": 7
+    },
+    {
+      "from": 27,
+      "to": 26
+    },
+    {
+      "from": 27,
+      "to": 18
+    },
+    {
+      "from": 29,
+      "to": 28
+    },
+    {
+      "from": 19,
+      "to": 28
+    },
+    {
+      "from": 21,
+      "to": 28
+    },
+    {
+      "from": 19,
+      "to": 1
+    },
+    {
+      "from": 20,
+      "to": 1
+    },
+    {
+      "from": 32,
+      "to": 30
+    },
+    {
+      "from": 32,
+      "to": 31
+    },
+    {
+      "from": 19,
+      "to": 0
+    },
+    {
+      "from": 37,
+      "to": 36
+    },
+    {
+      "from": 38,
+      "to": 36
+    },
+    {
+      "from": 39,
+      "to": 37
+    },
+    {
+      "from": 40,
+      "to": 38
+    },
+    {
+      "from": 39,
+      "to": 45
+    },
+    {
+      "from": 40,
+      "to": 45
+    },
+    {
+      "from": 39,
+      "to": 42
+    },
+    {
+      "from": 40,
+      "to": 42
+    },
+    {
+      "from": 43,
+      "to": 39
+    },
+    {
+      "from": 44,
+      "to": 40
+    },
+    {
+      "from": 41,
+      "to": 39
+    },
+    {
+      "from": 46,
+      "to": 45
+    },
+    {
+      "from": 46,
+      "to": 47
+    },
+    {
+      "from": 39,
+      "to": 2
+    }
+  ],
+  "redaction": {
+    "ids_hashed": false,
+    "hash_alg": "hmac-sha256"
+  }
+}
