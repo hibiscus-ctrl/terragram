@@ -7,7 +7,8 @@
  *
  *   node scripts/check-colour-tokens.mjs
  *
- * Three forms are caught in `src/**\/*.{ts,tsx}`:
+ * Three forms are caught in `src/**\/*.{ts,tsx}` and `packages/engine/src/**\/*.ts`
+ * (the engine draws the SVG export, so its literals are held to the same account):
  *
  *   1. Tailwind arbitrary colour classes — `bg-[#f5f5f5]`, `text-[#c2b8a8]`,
  *      `hover:border-[#322a1c]` and so on.
@@ -26,6 +27,7 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const srcDir = join(root, "src");
+const engineDir = join(root, "packages", "engine", "src");
 
 /**
  * Files that legitimately carry literal hex, each with the reason. `values`
@@ -77,7 +79,7 @@ const ALLOW = new Map([
     },
   ],
   [
-    "components/workspace/diagram-svg.ts",
+    "packages/engine/src/diagram-svg.ts",
     {
       reason:
         "The diagram export is a standalone SVG file the user downloads. It never reaches our " +
@@ -93,12 +95,12 @@ const ALLOW = new Map([
     },
   ],
   [
-    "features/workspace/model.ts",
+    "packages/engine/src/model.ts",
     {
       values: ["#047857", "#2563eb", "#7c3aed", "#b45309", "#0e7490", "#665e4f"],
       reason:
         "CATEGORY_META.color — the --cat-* legend hues — also feeds the standalone SVG export " +
-        "(components/workspace/diagram-svg.ts), where a var() would resolve to nothing.",
+        "(packages/engine/src/diagram-svg.ts), where a var() would resolve to nothing.",
     },
   ],
   // Colours that are not tokens YET. Each is a palette decision for DESIGN.md
@@ -176,8 +178,13 @@ const hexOf = (match) => match.replace(/[^#0-9a-fA-F]/g, "").toLowerCase();
 
 const errors = [];
 
-for (const file of walk(srcDir)) {
-  const rel = relative(srcDir, file).split(sep).join("/");
+/** Files under src/ are keyed relative to it; the engine's by their repo-relative path. */
+const scanned = [
+  ...walk(srcDir).map((file) => ({ file, rel: relative(srcDir, file).split(sep).join("/"), shown: "src" })),
+  ...walk(engineDir).map((file) => ({ file, rel: relative(root, file).split(sep).join("/"), shown: "" })),
+];
+
+for (const { file, rel, shown } of scanned) {
   const allow = ALLOW.get(rel);
   if (allow && !allow.values) continue;
   const allowed = new Set(allow?.values ?? []);
@@ -195,7 +202,7 @@ for (const file of walk(srcDir)) {
       for (const match of line.matchAll(re)) {
         if (kind !== "raw Tailwind gray" && allowed.has(hexOf(match[0]))) continue;
         errors.push(
-          `  src/${rel}:${i + 1}  ${kind}  ${match[0]}\n      ${rawLines[i].trim().slice(0, 110)}`,
+          `  ${shown ? `${shown}/` : ""}${rel}:${i + 1}  ${kind}  ${match[0]}\n      ${rawLines[i].trim().slice(0, 110)}`,
         );
       }
     }
@@ -217,4 +224,4 @@ if (errors.length) {
   process.exit(1);
 }
 
-console.log("check-colour-tokens: every colour in src/ resolves to a design token.");
+console.log("check-colour-tokens: every colour in src/ and packages/engine/ resolves to a design token.");

@@ -1,0 +1,14 @@
+{
+  // The engine on its own terms: no DOM, no JSX, no `@/` alias. A file that reaches for
+  // `document`, React or the app fails here before it fails the architecture check.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["esnext"],
+    "jsx": "preserve",
+    "plugins": [],
+    "paths": {},
+    "incremental": false
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"]
+}

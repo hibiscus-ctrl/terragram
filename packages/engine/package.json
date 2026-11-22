@@ -1,0 +1,51 @@
+{
+  "name": "terragram-engine",
+  "version": "0.1.0",
+  "description": "The Terragram generation engine: diagram model, Terraform/OpenTofu emitter, HCL parser, verifier and evidence receipts. Pure functions; models, signing and logging come in through ports.",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    "./build-receipt": "./src/build-receipt.ts",
+    "./diagram-svg": "./src/diagram-svg.ts",
+    "./engine": "./src/engine.ts",
+    "./evidence": "./src/evidence.ts",
+    "./explain": "./src/explain.ts",
+    "./feasibility": "./src/feasibility.ts",
+    "./graph-build": "./src/graph-build.ts",
+    "./hcl": "./src/hcl.ts",
+    "./inspector": "./src/inspector.ts",
+    "./interchange": "./src/interchange.ts",
+    "./kinds": "./src/kinds.ts",
+    "./layout": "./src/layout.ts",
+    "./managed-compose": "./src/managed-compose.ts",
+    "./managed-models": "./src/managed-models.ts",
+    "./model": "./src/model.ts",
+    "./modes": "./src/modes.ts",
+    "./module-versions": "./src/module-versions.ts",
+    "./parse": "./src/parse.ts",
+    "./ports": "./src/ports.ts",
+    "./provider-versions": "./src/provider-versions.ts",
+    "./receipt": "./src/receipt.ts",
+    "./samples": "./src/samples.ts",
+    "./settings": "./src/settings.ts",
+    "./share-link": "./src/share-link.ts",
+    "./templates": "./src/templates.ts",
+    "./terraform": "./src/terraform.ts",
+    "./translate": "./src/translate.ts",
+    "./verify": "./src/verify.ts",
+    "./vision": "./src/vision.ts"
+  },
+  "dependencies": {
+    "@infraweaver-io/attest": "^0.1.7",
+    "dagre": "^0.8.5",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/dagre": "^0.7.54"
+  }
+}

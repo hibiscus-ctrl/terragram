@@ -44,7 +44,9 @@ const noParentRelative = sourceDirs.map((dir) => ({
   from: { path: `^${escapeRegex(dir)}/[^/]+$` },
   to: {
     dependencyTypes: ["local"],
-    pathNot: `^${escapeRegex(dir)}/`,
+    // The workspace package resolves to its real path, so `terragram-engine/…` reads as
+    // local; it is imported by name, and engine-self-contained covers its own insides.
+    pathNot: [`^${escapeRegex(dir)}/`, "^packages/engine/src/"],
   },
 }));
 
@@ -70,6 +72,10 @@ const pathsRegex = (files) => files.map((f) => `^${escapeRegex(f)}$`);
 /** The clients that hold a secret: the Supabase service-role key and the Stripe secret key. */
 const PRIVILEGED_CLIENT = "^src/libs/(supabase/supabase-admin|stripe/stripe-admin)\\.ts$";
 
+/** The engine's own source, and the only npm packages it may import. */
+const ENGINE = "^packages/engine/";
+const ENGINE_ALLOWED_PACKAGES = ["zod", "dagre", "@infraweaver-io/attest"];
+
 /** @type {import("dependency-cruiser").IConfiguration} */
 module.exports = {
   forbidden: [
@@ -81,8 +87,54 @@ module.exports = {
         "first, so a binding can be read before it is initialised. Move the shared piece " +
         "into a module both sides import.",
       severity: "error",
-      from: { path: "^src/" },
+      from: { path: "^(src|packages/engine/src)/" },
       to: { circular: true },
+    },
+    {
+      name: "engine-no-app-imports",
+      comment:
+        "packages/engine imports something from the app (src/, via `@/` or a relative path). " +
+        "The engine is a package other hosts embed — a CLI, an Action, another Next.js app — so " +
+        "it can depend on nothing of this app. Take the value, or a port, from the caller " +
+        "(see src/ports.ts) and bind it in src/features/workspace/.",
+      severity: "error",
+      from: { path: ENGINE },
+      to: { path: "^src/" },
+    },
+    {
+      name: "engine-no-framework-imports",
+      comment:
+        "packages/engine imports Next, React, Supabase or Stripe. The engine is pure " +
+        "functions over plain data; anything that touches a framework or a service is the " +
+        "host's, behind a port.",
+      severity: "error",
+      from: { path: ENGINE },
+      to: {
+        path: "(^|/)node_modules/(next|react|react-dom|@xyflow|@supabase|stripe|@stripe|server-only)(/|$)",
+      },
+    },
+    {
+      name: "engine-npm-allowlist",
+      comment:
+        "packages/engine imports an npm package it does not declare. Its runtime dependencies " +
+        "(" + ENGINE_ALLOWED_PACKAGES.join(", ") + ") are the whole list: a new one is a " +
+        "decision about what every host of the engine now installs, so add it here AND to " +
+        "packages/engine/package.json together.",
+      severity: "error",
+      from: { path: ENGINE },
+      to: {
+        dependencyTypes: ["npm", "npm-dev", "npm-optional", "npm-peer", "npm-bundled", "npm-no-pkg", "npm-unknown"],
+        pathNot: ENGINE_ALLOWED_PACKAGES.map((name) => `(^|/)node_modules/${escapeRegex(name)}/`),
+      },
+    },
+    {
+      name: "engine-self-contained",
+      comment:
+        "A relative import in packages/engine that leaves packages/engine/src. Everything the " +
+        "engine needs ships with it.",
+      severity: "error",
+      from: { path: "^packages/engine/src/" },
+      to: { dependencyTypes: ["local"], pathNot: "^packages/engine/src/" },
     },
     {
       name: "components-no-privileged-client",

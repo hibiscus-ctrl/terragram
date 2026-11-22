@@ -6,8 +6,8 @@
 import { ArrowRight, PanelRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { NodeCategory } from "@/features/workspace/model";
-import type { WorkspaceMode } from "@/features/workspace/modes";
+import type { NodeCategory } from "terragram-engine/model";
+import type { WorkspaceMode } from "terragram-engine/modes";
 import { Legend } from "./legend";
 import { ModeMenu } from "./mode-menu";
 

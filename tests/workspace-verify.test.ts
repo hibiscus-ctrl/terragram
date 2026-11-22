@@ -7,12 +7,12 @@ import { generateKeyPairSync } from "node:crypto";
 import { verifyBytes } from "@infraweaver-io/attest/signing";
 import { describe, it } from "node:test";
 
-import { composeFromPrompt } from "../src/features/workspace/engine.ts";
-import { explainModel } from "../src/features/workspace/explain.ts";
+import { composeFromPrompt } from "terragram-engine/engine";
+import { explainModel } from "terragram-engine/explain";
 import { resolvedModel } from "../src/features/workspace/inference.ts";
-import { buildBundle, receiptJson } from "../src/features/workspace/receipt.ts";
+import { buildBundle, receiptJson } from "terragram-engine/receipt";
 import { buildEvidenceReceipt } from "../src/features/workspace/sign.ts";
-import { readBundleZip, verifyBundle } from "../src/features/workspace/verify.ts";
+import { readBundleZip, verifyBundle } from "terragram-engine/verify";
 import { makeZip } from "../src/utils/zip.ts";
 
 /**

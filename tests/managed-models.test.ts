@@ -11,8 +11,8 @@ import {
   MANAGED_MODEL_IDS,
   MANAGED_MODELS,
   migrateManagedModelId,
-} from "../src/features/workspace/managed-models.ts";
-import { parseSettings, workspaceSettingsSchema } from "../src/features/workspace/settings.ts";
+} from "terragram-engine/managed-models";
+import { parseSettings, workspaceSettingsSchema } from "terragram-engine/settings";
 
 const ENV_KEY = "TERRAGRAM_WORKSPACE_MODEL";
 

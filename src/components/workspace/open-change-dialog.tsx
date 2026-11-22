@@ -27,9 +27,9 @@ import {
   type ProviderStatus,
   type RepositoryChoice,
 } from "@/features/git/actions";
-import type { EngineKind } from "@/features/workspace/engine";
-import type { Cloud, InfraModel } from "@/features/workspace/model";
-import type { TerraformTool } from "@/features/workspace/terraform";
+import type { EngineKind } from "terragram-engine/engine";
+import type { Cloud, InfraModel } from "terragram-engine/model";
+import type { TerraformTool } from "terragram-engine/terraform";
 
 /**
  * "Open pull request" after the review gate. The dialog asks only what the server

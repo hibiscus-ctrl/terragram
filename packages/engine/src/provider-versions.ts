@@ -25,5 +25,5 @@ export const PROVIDER_VERSIONS: Record<"azure" | "aws", ProviderPin> = {
   },
 };
 
-/** When the pins above were last refreshed (ISO date). */
+/** When the pins above were last refreshed (ISO date). Data for hosts and tooling to read, not used by the engine itself. @public */
 export const PROVIDER_VERSIONS_REFRESHED = "2026-09-12";

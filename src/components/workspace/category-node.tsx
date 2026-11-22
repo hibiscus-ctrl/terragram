@@ -4,7 +4,7 @@
 import { memo } from "react";
 import { Handle, type NodeProps, Position } from "@xyflow/react";
 
-import { CATEGORY_META } from "@/features/workspace/model";
+import { CATEGORY_META } from "terragram-engine/model";
 import { cn } from "@/utils/cn";
 import type { CategoryNodeData } from "./graph";
 

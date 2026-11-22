@@ -4,11 +4,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { composeFromPrompt } from "../src/features/workspace/engine.ts";
-import { block, mapExpression, quote, renderDocument } from "../src/features/workspace/hcl.ts";
-import { CLOUDS, type Cloud } from "../src/features/workspace/model.ts";
-import { emitTerraform } from "../src/features/workspace/terraform.ts";
-import { templateModel, WORKSPACE_TEMPLATES } from "../src/features/workspace/templates.ts";
+import { composeFromPrompt } from "terragram-engine/engine";
+import { block, mapExpression, quote, renderDocument } from "terragram-engine/hcl";
+import { CLOUDS, type Cloud } from "terragram-engine/model";
+import { emitTerraform } from "terragram-engine/terraform";
+import { templateModel, WORKSPACE_TEMPLATES } from "terragram-engine/templates";
 
 /**
  * The emitter writes HCL a person reads, reviews and commits, so `terraform fmt`

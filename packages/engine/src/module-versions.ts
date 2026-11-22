@@ -51,5 +51,5 @@ export const MODULE_VERSIONS = {
 
 export type ModuleKey = keyof typeof MODULE_VERSIONS;
 
-/** When the pins above were last refreshed (ISO date). */
+/** When the pins above were last refreshed (ISO date). Data for hosts and tooling to read, not used by the engine itself. @public */
 export const MODULE_VERSIONS_REFRESHED = "2026-09-12";

@@ -41,6 +41,9 @@ const nextConfig = {
   // Drop the `X-Powered-By: Next.js` banner — it discloses the framework to no
   // benefit and is a routine hardening checklist item.
   poweredByHeader: false,
+  // The generation engine is a workspace package that ships TypeScript source (packages/engine),
+  // so Next compiles it with the app.
+  transpilePackages: ["terragram-engine"],
   // Version-skew protection across deploys. Every build mints new Server Action
   // ids and chunk names, so a tab still running the previous deploy's JS would
   // otherwise POST action ids the new server cannot find. With an id set, a

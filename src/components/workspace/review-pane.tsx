@@ -6,10 +6,10 @@
 import { ArrowRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { Feasibility } from "@/features/workspace/feasibility";
-import type { Cloud, InfraModel } from "@/features/workspace/model";
-import { CATEGORY_META, countFlags } from "@/features/workspace/model";
-import { CLOUD_LABEL } from "@/features/workspace/modes";
+import type { Feasibility } from "terragram-engine/feasibility";
+import type { Cloud, InfraModel } from "terragram-engine/model";
+import { CATEGORY_META, countFlags } from "terragram-engine/model";
+import { CLOUD_LABEL } from "terragram-engine/modes";
 import { cn } from "@/utils/cn";
 
 export function ReviewPane({

@@ -23,7 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { JsonLd } from "@/components/seo/json-ld";
 import { siteGraph } from "@/config/structured-data";
-import { FORMAT_CHIP, FORMAT_LABEL, MODE_LIST } from "@/features/workspace/modes";
+import { FORMAT_CHIP, FORMAT_LABEL, MODE_LIST } from "terragram-engine/modes";
 
 // The homepage inherits the root layout's title/description/OG; it just needs a
 // self-referential canonical so the most important SEO page isn't left without one.

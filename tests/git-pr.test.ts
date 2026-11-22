@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { branchName, changeBody, changeFiles, changeTitle, commitMessage, normaliseDirectory } from "../src/features/git/pr.ts";
-import { composeFromPrompt } from "../src/features/workspace/engine.ts";
+import { composeFromPrompt } from "terragram-engine/engine";
 import { buildEvidenceReceipt } from "../src/features/workspace/sign.ts";
 
 async function approved() {

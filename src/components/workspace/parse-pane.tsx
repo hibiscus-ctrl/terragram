@@ -8,13 +8,13 @@ import { FileUp, ImageUp, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/utils/cn";
-import type { WorkspaceMode } from "@/features/workspace/modes";
+import type { WorkspaceMode } from "terragram-engine/modes";
 import {
   SAMPLE_MERMAID,
   SAMPLE_TERRAFORM,
   SAMPLE_TERRAFORM_PARTIAL,
-} from "@/features/workspace/samples";
-import { WORKSPACE_TEMPLATES } from "@/features/workspace/templates";
+} from "terragram-engine/samples";
+import { WORKSPACE_TEMPLATES } from "terragram-engine/templates";
 import { PaneHeader } from "./compose-pane";
 
 /**

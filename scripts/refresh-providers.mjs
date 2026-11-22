@@ -12,8 +12,8 @@
  *
  *   npm run refresh:providers
  *
- * Writes `src/features/workspace/provider-versions.ts` and
- * `src/features/workspace/module-versions.ts`. They are .ts files rather than
+ * Writes `packages/engine/src/provider-versions.ts` and
+ * `packages/engine/src/module-versions.ts`. They are .ts files rather than
  * JSON so that Node's type-stripping test runner, Turbopack and tsc all read them
  * the same way with no import attributes.
  *
@@ -149,12 +149,12 @@ export const PROVIDER_VERSIONS: Record<"azure" | "aws", ProviderPin> = {
 ${entries}
 };
 
-/** When the pins above were last refreshed (ISO date). */
+/** When the pins above were last refreshed (ISO date). Data for hosts and tooling to read, not used by the engine itself. @public */
 export const PROVIDER_VERSIONS_REFRESHED = "${today}";
 `;
 
 const target = fileURLToPath(
-  new URL("../src/features/workspace/provider-versions.ts", import.meta.url),
+  new URL("../packages/engine/src/provider-versions.ts", import.meta.url),
 );
 await writeFile(target, file, "utf8");
 console.log(`wrote ${target}`);
@@ -188,12 +188,12 @@ ${moduleEntries}
 
 export type ModuleKey = keyof typeof MODULE_VERSIONS;
 
-/** When the pins above were last refreshed (ISO date). */
+/** When the pins above were last refreshed (ISO date). Data for hosts and tooling to read, not used by the engine itself. @public */
 export const MODULE_VERSIONS_REFRESHED = "${today}";
 `;
 
 const moduleTarget = fileURLToPath(
-  new URL("../src/features/workspace/module-versions.ts", import.meta.url),
+  new URL("../packages/engine/src/module-versions.ts", import.meta.url),
 );
 await writeFile(moduleTarget, moduleFile, "utf8");
 console.log(`wrote ${moduleTarget}`);

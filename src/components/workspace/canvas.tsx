@@ -19,8 +19,8 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 
-import type { InfraModel, NodeCategory } from "@/features/workspace/model";
-import type { WorkspaceSettings } from "@/features/workspace/settings";
+import type { InfraModel, NodeCategory } from "terragram-engine/model";
+import type { WorkspaceSettings } from "terragram-engine/settings";
 import "@xyflow/react/dist/style.css";
 
 import { nodeTypes } from "./category-node";

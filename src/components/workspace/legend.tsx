@@ -3,7 +3,7 @@
 
 "use client";
 
-import { CATEGORY_META, type NodeCategory } from "@/features/workspace/model";
+import { CATEGORY_META, type NodeCategory } from "terragram-engine/model";
 import { cn } from "@/utils/cn";
 
 const LEGEND_ORDER: NodeCategory[] = [

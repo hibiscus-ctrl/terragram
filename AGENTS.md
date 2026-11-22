@@ -3,7 +3,7 @@
 Next.js 16 App Router + React 19, Supabase, Stripe, Tailwind 4, Biome, tests via `node --test`.
 Deployed on Railway. Terragram turns a diagram or brief into reviewed Terraform: the model
 proposes component *kinds*, and the HCL comes from the deterministic registry in
-`src/features/workspace/kinds.ts`. Node **24** is the floor (`engines`, `.nvmrc`, Dockerfile, CI
+`packages/engine/src/kinds.ts`. Node **24** is the floor (`engines`, `.nvmrc`, Dockerfile, CI
 all agree). npm, not pnpm: use `npm ci`, and a lockfile mismatch is a real failure to fix in the
 commit.
 
@@ -59,6 +59,29 @@ since Next allows only one per project. It runs two suites in sequence, never to
 `npm run test:rls` impersonates two users inside a rolled-back transaction. It proves user A can
 neither read nor write user B's `terragram_*` rows, including planting a share link on B's
 workspace. Run it after any policy change.
+
+## The engine is its own package: `packages/engine`
+
+`terragram-engine` (an npm workspace, private for now) is the generation engine and nothing
+else: the model and kind registry, the Terraform/OpenTofu emitter, the HCL parser, importers,
+verifier, explainer, receipts, layout and the SVG export. It is imported by subpath
+(`terragram-engine/kinds`, `terragram-engine/terraform`, …; the `exports` map is its public
+surface) and ships TypeScript source, which Next compiles via `transpilePackages`. Later hosts
+(a CLI, an Action, another app) import it in-process.
+
+- **Nothing app-shaped goes in.** No `@/` alias, `src/`, Next, React, Supabase, Stripe or
+  `process.env`. `check:imports` enforces it: dependency-cruiser rules (`engine-*` in
+  `.dependency-cruiser.cjs`) plus `scripts/check-engine-env.mjs`. A new npm dependency of
+  the engine goes in its `package.json` and the `engine-npm-allowlist` rule together.
+- **Anything that needs the outside world is a port** (`src/ports.ts`): `ModelClient` (send a
+  Messages request, get the forced tool call's input back), `Signer` (sign bytes, key id,
+  public key) and `Logger`. The engine holds the decisions (the prompt, reading the answer,
+  the cap-reached fallback, the receipt's contents); the host binds the port.
+- **The app's half stays in `src/features/workspace/`**: `inference.ts` (env, spend cap,
+  proxy token, metering, fetch — the `ModelClient`), `translate.ts`, `vision.ts`, `sign.ts`
+  (`EVIDENCE_SIGNING_KEY` → `Signer`), `store.ts`, `actions.ts`, `identity.ts`. Keep them thin.
+- Tests stay in `tests/` and import the package by name, so one runner covers both. The engine has
+  its own `tsc` project (`typecheck:engine`: no DOM, no `@/`), and `test:coverage` counts it.
 
 ## Database: one project, two products
 
@@ -162,7 +185,7 @@ Nothing catches these except the fixtures named here.
     `overCap` are the gateway's contract.
   - Pinned by `contracts/proxy-token.json`. The contract tests byte-compare the sibling checkout
     at `../infraweaver-proxy` when it is present.
-- `src/features/workspace/managed-models.ts` `MANAGED_MODEL_IDS` <=> the gateway's `bedrock_model_map`, pinned by
+- `packages/engine/src/managed-models.ts` `MANAGED_MODEL_IDS` <=> the gateway's `bedrock_model_map`, pinned by
   `contracts/model-map.json`.
 - The shared schema <=> `infraweaver-ui/supabase/migrations/` (see Database).
 

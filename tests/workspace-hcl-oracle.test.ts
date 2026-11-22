@@ -6,7 +6,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, it } from "node:test";
 
-import { type HclBlock, parseHcl } from "../src/features/workspace/hcl.ts";
+import { type HclBlock, parseHcl } from "terragram-engine/hcl";
 
 /**
  * Differential oracle — Terragram's HCL reader against the real `hashicorp/hcl`.

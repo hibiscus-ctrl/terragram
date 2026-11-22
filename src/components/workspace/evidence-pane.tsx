@@ -7,9 +7,9 @@ import Link from "next/link";
 import { CheckCircle2, Copy, Download, FileCode2, Image, ShieldCheck, ShieldAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { EvidenceBundle } from "@/features/workspace/evidence";
-import { CATEGORY_META, type InfraModel, resourceNodes } from "@/features/workspace/model";
-import type { EvidenceReceipt } from "@/features/workspace/sign";
+import type { EvidenceBundle } from "terragram-engine/evidence";
+import { CATEGORY_META, type InfraModel, resourceNodes } from "terragram-engine/model";
+import type { EvidenceReceipt } from "terragram-engine/receipt";
 import { formatDate, formatDateTime } from "@/utils/format-date";
 
 function shortHash(contentHash: string): string {

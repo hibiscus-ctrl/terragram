@@ -4,19 +4,19 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { composeFromPrompt } from "../src/features/workspace/engine.ts";
+import { composeFromPrompt } from "terragram-engine/engine";
 import {
   attributeOf,
   extractReferences,
   parseHcl,
   renderDocument,
   stringValue,
-} from "../src/features/workspace/hcl.ts";
-import { addNode, connectNodes, setNodeAttribute } from "../src/features/workspace/inspector.ts";
-import { EMPTY_MODEL } from "../src/features/workspace/model.ts";
-import { parseTerraform } from "../src/features/workspace/parse.ts";
-import { SAMPLE_TERRAFORM, SAMPLE_TERRAFORM_PARTIAL } from "../src/features/workspace/samples.ts";
-import { emitTerraform } from "../src/features/workspace/terraform.ts";
+} from "terragram-engine/hcl";
+import { addNode, connectNodes, setNodeAttribute } from "terragram-engine/inspector";
+import { EMPTY_MODEL } from "terragram-engine/model";
+import { parseTerraform } from "terragram-engine/parse";
+import { SAMPLE_TERRAFORM, SAMPLE_TERRAFORM_PARTIAL } from "terragram-engine/samples";
+import { emitTerraform } from "terragram-engine/terraform";
 
 describe("hcl reader", () => {
   it("reads blocks, labels, nested blocks and multi-line values", () => {

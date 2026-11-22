@@ -18,15 +18,15 @@ import {
   startGitConnectAction,
 } from "@/features/git/actions";
 import { saveSettingsAction } from "@/features/workspace/actions";
-import { MANAGED_MODELS, type ManagedModelId } from "@/features/workspace/managed-models";
-import { CLOUD_LABEL, MODE_LIST } from "@/features/workspace/modes";
+import { MANAGED_MODELS, type ManagedModelId } from "terragram-engine/managed-models";
+import { CLOUD_LABEL, MODE_LIST } from "terragram-engine/modes";
 import {
   DEFAULT_SETTINGS,
   type EdgeRouting,
   type LabelFace,
   type WorkspaceSettings as Settings,
-} from "@/features/workspace/settings";
-import { isWorkspaceMode } from "@/features/workspace/modes";
+} from "terragram-engine/settings";
+import { isWorkspaceMode } from "terragram-engine/modes";
 
 /**
  * Workspace settings.

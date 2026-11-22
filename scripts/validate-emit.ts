@@ -64,10 +64,10 @@ import { errorMessage } from "@infraweaver-io/core/errors";
 import { retry } from "@infraweaver-io/core/retry";
 import { spawn } from "@infraweaver-io/sandbox/subprocess";
 
-import { composeFromPrompt } from "../src/features/workspace/engine.ts";
-import { type Cloud, CLOUDS, type InfraModel } from "../src/features/workspace/model.ts";
-import { emitTerraform } from "../src/features/workspace/terraform.ts";
-import { templateModel, WORKSPACE_TEMPLATES } from "../src/features/workspace/templates.ts";
+import { composeFromPrompt } from "terragram-engine/engine";
+import { type Cloud, CLOUDS, type InfraModel } from "terragram-engine/model";
+import { emitTerraform } from "terragram-engine/terraform";
+import { templateModel, WORKSPACE_TEMPLATES } from "terragram-engine/templates";
 import { SCANNER_SKIPS, skipsFor } from "./scanner-skips.ts";
 
 const BRIEFS = [

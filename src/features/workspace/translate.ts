@@ -1,26 +1,18 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { z } from "zod";
+import type { ComposeResult } from "terragram-engine/engine";
+import type { ManagedModelId } from "terragram-engine/managed-models";
+import { EMPTY_MODEL, type InfraModel } from "terragram-engine/model";
+import { translateWithFallback } from "terragram-engine/translate";
 
-import { composeFromPrompt, type ComposeResult } from "./engine.ts";
-import {
-  isManagedInferenceConfigured,
-  ManagedCapReachedError,
-  type MintLedger,
-  runManagedCompose,
-} from "./inference.ts";
 import { logger } from "@/libs/log";
-import type { ManagedModelId } from "./managed-models.ts";
-import { EMPTY_MODEL, type InfraModel, infraModelSchema } from "./model.ts";
+
+import { isManagedInferenceConfigured, type MintLedger, runManagedCompose } from "./inference.ts";
+
+export { translateRequestSchema } from "terragram-engine/translate";
 
 const log = logger("workspace/translate");
-
-/** Body of POST /api/workspace/translate — a prompt plus the current model. */
-export const translateRequestSchema = z.object({
-  prompt: z.string().min(1).max(4000),
-  model: infraModelSchema.optional(),
-});
 
 /**
  * Managed inference is opt-in per deployment: `WORKSPACE_ENGINE=managed` AND the
@@ -34,7 +26,8 @@ export function managedEngineEnabled(): boolean {
 /**
  * Translate a plain-English instruction into the model. Uses managed UK inference
  * when enabled, and always falls back to the deterministic keyword engine — a
- * gateway hiccup degrades quality, never availability.
+ * gateway hiccup degrades quality, never availability. (The fallback decision is the
+ * engine's `translateWithFallback`; this binds the environment, the gateway and the log.)
  *
  * `managedOrgId` is the org to meter managed inference against, and only an org the
  * caller has ALREADY verified as managed-entitled — pass `null` to force the
@@ -53,27 +46,21 @@ export async function translateChat(args: {
   recordMint: MintLedger;
 }): Promise<ComposeResult> {
   const prev = args.prev ?? EMPTY_MODEL;
-  if (args.managedOrgId && managedEngineEnabled()) {
-    try {
-      return await runManagedCompose({
-        orgId: args.managedOrgId,
-        prompt: args.prompt,
-        prev,
-        recordMint: args.recordMint,
-        ...(args.inferenceModel ? { model: args.inferenceModel } : {}),
-      });
-    } catch (err) {
-      // A reached cap is a decision, not a fault — logging it as a failure would bury
-      // the one signal that tells an operator why quality dropped. Either way the
-      // deterministic engine answers, so the workspace keeps working.
-      if (err instanceof ManagedCapReachedError) {
-        log.info("managed spend cap reached; using the deterministic engine");
-      } else {
-        // Redacted: a gateway error commonly embeds the request it failed on,
-        // `authorization: Bearer tmpx_…` included.
-        log.error("managed compose failed, falling back to the deterministic engine", { err });
-      }
-    }
-  }
-  return composeFromPrompt(args.prompt, prev);
+  const managedOrgId = args.managedOrgId;
+  return translateWithFallback({
+    prompt: args.prompt,
+    prev,
+    managed:
+      managedOrgId && managedEngineEnabled()
+        ? () =>
+            runManagedCompose({
+              orgId: managedOrgId,
+              prompt: args.prompt,
+              prev,
+              recordMint: args.recordMint,
+              ...(args.inferenceModel ? { model: args.inferenceModel } : {}),
+            })
+        : null,
+    log,
+  });
 }

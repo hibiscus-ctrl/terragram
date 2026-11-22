@@ -7,8 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { Cloud } from "@/features/workspace/model";
-import { CLOUD_LABEL } from "@/features/workspace/modes";
+import type { Cloud } from "terragram-engine/model";
+import { CLOUD_LABEL } from "terragram-engine/modes";
 
 /**
  * The generating screen shown between the review gate and the result while the

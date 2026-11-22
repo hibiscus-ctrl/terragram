@@ -4,16 +4,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { attributesFromPrompt, composeFromPrompt, detectCloud } from "../src/features/workspace/engine.ts";
-import { assessFeasibility } from "../src/features/workspace/feasibility.ts";
-import { buildGraphModel } from "../src/features/workspace/graph-build.ts";
-import { cloudSpec } from "../src/features/workspace/kinds.ts";
-import { addNode, connectNodes } from "../src/features/workspace/inspector.ts";
-import { EMPTY_MODEL } from "../src/features/workspace/model.ts";
-import { MODULE_VERSIONS } from "../src/features/workspace/module-versions.ts";
-import { parseTerraform } from "../src/features/workspace/parse.ts";
+import { attributesFromPrompt, composeFromPrompt, detectCloud } from "terragram-engine/engine";
+import { assessFeasibility } from "terragram-engine/feasibility";
+import { buildGraphModel } from "terragram-engine/graph-build";
+import { cloudSpec } from "terragram-engine/kinds";
+import { addNode, connectNodes } from "terragram-engine/inspector";
+import { EMPTY_MODEL } from "terragram-engine/model";
+import { MODULE_VERSIONS } from "terragram-engine/module-versions";
+import { parseTerraform } from "terragram-engine/parse";
 import { buildEvidenceReceipt } from "../src/features/workspace/sign.ts";
-import { emitTerraform } from "../src/features/workspace/terraform.ts";
+import { emitTerraform } from "terragram-engine/terraform";
 
 /**
  * The two flows the product is: a brief in plain English, and a picture of a

@@ -6,8 +6,8 @@
 import { type FormEvent, useState } from "react";
 import { CornerDownLeft } from "lucide-react";
 
-import { COMPOSE_SUGGESTIONS } from "@/features/workspace/samples";
-import type { WorkspaceMode } from "@/features/workspace/modes";
+import { COMPOSE_SUGGESTIONS } from "terragram-engine/samples";
+import type { WorkspaceMode } from "terragram-engine/modes";
 import { cn } from "@/utils/cn";
 import { LogoMark } from "@/components/logo";
 import { ModeMenu } from "./mode-menu";

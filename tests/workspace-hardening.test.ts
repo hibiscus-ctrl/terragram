@@ -4,11 +4,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { composeFromPrompt } from "../src/features/workspace/engine.ts";
-import { addNode, setNodeAttribute } from "../src/features/workspace/inspector.ts";
-import { fieldsForKind } from "../src/features/workspace/kinds.ts";
-import { type Cloud, EMPTY_MODEL } from "../src/features/workspace/model.ts";
-import { emitTerraform } from "../src/features/workspace/terraform.ts";
+import { composeFromPrompt } from "terragram-engine/engine";
+import { addNode, setNodeAttribute } from "terragram-engine/inspector";
+import { fieldsForKind } from "terragram-engine/kinds";
+import { type Cloud, EMPTY_MODEL } from "terragram-engine/model";
+import { emitTerraform } from "terragram-engine/terraform";
 
 /**
  * The hardening each kind carries by default — pinned so that an edit to a spec
