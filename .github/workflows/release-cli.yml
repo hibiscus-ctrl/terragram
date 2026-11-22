@@ -1,0 +1,163 @@
+name: Release CLI
+
+# Publishes the command line as one file on a GitHub release, for other projects'
+# workflows to download at a pinned version and check against a hash they hold:
+#
+#   git tag cli-v0.1.0 && git push origin cli-v0.1.0
+#
+# The tag must name the version in packages/cli/package.json (scripts/release-cli.ts).
+# The release holds terragram-<version>.mjs, the bundle `npm run build:packages` makes,
+# and SHA256SUMS; the bundle's build provenance is attested, so
+# `gh attestation verify` can tie it to this workflow and this tag.
+#
+# Run by hand (Actions, Run workflow) it is a dry run: it builds, tests and uploads
+# the two files as a workflow artifact, and makes no release. To re-run a release whose
+# tag push failed before it was published, run it from that tag with dry-run off.
+#
+# The build job runs the tests and every dependency's install scripts, so it holds a
+# read-only token and cannot mint the identity token the provenance is signed with.
+# The release job holds the write scopes and runs no repository code: it downloads
+# the files the build job made, attests them and creates the release.
+
+on:
+  push:
+    tags: ["cli-v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Build and upload the files as a workflow artifact only; no release. Off, it releases the tag it is run from
+        type: boolean
+        default: true
+
+# One release at a time; a second one waits rather than racing the first.
+concurrency:
+  group: release-cli
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read # @infraweaver-io/* from GitHub Packages for npm ci
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      REF_TYPE: ${{ github.ref_type }}
+      REF_NAME: ${{ github.ref_name }}
+      DRY_RUN: ${{ inputs.dry-run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The tag has to name the package's version before anything is built from it.
+      - name: Check the tag against packages/cli/package.json
+        id: version
+        run: |
+          if [ "$REF_TYPE" = tag ]; then
+            version=$(node scripts/release-cli.ts version "$REF_NAME")
+          elif [ "$DRY_RUN" = true ]; then
+            version=$(node scripts/release-cli.ts version)
+          else
+            echo "::error::a release is made from a cli-v* tag, not from $REF_NAME; run this workflow from the tag, or leave dry-run on"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          # No cache is restored into a release build.
+          package-manager-cache: false
+          # @infraweaver-io/* is on GitHub Packages; this writes the auth line into
+          # the runner npmrc, which NODE_AUTH_TOKEN below fills.
+          registry-url: "https://npm.pkg.github.com"
+
+      - name: Install
+        run: npm ci
+        env:
+          # This repo is outside the infraweaver-io org, so the job token does not
+          # grant read access to its packages; see ci.yml.
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+
+      - name: Build the CLI bundle and the engine library
+        run: npm run build:packages
+
+      # Every test, the bundle's among them (tests/cli-bundle.test.ts runs the built file).
+      - name: Test
+        run: npm test
+
+      - name: Stage the release files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir release
+          cp packages/cli/dist/terragram.mjs "release/terragram-$VERSION.mjs"
+          node scripts/release-cli.ts notes "$VERSION" release/NOTES.md
+          cd release
+          sha256sum "terragram-$VERSION.mjs" > SHA256SUMS
+          cat SHA256SUMS
+          # What is released is what runs: the staged file, on the Node the consumer needs.
+          test "$(node "terragram-$VERSION.mjs" --version)" = "$VERSION"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-release
+          path: |
+            release/terragram-*.mjs
+            release/SHA256SUMS
+            release/NOTES.md
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Attest and publish
+    needs: build
+    # Not on a dry run; the tag check in the build job has already failed anything else.
+    if: ${{ github.ref_type == 'tag' && (github.event_name == 'push' || !inputs.dry-run) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the release
+      id-token: write # keyless signing of the provenance
+      attestations: write # store it
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      TAG: ${{ github.ref_name }}
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cli-release
+          path: release
+
+      # The hashes in SHA256SUMS are what the build job staged; check them before they are attested.
+      - name: Check the files against SHA256SUMS
+        working-directory: release
+        run: sha256sum --check --strict SHA256SUMS
+
+      - name: Attest the bundle's build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: release/SHA256SUMS
+
+      - name: Create the release
+        working-directory: release
+        run: |
+          flags=()
+          case "$VERSION" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "$TAG" "terragram-$VERSION.mjs" SHA256SUMS \
+            --verify-tag \
+            --title "terragram $VERSION" \
+            --notes-file NOTES.md \
+            "${flags[@]}"

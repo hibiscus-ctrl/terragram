@@ -118,3 +118,13 @@ A model too large for Mermaid's limits is drawn as its changed part only, or not
 - **The bundle.** `action/dist/index.mjs` is not minified, so it can be read, and CI rebuilds it from the source and fails on any difference.
 
 Report a vulnerability as described in the repository's [SECURITY.md](../SECURITY.md).
+
+## Install the command line: `action/install-cli`
+
+A separate action, `hibiscus-ctrl/terragram/action/install-cli@<full commit SHA>`, downloads a released `terragram`
+command line for steps that call it. Inputs: `version` (for example `0.1.0`) and `sha256` (the hash of
+`terragram-<version>.mjs` from the release's `SHA256SUMS`), both required, and `verify-attestation` (default `true`):
+it runs `gh attestation verify` for the repository's `release-cli.yml` workflow and the tag `cli-v<version>`, and the
+step fails when that fails. It needs Node 24 on the runner (run `actions/setup-node` first) and a Linux or macOS runner,
+and puts a `terragram` wrapper on `PATH`. The file is fetched with curl from the release, and nothing is installed
+when its SHA-256 differs from the one you pin. See the README's Install section for an example.

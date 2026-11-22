@@ -11,7 +11,7 @@ Action that keeps a repository's Terraform in line with a model file.
 | --- | --- |
 | [`packages/engine`](packages/engine) | `terragram-engine`: the model and kind registry, the Terraform/OpenTofu emitter, the HCL parser, Mermaid import, verifier, explainer, evidence receipts, layout and SVG export. Pure functions: models, signing and logging come in through ports. |
 | [`packages/cli`](packages/cli) | `terragram`: the command line, bundled into one file with no runtime dependencies. |
-| [`action`](action) | The GitHub Action, one committed bundle. See [`action/README.md`](action/README.md). |
+| [`action`](action) | The GitHub Action, one committed bundle, and `action/install-cli`, the action that installs a released command line. See [`action/README.md`](action/README.md). |
 | [`schemas`](schemas) | JSON Schemas for the model (`diagram.model/v1`) and the evidence receipt (`diagram.receipt/v2`), generated from the engine's zod schemas. |
 | [`scripts`](scripts) | The release gates (generated-Terraform validation, module-interface check, schema generation) and the provider-version refresher. |
 
@@ -22,7 +22,43 @@ key. Words, diagram and code never drift because all three flow through one inte
 `ModelClient` port, plus diagram reading from a picture) that a host binds to its own gateway and spend
 cap; the CLI does not use it yet.
 
-Nothing here runs a service. Nothing is published to a registry yet: install from source.
+Nothing here runs a service. Nothing is published to a registry yet: install the command line from a GitHub release, or from source.
+
+## Install
+
+You need Node.js 24 or later. Each `cli-v<version>` tag publishes a
+[GitHub release](https://github.com/hibiscus-ctrl/terragram/releases) with the command line as one file, with no
+runtime dependencies, beside a `SHA256SUMS` file:
+
+```bash
+version=0.1.0
+curl --fail --location --proto '=https' --tlsv1.2 --remote-name \
+  "https://github.com/hibiscus-ctrl/terragram/releases/download/cli-v${version}/terragram-${version}.mjs"
+echo "<sha256 from the release's SHA256SUMS>  terragram-${version}.mjs" | sha256sum --check --strict
+gh attestation verify "terragram-${version}.mjs" --repo hibiscus-ctrl/terragram \
+  --signer-workflow hibiscus-ctrl/terragram/.github/workflows/release-cli.yml \
+  --source-ref "refs/tags/cli-v${version}"
+node "terragram-${version}.mjs" --help
+```
+
+Keep the SHA-256 where you pin the version (in a workflow, a lockfile or a script), not only on the release
+page, so a changed asset fails the check instead of running. The attestation is signed by this repository's
+`release-cli.yml` workflow and names the tag it ran for, so it shows that the file came from that tag's source.
+
+In another repository's workflow, `hibiscus-ctrl/terragram/action/install-cli@<full commit SHA>` does the
+download, both checks and puts `terragram` on `PATH`; it needs Node 24 on the runner and a Linux or macOS runner:
+
+```yaml
+- uses: actions/setup-node@<full commit SHA>
+  with:
+    node-version: "24"
+- uses: hibiscus-ctrl/terragram/action/install-cli@<full commit SHA>
+  with:
+    version: "0.1.0"
+    sha256: "<sha256 from the release's SHA256SUMS>"
+    # verify-attestation: "true" (default) fails the step when `gh attestation verify` fails
+- run: terragram generate --mermaid diagram.mmd -o infra/
+```
 
 ## Install from source
 
@@ -115,6 +151,7 @@ on the AGPL, and they are generated (`npm run schemas:gen`), not hand-written.
 | `npm run check:imports` | Import rules (dependency-cruiser) and the engine-reads-no-environment check |
 | `npm run knip` | Unused files, exports and dependencies |
 | `npm run build:packages` | Bundle the CLI (`packages/cli/dist/terragram.mjs`) and build the engine library (`packages/engine/dist`) |
+| `node scripts/release-cli.ts version [<tag>]` | The CLI's version; with a tag, fails unless the tag names it (the release workflow's gate) |
 | `npm run build:action` | Rebuild the committed Action bundle (`action/dist/index.mjs`) |
 | `npm run schemas:gen` / `schemas:check` | Write / verify `schemas/*.schema.json` |
 | `npm run validate:emit` | The generated-Terraform gate: `fmt`, `validate`, tflint, trivy and checkov over every brief and template, then Infraweaver's assess |

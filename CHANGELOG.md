@@ -35,5 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `terragram` command line (`generate`, `parse`, `render`, `explain`,
   `verify`) over the same engine, with JSON Schemas for the model and the
   evidence receipt.
+- A release workflow (`release-cli.yml`) that publishes the command line as one
+  file, `terragram-<version>.mjs`, with a `SHA256SUMS` file and build
+  provenance, on a GitHub release when a `cli-v<version>` tag is pushed, and an
+  `action/install-cli` action that downloads a pinned version, checks its
+  SHA-256 and attestation, and puts `terragram` on the runner's PATH.
 
 [Unreleased]: https://github.com/hibiscus-ctrl/terragram/commits/main
