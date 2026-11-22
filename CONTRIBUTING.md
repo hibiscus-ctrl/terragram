@@ -5,7 +5,7 @@ Thank you for helping. This page is the process: setting up, checking a change, 
 ## Workflow
 
 - Fork the repository (or branch, if you have write access) and open the pull request against `main`.
-- Name the branch after the change's type: `fix/share-link-expiry`, `feat/azure-kinds`, `docs/deploy`.
+- Name the branch after the change's type: `fix/receipt-key-id`, `feat/azure-kinds`, `docs/action-usage`.
 - Keep pull requests focused: one logical change each. A bug fix includes a test that fails without the fix.
 - Say in the description what changes and why, and how you tested it. The PR validation check fails on an empty or unfilled template.
 - A pull request merges once every check is green, the [CLA](#contributor-license-agreement) check included.
@@ -25,8 +25,8 @@ once, and it covers all your later pull requests. The `CLA` status check can't g
 Use [Conventional Commits](https://www.conventionalcommits.org/), as [.github/COMMIT_CONVENTION.md](.github/COMMIT_CONVENTION.md) describes:
 
 ```text
-fix(billing): keep a cancelled seat until the period ends
-feat(workspace): add an Azure storage kind
+fix(cli): reject a receipt whose key id is not trusted
+feat(engine): add an Azure storage kind
 ci: pin actions to commit SHAs
 ```
 
@@ -34,7 +34,7 @@ Types: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `style`, `ci`, `build`
 
 ## Setting up
 
-Terragram is a Next.js 16 App Router app in TypeScript, with Supabase and Stripe. It needs **Node 24** (`engines`, `.nvmrc`) and **npm**, not pnpm:
+Terragram is a TypeScript monorepo (the engine, the CLI and the GitHub Action). It needs **Node 24** (`engines`, `.nvmrc`) and **npm**, not pnpm:
 
 ```bash
 npm ci
@@ -42,25 +42,24 @@ npm ci
 
 `@infraweaver-io/*` packages come from GitHub Packages, so `npm ci` needs a token with `read:packages` for them. If you can't get one, open the pull request anyway and say so: a maintainer will help get the checks run.
 
-[README.md](README.md) covers the environment, the database and running the app. [AGENTS.md](AGENTS.md) covers the conventions the code follows (authorisation, auth paths, logging, the shared database), and applies to people as much as to coding agents.
+[README.md](README.md) covers what is in the repository and how to build it. [AGENTS.md](AGENTS.md) covers the conventions the code follows (the engine boundary, the CLI and Action rules, the committed Action bundle), and applies to people as much as to coding agents.
 
 ## Checking a change
 
 Run the gates CI runs before you push:
 
 ```bash
-npm run typecheck:all      # app, tests, scripts and Cypress
+npm run typecheck:all      # tests and scripts, the engine, the CLI and the Action
 npm test                   # unit tests (node --test)
-npm run test:components    # React components under happy-dom
 npm run lint:ci            # Biome
 npm run lint:ox            # oxlint
 npm run check:imports      # import rules (.dependency-cruiser.cjs)
-npm run check:design       # colour tokens and contrast
 npm run knip               # unused files, exports and dependencies
-npm run build
+npm run build:packages     # the CLI bundle and the engine library
+npm run build:action       # the committed Action bundle; commit it with the change
 ```
 
-A change to the API routes, the data layer or the migration also needs `npm run test:api:all`, which boots dev servers against a Supabase project: see [AGENTS.md](AGENTS.md) before running it. CI also runs the coverage floor, the generated-Terraform gate (`npm run validate:emit`), `reuse lint` and the security scans described below.
+A change to what the engine emits also needs `npm run validate:emit` and `npm run check:modules`, which need Terraform and Docker. A change to a document's shape needs `npm run schemas:gen`. CI also runs the coverage floor, `reuse lint` and the security scans described below.
 
 Two gates that aren't a command: **never commit credentials, tokens or customer data** (in code, tests or fixtures), and **never weaken a guardrail to make a feature work**.
 
@@ -73,11 +72,11 @@ Every TypeScript and JavaScript file starts with:
 // SPDX-License-Identifier: AGPL-3.0-only
 ```
 
-Put it above a `"use client"` or `"use server"` directive, or below a shebang line. Files that take no comment (JSON, SQL, Markdown, images, the lockfile) are covered by [REUSE.toml](REUSE.toml). `reuse lint` checks the whole repository; `pipx run reuse lint` runs it locally.
+Put it below a shebang line, if there is one. Files that take no comment (JSON, Markdown, images, the lockfile) are covered by [REUSE.toml](REUSE.toml). `reuse lint` checks the whole repository; `pipx run reuse lint` runs it locally.
 
 ## Security scans
 
-`.github/workflows/security-scan.yml` runs Semgrep and Trivy on every pull request and fails it only on what the branch adds: a Semgrep finding, a committed secret, or a HIGH/CRITICAL vulnerability with a fix available. A daily scan covers the whole tree. A test fixture that holds a secret-shaped value goes into `.trivyignore.yaml` by rule and exact path, with a reason.
+`.github/workflows/security-scan.yml` runs Semgrep and Trivy on every pull request and fails it only on what the branch adds: a Semgrep finding, a committed secret, or a HIGH/CRITICAL vulnerability with a fix available. A daily scan covers the whole tree. A test must not hold a secret-shaped value: generate keys at run time instead.
 
 ## Pinning GitHub Actions
 

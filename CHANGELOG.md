@@ -1,32 +1,28 @@
 # Changelog
 
-All notable changes to Terragram (`terragram-ui`) are documented in this file.
+All notable changes to Terragram are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+
+- The Next.js web app: the marketing site, the diagram workspace, account and
+  billing, the API routes, the Supabase migrations, the Cypress suite and the
+  deploy files (Dockerfile, Railway). The repository is now the TypeScript
+  engine (`terragram-engine`), the `terragram` command line, the GitHub Action
+  and the JSON Schemas, with their tests and CI.
+- Engine code that only the app used: the workspace settings schema, the mode
+  and format metadata, the share-link expiry check, the compose suggestions and
+  the node-position and edge-removal editor helpers.
+
 ### Added
 
-- The Terragram product, built out of the inherited codebase in seven phases:
-  rebrand + design system ("The Cartographer's Table"), the strip of the
-  inherited product surfaces, the marketing site, the React Flow diagram
-  workspace (four modes, review gate, code + evidence panes), the translation
-  engine (deterministic by default, managed UK inference behind
-  `WORKSPACE_ENGINE=managed` with automatic fallback), workspace persistence
-  (`workspaces` + `workspace_snapshots`, owner-only RLS, ephemeral degradation),
-  and the WCAG 2.2 AA hardening pass.
-- Personal accounts: `/billing` + `/settings` (the org is a 1:1 implementation
-  detail resolved ambiently — no org slug in any URL).
-
-### Security
-
-- `/api/workspace/translate` is rate-limited per user, caps its request body,
-  and only routes to managed (paid) inference for a managed-entitled org —
-  everyone else gets the deterministic engine.
-- The managed-inference usage callback warn-logs when the dedicated
-  `TERRAGRAM_PROXY_CALLBACK_SECRET` is absent and it falls back to the
-  token-signing secret.
+- A GitHub Action that checks or writes Terraform from a model file, and a
+  `terragram` command line (`generate`, `parse`, `render`, `explain`,
+  `verify`) over the same engine, with JSON Schemas for the model and the
+  evidence receipt.
 
 [Unreleased]: https://github.com/hibiscus-ctrl/terragram/commits/main
