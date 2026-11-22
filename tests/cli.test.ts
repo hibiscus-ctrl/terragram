@@ -242,13 +242,18 @@ describe("terragram parse, render and explain", () => {
 });
 
 describe("terragram verify", () => {
+  /**
+   * A bundle on disk as `buildBundle` lays it out, and the signer's public key kept
+   * OUTSIDE it: that separate copy is the only thing a verifier may trust.
+   */
   async function bundleDir(options: { signed: boolean }) {
     const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    const pem = publicKey.export({ type: "spki", format: "pem" }).toString();
     const signer: Signer = {
       keyId: "test-key",
       signedAt: "2026-09-11T00:00:01Z",
       publicKey: publicKey.export({ type: "spki", format: "der" }).toString("base64"),
-      publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
+      publicKeyPem: pem,
       sign: (bytes) => signBytes(null, Buffer.from(bytes), privateKey).toString("base64"),
     };
     const { model } = composeFromPrompt(BRIEF_WEB);
@@ -261,91 +266,160 @@ describe("terragram verify", () => {
       mkdirSync(dirname(join(dir, entry.name)), { recursive: true });
       writeFileSync(join(dir, entry.name), entry.content);
     }
-    return dir;
+    const trustedKey = join(fresh("trusted"), "signer.pem");
+    writeFileSync(trustedKey, pem);
+    return { dir, trustedKey };
   }
 
-  it("verifies a signed bundle directory: hash, embedded signature and detached signature", async () => {
-    const dir = await bundleDir({ signed: true });
-    const result = await cli(["verify", dir]);
+  it("verifies a signed bundle against the trusted key: hash, signature, key and detached signature", async () => {
+    const { dir, trustedKey } = await bundleDir({ signed: true });
+    const result = await cli(["verify", dir, "--key", trustedKey]);
     assert.equal(result.code, 0, result.stdout + result.stderr);
     assert.match(result.stdout, /hash: {6}pass/);
     assert.match(result.stdout, /signature: pass/);
+    assert.match(result.stdout, /key: {7}pass/);
     assert.match(result.stdout, /detached: {2}pass/);
     assert.match(result.stdout, /^verified$/m);
   });
 
-  it("takes the detached signature and key by flag, from anywhere", async () => {
-    const dir = await bundleDir({ signed: true });
-    const elsewhere = fresh("keys");
+  it("takes the key from a trust file by the receipt's key id", async () => {
+    const { dir, trustedKey } = await bundleDir({ signed: true });
+    const trust = join(fresh("trust"), "trust.json");
+    writeFileSync(trust, JSON.stringify({ "other-key": "junk", "test-key": readFileSync(trustedKey, "utf8") }));
+    assert.equal((await cli(["verify", dir, "--trust", trust])).code, 0);
+
+    const unknown = join(fresh("trust"), "trust.json");
+    writeFileSync(unknown, JSON.stringify({ "someone-else": readFileSync(trustedKey, "utf8") }));
+    const result = await cli(["verify", dir, "--trust", unknown]);
+    assert.equal(result.code, 1);
+    assert.match(result.stdout, /not in/);
+  });
+
+  it("does not verify an unsigned receipt unless told to check hashes only", async () => {
+    const { dir, trustedKey } = await bundleDir({ signed: false });
+    for (const args of [["--key", trustedKey], []]) {
+      const result = await cli(["verify", dir, ...args]);
+      assert.notEqual(result.code, 0, `terragram verify ${args.join(" ")}`);
+      assert.doesNotMatch(result.stdout, /^verified$/m);
+    }
+    const noKey = await cli(["verify", dir]);
+    assert.equal(noKey.code, 2);
+    assert.match(noKey.stderr, /--allow-unsigned/);
+    const keyed = await cli(["verify", dir, "--key", trustedKey]);
+    assert.equal(keyed.code, 1);
+    assert.match(keyed.stdout, /UNSIGNED/);
+  });
+
+  it("with --allow-unsigned checks the hashes and says plainly the receipt is UNSIGNED", async () => {
+    const { dir } = await bundleDir({ signed: false });
+    const result = await cli(["verify", dir, "--allow-unsigned"]);
+    assert.equal(result.code, 0, result.stdout);
+    assert.match(result.stdout, /hash: {6}pass/);
+    assert.match(result.stdout, /^UNSIGNED: hashes checked only/m);
+    assert.doesNotMatch(result.stdout, /^verified$/m);
+    assert.equal((JSON.parse((await cli(["verify", dir, "--allow-unsigned", "--json"])).stdout) as { verdict: string }).verdict, "unsigned");
+
+    const main = join(dir, "plan", "main.tf");
+    writeFileSync(main, `${readFileSync(main, "utf8")}\n# tampered\n`);
+    assert.equal((await cli(["verify", dir, "--allow-unsigned"])).code, 1, "a changed plan still fails the hash");
+  });
+
+  it("never reports a signed bundle as verified without a trusted key, even with --allow-unsigned", async () => {
+    const { dir } = await bundleDir({ signed: true });
+    assert.equal((await cli(["verify", dir])).code, 2);
+    const result = await cli(["verify", dir, "--allow-unsigned"]);
+    assert.equal(result.code, 0);
+    assert.match(result.stdout, /UNSIGNED/);
+    assert.match(result.stdout, /signature: unavailable/);
+    assert.doesNotMatch(result.stdout, /^verified$/m);
+  });
+
+  it("ignores the key shipped inside the bundle", async () => {
+    const { dir, trustedKey } = await bundleDir({ signed: true });
+    // The bundle carries signing-key.pem and receipt.json.sig, and they are consistent.
+    // Without a key from outside, that must not be enough.
+    assert.equal((await cli(["verify", dir])).code, 2);
+
+    // An attacker alters the receipt, re-signs it with their own key, and ships that
+    // key (and a matching detached signature) inside the bundle.
+    const attacker = generateKeyPairSync("ed25519");
+    const receiptPath = join(dir, "receipt.json");
+    const forged = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, string>;
+    forged.approver = "mallory";
+    forged.publicKey = attacker.publicKey.export({ type: "spki", format: "der" }).toString("base64");
+    forged.signature = signBytes(null, Buffer.from(forged.contentHash ?? ""), attacker.privateKey).toString("base64");
+    const forgedText = `${JSON.stringify(forged, null, 2)}\n`;
+    writeFileSync(receiptPath, forgedText);
+    writeFileSync(join(dir, "receipt.json.sig"), signBytes(null, Buffer.from(forgedText), attacker.privateKey).toString("base64"));
+    writeFileSync(join(dir, "signing-key.pem"), attacker.publicKey.export({ type: "spki", format: "pem" }).toString());
+
+    // Self-consistent inside, and still refused: the trusted key does not match.
+    const result = await cli(["verify", dir, "--key", trustedKey]);
+    assert.equal(result.code, 1);
+    assert.match(result.stdout, /key: {7}fail/);
+    assert.match(result.stdout, /NOT verified/);
+    assert.equal((await cli(["verify", dir])).code, 2, "still no key from outside, still not checked");
+  });
+
+  it("fails when the trusted key is not the key the receipt carries", async () => {
+    const { dir } = await bundleDir({ signed: true });
+    const other = join(fresh("trusted"), "other.pem");
+    writeFileSync(other, generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString());
+    const result = await cli(["verify", dir, "--key", other]);
+    assert.equal(result.code, 1);
+    assert.match(result.stdout, /key: {7}fail/);
+    assert.match(result.stdout, /signature: fail/);
+    assert.doesNotMatch(result.stdout, /^verified$/m);
+  });
+
+  it("takes the detached signature by flag, from anywhere", async () => {
+    const { dir, trustedKey } = await bundleDir({ signed: true });
+    const elsewhere = fresh("sig");
     writeFileSync(join(elsewhere, "r.sig"), readFileSync(join(dir, "receipt.json.sig")));
-    writeFileSync(join(elsewhere, "k.pem"), readFileSync(join(dir, "signing-key.pem")));
     rmSync(join(dir, "receipt.json.sig"));
-    rmSync(join(dir, "signing-key.pem"));
-    const result = await cli([
-      "verify",
-      join(dir, "receipt.json"),
-      "--sig",
-      join(elsewhere, "r.sig"),
-      "--key",
-      join(elsewhere, "k.pem"),
-      "--json",
-    ]);
+    const result = await cli(["verify", join(dir, "receipt.json"), "--sig", join(elsewhere, "r.sig"), "--key", trustedKey, "--json"]);
     assert.equal(result.code, 0, result.stderr);
-    const report = JSON.parse(result.stdout) as { ok: boolean; detached: { status: string } };
-    assert.equal(report.ok, true);
+    const report = JSON.parse(result.stdout) as { verdict: string; detached: { status: string } };
+    assert.equal(report.verdict, "verified");
     assert.equal(report.detached.status, "pass");
   });
 
   it("fails when a plan file has changed since approval", async () => {
-    const dir = await bundleDir({ signed: true });
+    const { dir, trustedKey } = await bundleDir({ signed: true });
     const main = join(dir, "plan", "main.tf");
     writeFileSync(main, `${readFileSync(main, "utf8")}\n# tampered\n`);
-    const result = await cli(["verify", dir]);
+    const result = await cli(["verify", dir, "--key", trustedKey]);
     assert.equal(result.code, 1);
     assert.match(result.stdout, /hash: {6}fail/);
     assert.match(result.stdout, /NOT verified/);
   });
 
   it("fails when receipt.json changed after it was signed", async () => {
-    const dir = await bundleDir({ signed: true });
+    const { dir, trustedKey } = await bundleDir({ signed: true });
     const path = join(dir, "receipt.json");
     const text = readFileSync(path, "utf8");
     assert.match(text, /"approver": "alice"/);
     writeFileSync(path, text.replace('"approver": "alice"', '"approver": "mallory"'));
-    const result = await cli(["verify", dir]);
+    const result = await cli(["verify", dir, "--key", trustedKey]);
     assert.equal(result.code, 1);
     assert.match(result.stdout, /detached: {2}fail/);
   });
 
-  it("fails when the key given is not the receipt's key", async () => {
-    const dir = await bundleDir({ signed: true });
-    const other = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString();
-    writeFileSync(join(dir, "signing-key.pem"), other);
-    const result = await cli(["verify", dir]);
-    assert.equal(result.code, 1);
-  });
-
-  it("reports an unsigned bundle as hash-checked but unsigned, not as failed", async () => {
-    const dir = await bundleDir({ signed: false });
-    const result = await cli(["verify", dir]);
-    assert.equal(result.code, 0, result.stdout);
-    assert.match(result.stdout, /signature: unavailable/);
-  });
-
   it("cannot hash-check a receipt on its own, and says so", async () => {
-    const dir = await bundleDir({ signed: true });
+    const { dir, trustedKey } = await bundleDir({ signed: true });
     const lone = fresh("lone");
     writeFileSync(join(lone, "receipt.json"), readFileSync(join(dir, "receipt.json")));
-    const result = await cli(["verify", join(lone, "receipt.json")]);
+    const result = await cli(["verify", join(lone, "receipt.json"), "--key", trustedKey]);
     assert.equal(result.code, 1);
     assert.match(result.stdout, /hash: {6}unavailable/);
   });
 
-  it("exits 1 for a file that is not a receipt and 2 for half a signature pair", async () => {
+  it("exits 1 for a file that is not a receipt, and 2 for arguments that cannot work", async () => {
     const dir = fresh("junk");
     writeFileSync(join(dir, "receipt.json"), "not json");
-    assert.equal((await cli(["verify", join(dir, "receipt.json")])).code, 1);
+    assert.equal((await cli(["verify", join(dir, "receipt.json"), "--allow-unsigned"])).code, 1);
     assert.equal((await cli(["verify", join(dir, "receipt.json"), "--sig", "x"])).code, 2);
+    assert.equal((await cli(["verify", join(dir, "receipt.json"), "--key", "a", "--trust", "b"])).code, 2);
   });
 });
 
