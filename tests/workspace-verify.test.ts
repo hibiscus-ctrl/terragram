@@ -281,3 +281,50 @@ describe("detached signature for the command-line verifier", () => {
     assert.equal(bundle.some((e) => e.name.endsWith(".pem")), false);
   });
 });
+
+describe("bundle entry names", () => {
+  it("reads receipt.json by its exact name, never a look-alike", async () => {
+    const { bundle } = await signedBundle();
+    const receipt = bundle.find((e) => e.name === "receipt.json")!;
+    const decoy = { name: "old-receipt.json", content: JSON.stringify({ schema: "something/else" }) };
+    const report = await verifyBundle([decoy, ...bundle]);
+    assert.equal(report.ok, true, report.hash.detail);
+    assert.equal(report.receipt?.contentHash, JSON.parse(receipt.content).contentHash);
+  });
+
+  it("refuses a bundle that holds a file name twice", async () => {
+    const { bundle } = await signedBundle();
+    for (const name of ["receipt.json", "model.json", "plan/main.tf"]) {
+      const twice = [...bundle, bundle.find((e) => e.name === name)!];
+      const report = await verifyBundle(twice);
+      assert.equal(report.ok, false);
+      assert.equal(report.error, `The bundle holds more than one ${name}.`);
+    }
+  });
+
+  it("refuses plan files in a sub-folder of plan/", async () => {
+    const { bundle } = await signedBundle();
+    const report = await verifyBundle([...bundle, { name: "plan/extra/main.tf", content: "" }]);
+    assert.equal(report.ok, false);
+    assert.match(report.error ?? "", /directly in plan\//);
+  });
+
+  it("reads a bundle zipped from its folder", async () => {
+    const { bundle } = await signedBundle();
+    const nested = bundle.map((e) => ({ ...e, name: `bundle/${e.name}` }));
+    const file = new File([await makeZip(nested).arrayBuffer()], "bundle.zip");
+    const entries = await readBundleZip(file);
+    assert.deepEqual(entries.map((e) => e.name).sort(), bundle.map((e) => e.name).sort());
+    assert.equal((await verifyBundle(entries)).ok, true);
+  });
+
+  it("keeps names as they are when the entries do not share one folder", async () => {
+    const file = new File(
+      [await makeZip([{ name: "a/receipt.json", content: "{}" }, { name: "b/model.json", content: "{}" }]).arrayBuffer()],
+      "mixed.zip",
+    );
+    const entries = await readBundleZip(file);
+    assert.deepEqual(entries.map((e) => e.name).sort(), ["a/receipt.json", "b/model.json"]);
+    assert.equal((await verifyBundle(entries)).error, "No receipt.json found in what you provided.");
+  });
+});

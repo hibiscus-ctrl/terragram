@@ -59,8 +59,28 @@ function failure(error: string): VerifyReport {
 }
 
 /**
+ * Why the entries cannot be read as one bundle, or null when they can. Each file is
+ * matched by its exact name, so a look-alike such as `old-receipt.json` is never read
+ * in place of `receipt.json`; and a name that appears twice, or a plan file in a
+ * sub-folder, is refused, since the host showing the bundle and this check could
+ * otherwise each pick a different copy.
+ */
+function ambiguousEntry(entries: readonly BundleEntry[]): string | null {
+  const seen = new Set<string>();
+  for (const { name } of entries) {
+    if (seen.has(name)) return `The bundle holds more than one ${name}.`;
+    seen.add(name);
+    if (name.startsWith("plan/") && !/^plan\/[^/\\]+$/.test(name)) {
+      return `The bundle's plan files must sit directly in plan/, not ${name}.`;
+    }
+  }
+  return null;
+}
+
+/**
  * Verify a bundle's entries. `entries` is whatever the reader dropped in: the files
- * from the zip, or a pasted `receipt.json` on its own (in which case the hash cannot
+ * from the zip, named relative to the bundle (`receipt.json`, `model.json`,
+ * `plan/main.tf`), or a pasted `receipt.json` on its own (in which case the hash cannot
  * be recomputed and we say so rather than reporting a pass). `alsoAccept` names receipt
  * schema ids beyond this build's own that the caller still trusts, such as an older
  * schema name its receipts were written under.
@@ -69,7 +89,9 @@ export async function verifyBundle(
   entries: BundleEntry[],
   options: { alsoAccept?: readonly string[] } = {},
 ): Promise<VerifyReport> {
-  const receiptEntry = entries.find((e) => e.name.endsWith("receipt.json"));
+  const ambiguous = ambiguousEntry(entries);
+  if (ambiguous) return failure(ambiguous);
+  const receiptEntry = entries.find((e) => e.name === "receipt.json");
   if (!receiptEntry) return failure("No receipt.json found in what you provided.");
 
   let receipt: EvidenceReceipt;
@@ -87,7 +109,7 @@ export async function verifyBundle(
 
   /* ------------------------------------------------------------------ hash -- */
 
-  const modelEntry = entries.find((e) => e.name.endsWith("model.json"));
+  const modelEntry = entries.find((e) => e.name === "model.json");
   const planFiles = bundlePlanFiles(entries);
   let hash: VerifyReport["hash"];
 
@@ -200,6 +222,20 @@ export async function readBundleZip(file: File): Promise<BundleEntry[]> {
     offset = contentStart + size;
   }
 
-  if (entries.length === 0) throw new Error("That file does not look like an evidence bundle.");
-  return entries;
+  const files = entries.filter((e) => !e.name.endsWith("/"));
+  if (files.length === 0) throw new Error("That file does not look like an evidence bundle.");
+  return withoutSharedRoot(files);
+}
+
+/**
+ * A bundle zipped from its folder holds `bundle/receipt.json` rather than
+ * `receipt.json`. When every entry sits under the same one folder, that folder is
+ * dropped so the names are relative to the bundle, as `verifyBundle` reads them;
+ * anything else is left as it is, for `verifyBundle` to accept or refuse by name.
+ */
+function withoutSharedRoot(entries: BundleEntry[]): BundleEntry[] {
+  const roots = new Set(entries.map((e) => (e.name.includes("/") ? e.name.slice(0, e.name.indexOf("/")) : "")));
+  const [root] = roots;
+  if (roots.size !== 1 || !root) return entries;
+  return entries.map((e) => ({ ...e, name: e.name.slice(root.length + 1) }));
 }
