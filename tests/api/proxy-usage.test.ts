@@ -29,6 +29,7 @@ const PATH = "/api/proxy-usage";
 
 const report = (token: string, over: Record<string, unknown> = {}) => ({
   token,
+  product: "terragram",
   usageId: `apitest-terragram-${randomUUID()}`,
   model: "claude-sonnet-5",
   inputTokens: 10,
@@ -72,6 +73,19 @@ describe("POST /api/proxy-usage", { skip: !READY }, () => {
     for (const body of [{}, report(ghostToken(), { inputTokens: -1 }), report(ghostToken(), { outputTokens: 1.5 })]) {
       const res = await api().post(PATH).set("x-infraweaver-proxy-secret", CALLBACK_SECRET).send(body);
       assert.equal(res.status, 400, JSON.stringify(body));
+    }
+  });
+
+  it("PU-N6: a report for another product, or naming none, is a 400 and records nothing", async () => {
+    for (const [product, code] of [
+      ["infraweaver", "wrong_product"],
+      [undefined, "product_required"],
+    ] as const) {
+      const res = await api()
+        .post(PATH)
+        .set("x-infraweaver-proxy-secret", CALLBACK_SECRET)
+        .send(report(ghostToken(), { product }));
+      assertApiError(res, 400, code);
     }
   });
 

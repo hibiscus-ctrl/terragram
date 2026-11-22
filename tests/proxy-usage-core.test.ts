@@ -22,6 +22,7 @@ const RESULT: ManagedUsageResult = {
 
 const body = (over: Partial<ProxyUsageBody> = {}): ProxyUsageBody => ({
   token: "tmpx_p.s",
+  product: "terragram",
   usageId: "call-1",
   inputTokens: 10,
   outputTokens: 5,
@@ -46,6 +47,23 @@ function harness(expMs: number, result: ManagedUsageResult = RESULT) {
   });
   return { recordProxyUsage, recorded, warnings };
 }
+
+describe("proxy usage core — the report's product", () => {
+  it("refuses a report for another product with a logged 400, recording nothing", async () => {
+    const h = harness(NOW + 60_000);
+    const out = await h.recordProxyUsage(body({ product: "infraweaver" }), NOW);
+    assert.deepEqual(out, { ok: false, status: 400, code: "wrong_product" });
+    assert.equal(h.recorded.length, 0);
+    assert.deepEqual(h.warnings, ["usage report refused — it is not for this product"]);
+  });
+
+  it("refuses a report that names no product", async () => {
+    const h = harness(NOW + 60_000);
+    const out = await h.recordProxyUsage(body({ product: undefined }), NOW);
+    assert.deepEqual(out, { ok: false, status: 400, code: "product_required" });
+    assert.equal(h.recorded.length, 0);
+  });
+});
 
 describe("proxy usage core", () => {
   it("bills a report that arrives just after the token expired, inside the grace window", async () => {
