@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 
 import { z } from "zod";
 
+import { USAGE_PRODUCT } from "@/features/billing/managed-meter";
 import { constantTimeEqual } from "@/utils/crypto";
 
 /**
@@ -55,6 +56,9 @@ export function mintProxyToken(
       org: orgId,
       model: model ?? null,
       scope: "model-proxy",
+      // Which product minted the token. The proxy and the other app sharing the
+      // signing secret refuse a token without it, so usage lands on the right meter.
+      product: USAGE_PRODUCT,
       // Mint time, in seconds. The gateway's spend-cap guard refuses an over-cap
       // org's tokens minted BEFORE it saw the cap crossed, and reads a token with
       // no `iat` as minted before — so without it, every fresh token after a
@@ -86,6 +90,7 @@ const proxyTokenClaimsSchema = z.object({
   org: z.string().min(1),
   model: z.string().nullable(),
   scope: z.literal("model-proxy"),
+  product: z.literal(USAGE_PRODUCT),
   iat: z.number().optional(),
   exp: z.number(),
   budget_pence: z.number().nullable().optional(),
