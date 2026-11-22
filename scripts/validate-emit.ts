@@ -68,16 +68,8 @@ import { composeFromPrompt } from "terragram-engine/engine";
 import { type Cloud, CLOUDS, type InfraModel } from "terragram-engine/model";
 import { emitTerraform } from "terragram-engine/terraform";
 import { templateModel, WORKSPACE_TEMPLATES } from "terragram-engine/templates";
+import { BRIEFS } from "./emit-briefs.ts";
 import { SCANNER_SKIPS, skipsFor } from "./scanner-skips.ts";
-
-const BRIEFS = [
-  "create the infrastructure which allows me to deploy a lambda to AWS, powered by Python",
-  "A web app with a Postgres database and Redis cache",
-  "A containerised API behind a load balancer with a queue, MySQL and monitoring",
-  "A static site on a CDN with its own DNS zone and object storage",
-  "Serverless functions with a queue, a NoSQL store, identity and a secret store, in a private network",
-  "A containerised API behind a load balancer with a cache and a Postgres database, in a private network",
-];
 
 const keep = process.argv.includes("--keep");
 const terraformBin = process.env.TERRAFORM_BIN ?? "terraform";
