@@ -153,7 +153,7 @@ describe("bundle zip round-trip", () => {
 describe("receipt provenance", () => {
   it("says which runtime produced it, and that nothing scanned it", async () => {
     const { receipt } = await signedBundle();
-    assert.equal(receipt.schema, "terragram.receipt/v2");
+    assert.equal(receipt.schema, "diagram.receipt/v2");
     assert.equal(receipt.provenance.node, process.version);
     assert.deepEqual(
       receipt.provenance.scanners,
@@ -218,17 +218,34 @@ describe("receipt provenance", () => {
     assert.equal(deterministic.receipt.provenance.model, null);
   });
 
-  it("still verifies a receipt written before provenance existed", async () => {
+  for (const [name, oldId] of [
+    ["before provenance existed", "terragram.receipt/v1"],
+    ["under the codename schema id", "terragram.receipt/v2"],
+  ] as const) {
+    it(`still verifies a receipt written ${name}`, async () => {
+      const { bundle } = await signedBundle();
+      const older = bundle.map((entry) =>
+        entry.name === "receipt.json"
+          ? { ...entry, content: entry.content.replace("diagram.receipt/v2", oldId) }
+          : entry,
+      );
+      const report = await verifyBundle(older);
+      // The hash covers the model and the plan, neither of which the schema id
+      // touched — so refusing an older bundle would be a choice, not a limitation.
+      assert.equal(report.hash.status, "pass", report.hash.detail);
+    });
+  }
+
+  it("refuses a receipt with a schema id it never wrote", async () => {
     const { bundle } = await signedBundle();
-    const downgraded = bundle.map((entry) =>
+    const foreign = bundle.map((entry) =>
       entry.name === "receipt.json"
-        ? { ...entry, content: entry.content.replace("terragram.receipt/v2", "terragram.receipt/v1") }
+        ? { ...entry, content: entry.content.replace("diagram.receipt/v2", "diagram.receipt/v9") }
         : entry,
     );
-    const report = await verifyBundle(downgraded);
-    // The hash covers the model and the plan, neither of which the schema bump
-    // touched — so refusing an older bundle would be a choice, not a limitation.
-    assert.equal(report.hash.status, "pass", report.hash.detail);
+    const report = await verifyBundle(foreign);
+    assert.equal(report.ok, false);
+    assert.match(report.error ?? "", /Unrecognised receipt schema/);
   });
 });
 

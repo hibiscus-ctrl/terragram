@@ -48,7 +48,7 @@ export type ViewNode = {
 export type ViewEdge = { from: string; to: string; status: EdgeStatus };
 
 export type GraphView = {
-  schema: "terragram.graph-view/v1";
+  schema: "diagram.graph-view/v1";
   cloud: GraphDocument["cloud"];
   title?: string;
   mode: "full" | "delta";
@@ -271,7 +271,7 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
   }
 
   return {
-    schema: "terragram.graph-view/v1",
+    schema: "diagram.graph-view/v1",
     cloud: doc.cloud,
     ...(options.title !== undefined && { title: options.title }),
     mode: options.delta ? "delta" : "full",

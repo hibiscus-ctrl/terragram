@@ -85,7 +85,7 @@ describe("schemas/model.v1.schema.json", () => {
     ["a node with an unknown category", { nodes: [{ ...node, category: "quantum" }], edges: [] }],
     ["a node id over 80 characters", { nodes: [{ ...node, id: "x".repeat(81) }], edges: [] }],
     ["an unknown cloud", { nodes: [], edges: [], cloud: "gcp" }],
-    ["a different schema id", { nodes: [], edges: [], schema: "terragram.model/v9" }],
+    ["a different schema id", { nodes: [], edges: [], schema: "diagram.model/v9" }],
     ["a model with no edges list", { nodes: [] }],
   ];
 
@@ -150,7 +150,7 @@ describe("schemas/receipt.v2.schema.json", () => {
       { nodeVersion: "v24.0.0" },
     );
     const broken: Array<[string, unknown]> = [
-      ["a different schema id", { ...receipt, schema: "terragram.receipt/v3" }],
+      ["a different schema id", { ...receipt, schema: "diagram.receipt/v3" }],
       ["a malformed hash", { ...receipt, contentHash: "sha256:abc" }],
       ["an unknown tool", { ...receipt, tool: "pulumi" }],
       ["no provenance", { ...receipt, provenance: undefined }],

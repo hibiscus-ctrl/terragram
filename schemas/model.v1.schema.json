@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/hibiscus-ctrl/terragram/schemas/model.v1.schema.json",
-  "title": "Terragram model (terragram.model/v1)",
-  "description": "An infrastructure diagram as Terragram reads it: components (nodes, at most 300) and the connections between them (edges, at most 600), optionally with the cloud it targets. A bare model, as found in an evidence bundle's model.json, is valid.",
+  "title": "Diagram model (diagram.model/v1)",
+  "description": "An infrastructure diagram as the engine reads it: components (nodes, at most 300) and the connections between them (edges, at most 600), optionally with the cloud it targets. A bare model, as found in an evidence bundle's model.json, is valid.",
   "type": "object",
   "properties": {
     "nodes": {
@@ -138,7 +138,7 @@
     },
     "schema": {
       "type": "string",
-      "const": "terragram.model/v1"
+      "const": "diagram.model/v1"
     },
     "cloud": {
       "type": "string",

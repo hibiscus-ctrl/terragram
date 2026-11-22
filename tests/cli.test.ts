@@ -102,7 +102,7 @@ describe("terragram generate matches the engine's emit path", () => {
         );
 
         const model = JSON.parse(modelJson ?? "{}") as InfraModel & { cloud: string; schema: string };
-        assert.equal(model.schema, "terragram.model/v1");
+        assert.equal(model.schema, "diagram.model/v1");
         assert.equal(model.cloud, cloud);
         assert.deepEqual(model.nodes, composed.nodes);
         assert.equal(validModel(model), true);
@@ -201,7 +201,7 @@ describe("terragram parse, render and explain", () => {
     writeFileSync(file, SAMPLE_TERRAFORM);
     const result = await cli(["parse", file]);
     assert.equal(result.code, 0);
-    assert.equal((JSON.parse(result.stdout) as { schema: string }).schema, "terragram.model/v1");
+    assert.equal((JSON.parse(result.stdout) as { schema: string }).schema, "diagram.model/v1");
   });
 
   it("renders the SVG the workspace exports", async () => {
@@ -322,6 +322,19 @@ describe("terragram verify", () => {
     const main = join(dir, "plan", "main.tf");
     writeFileSync(main, `${readFileSync(main, "utf8")}\n# tampered\n`);
     assert.equal((await cli(["verify", dir, "--allow-unsigned"])).code, 1, "a changed plan still fails the hash");
+  });
+
+  it("still checks a receipt that carries the codename schema id it was written under", async () => {
+    const { dir } = await bundleDir({ signed: false });
+    const receipt = join(dir, "receipt.json");
+    const body = readFileSync(receipt, "utf8");
+    assert.match(body, /"diagram\.receipt\/v2"/);
+    for (const oldId of ["terragram.receipt/v1", "terragram.receipt/v2"]) {
+      writeFileSync(receipt, body.replace("diagram.receipt/v2", oldId));
+      const result = await cli(["verify", dir, "--allow-unsigned"]);
+      assert.equal(result.code, 0, `${oldId}: ${result.stdout}`);
+      assert.match(result.stdout, /hash: {6}pass/);
+    }
   });
 
   it("refuses --allow-unsigned with a trusted key, so stripping a signature cannot pass", async () => {
