@@ -36,6 +36,8 @@ await build({
   platform: "neutral",
   target: "es2024",
   external: Object.keys(pkg.dependencies ?? {}),
+// REUSE-IgnoreStart
   banner: { js: "// SPDX-License-Identifier: AGPL-3.0-only" },
+// REUSE-IgnoreEnd
   logLevel: "info",
 });

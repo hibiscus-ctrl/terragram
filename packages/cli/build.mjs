@@ -33,7 +33,9 @@ await build({
   banner: {
     js: [
       "#!/usr/bin/env node",
+// REUSE-IgnoreStart
       "// SPDX-License-Identifier: AGPL-3.0-only",
+// REUSE-IgnoreEnd
       'import { createRequire as __createRequire } from "node:module";',
       "const require = __createRequire(import.meta.url);",
     ].join("\n"),
