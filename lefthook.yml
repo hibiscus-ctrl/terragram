@@ -1,0 +1,7 @@
+# Git hooks, installed by lefthook's postinstall (`npx lefthook install` by hand).
+#
+# Biome lints only the STAGED files, so a commit is judged on what it touches.
+pre-commit:
+  commands:
+    biome:
+      run: npx --no-install biome check --staged --no-errors-on-unmatched --files-ignore-unknown=true

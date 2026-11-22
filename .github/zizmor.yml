@@ -1,0 +1,23 @@
+# zizmor config for the "Workflow lint" job in security-scan.yml.
+#
+# Suppressions here are DELIBERATE and justified, one rule at a time — never a
+# blanket `disable: true`. Anything not listed below is a real finding and must
+# be fixed in the workflow, not added here. The companion to .pinact.yaml, which
+# enforces the SHA-pinning half.
+
+rules:
+  # setup-trivy takes its version from `env.TRIVY_VERSION`, which zizmor cannot
+  # resolve statically — it reports the interpolation itself, at LOW confidence,
+  # as a possibly-unpinned tool. It is not: `TRIVY_VERSION` is a literal
+  # (`v0.74.0`) declared at the top of that same workflow, and all three call
+  # sites follow the install with `trivy --version | grep -qF "${TRIVY_VERSION#v}"`,
+  # so the tool is pinned by value AND verified at runtime — a stronger pin than
+  # the literal zizmor is asking for.
+  #
+  # Inlining the version at each call site would silence this by making three
+  # copies of the pin, which is the drift the single env var exists to prevent.
+  # Scoped to the one workflow that installs trivy, so a genuinely unpinned tool
+  # anywhere else still fails the build.
+  unpinned-tools:
+    ignore:
+      - security-scan.yml

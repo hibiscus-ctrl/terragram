@@ -1,0 +1,80 @@
+import type { EngineKind } from "./engine.ts";
+import type { Cloud, InfraModel } from "./model.ts";
+import { resourceNodes } from "./model.ts";
+import type { TerraformOutput } from "./terraform.ts";
+
+/**
+ * The evidence *summary* shown live in the workspace as the model changes — a
+ * cheap, synchronous preview. The authoritative, cryptographically-hashed and
+ * (when a key is configured) Ed25519-signed receipt is produced server-side at the
+ * review gate — see `sign.ts` / `generateEvidenceAction`. This preview never claims
+ * a signature it doesn't have; it reports the resource set, provider SBOM, region,
+ * and which translator answered.
+ */
+
+export const ENGINE_VERSION = "0.1.0";
+
+export type { EngineKind };
+
+type SbomEntry = { name: string; version: string };
+
+export type EvidenceBundle = {
+  resourceCount: number;
+  cloud: Cloud;
+  region: string;
+  /** Honest label of the translator that produced the current model. */
+  inferenceMode: string;
+  sbom: SbomEntry[];
+  /** Short, non-cryptographic preview id over the model + plan (the signed
+   *  SHA-256 content hash is computed server-side in the receipt). */
+  previewId: string;
+};
+
+/** FNV-1a — a small, dependency-free, deterministic digest for the live preview id
+ *  only. NOT the signed content hash (that is SHA-256, computed in `sign.ts`). */
+function fnv1a(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function canonical(model: InfraModel): string {
+  const nodes = [...model.nodes]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((n) => `${n.id}:${n.category}:${n.kind}`)
+    .join("|");
+  const edges = [...model.edges].map((e) => e.id).sort().join("|");
+  return `${nodes}#${edges}`;
+}
+
+export function inferenceModeLabel(engine: EngineKind): string {
+  return engine === "managed" ? "Managed · UK Bedrock" : "Deterministic · local";
+}
+
+export function buildEvidence(
+  model: InfraModel,
+  cloud: Cloud,
+  terraform: TerraformOutput,
+  engine: EngineKind,
+): EvidenceBundle {
+  const planText = terraform.files.map((f) => f.content).join("\n");
+  const previewId = fnv1a(`${canonical(model)}::${cloud}::${planText}`);
+
+  const providerVersion = terraform.files[0]?.content.match(/version\s*=\s*"([^"]+)"/)?.[1] ?? "~> 0";
+
+  return {
+    resourceCount: resourceNodes(model).length,
+    cloud,
+    region: terraform.regionLabel,
+    inferenceMode: inferenceModeLabel(engine),
+    sbom: [
+      { name: "terragram-engine", version: ENGINE_VERSION },
+      { name: terraform.provider, version: providerVersion },
+      ...terraform.modules.map((m) => ({ name: m.source, version: m.version })),
+    ],
+    previewId,
+  };
+}

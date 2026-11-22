@@ -1,0 +1,294 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Terragram design system.
+ * Warm light theme: cream canvas, fired-terracotta primary, a warm taupe text
+ * ramp, and a node-category accent set (emerald / blue / violet / amber) that
+ * colour-codes resources on the diagram canvas. Dark surfaces are a deliberate
+ * emphasis material, not a second theme. Tokens are extracted from the product
+ * design (see DESIGN.md); this file is the single source of truth.
+ */
+:root {
+  --radius: 0.625rem; /* 10px — button base */
+
+  --background: #faf8f4; /* Sunlit Cream canvas */
+  --foreground: #211d16; /* Warm Ink */
+
+  --card: #ffffff;
+  --card-foreground: #211d16;
+
+  --popover: #ffffff;
+  --popover-foreground: #211d16;
+
+  --primary: #a8512a; /* Fired Terracotta */
+  --primary-foreground: #ffffff;
+  --primary-hover: #9a4420; /* Kiln Brown — hover / emphasis text */
+
+  --secondary: #f3efe6;
+  --secondary-foreground: #3a342b;
+
+  --muted: #f3efe6;
+  --muted-foreground: #665e4f; /* body / secondary text — 6:1 on cream */
+
+  --accent: #f3efe6;
+  --accent-foreground: #2b2620;
+
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+
+  --border: #e9e3d7;
+  --input: #928873; /* field + outline-button boundary — 3.5:1 on white (WCAG 1.4.11) */
+  --ring: #a8512a;
+
+  /* Warm taupe ink ramp — foreground → faint. Only -faint fails AA for body
+   * text; reserve it for decorative meta and placeholders. */
+  --ink: #3a342b;
+  --ink-soft: #4a4335; /* subheads */
+  --ink-muted: #5d5647; /* dense secondary copy */
+  --ink-faint: #746a5c; /* placeholders / non-essential meta — still TEXT, so 4.6:1+ */
+
+  /* Warm lines + light surface tints (depth without shadow) */
+  --line: #f3efe6; /* subtle inner divider */
+  --line-strong: #e9e3d7; /* card / shell edge (= --border) */
+  --wash: #f5f0e8; /* warm marketing band */
+  --surface-subtle: #fefbf4; /* hover tint over white */
+  --surface-sunken: #f3efe6; /* sunken chip / inset */
+  --surface-code: #f3eee4; /* inline code / mono chip */
+
+  /* Dark emphasis material (dark marketing sections + workspace chrome).
+   * Not a theme — used to make one region read heavy. */
+  --surface: #211d16;
+  --surface-2: #2b2620;
+  --surface-3: #2e2921;
+  --surface-foreground: #e9e3d7;
+  --surface-muted: #bfb7a9;
+  --surface-border: #3a342b;
+  --surface-dot: #34d399; /* live "data stays in the UK" dot on dark */
+
+  /* Semantic status — for app feedback (success / warning / danger / info). */
+  --success: #065f46;
+  --success-bg: #ecfdf5;
+  --success-border: #c6f0dc;
+  --warning: #b45309;
+  --warning-bg: #fef7ec;
+  --warning-border: #f5e3c2;
+  --danger: #b91c1c;
+  --danger-bg: #fef2f2;
+  --danger-border: #f7d4d4;
+  --info: #1d4ed8;
+  --info-bg: #eff4fe;
+  --info-border: #d6e4fb;
+
+  /* Node-category accents — colour-code resource types on the canvas. Each has
+   * a saturated ink for the glyph/label, a tint for the node body, and a border.
+   * These are load-bearing (meaning is carried), never decoration. */
+  --cat-compute: #047857; /* emerald — compute */
+  --cat-compute-bg: #ecfdf5;
+  --cat-compute-border: #c6f0dc;
+  --cat-network: #2563eb; /* blue — network */
+  --cat-network-bg: #eff4fe;
+  --cat-network-border: #d6e4fb;
+  --cat-storage: #7c3aed; /* violet — storage / diagrams */
+  --cat-storage-bg: #f5f0fe;
+  --cat-storage-border: #e7dbfb;
+  --cat-security: #b45309; /* amber — security / IAM */
+  --cat-security-bg: #fef7ec;
+  --cat-security-border: #f5e3c2;
+  --cat-observability: #0e7490; /* deep cyan — monitoring, logs, metrics (5.07:1 on canvas) */
+  --cat-observability-bg: #ecfafd;
+  --cat-observability-border: #c9e9f2;
+  --cat-neutral: #665e4f; /* taupe — unclassified */
+  --cat-neutral-bg: #f3efe6;
+  --cat-neutral-border: #e9e3d7;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-wash: var(--wash);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-code: var(--surface-code);
+
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-foreground: var(--surface-foreground);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-border: var(--surface-border);
+  --color-surface-dot: var(--surface-dot);
+
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-success-border: var(--success-border);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-border: var(--warning-border);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-border: var(--danger-border);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+  --color-info-border: var(--info-border);
+
+  --color-cat-compute: var(--cat-compute);
+  --color-cat-compute-bg: var(--cat-compute-bg);
+  --color-cat-compute-border: var(--cat-compute-border);
+  --color-cat-network: var(--cat-network);
+  --color-cat-network-bg: var(--cat-network-bg);
+  --color-cat-network-border: var(--cat-network-border);
+  --color-cat-storage: var(--cat-storage);
+  --color-cat-storage-bg: var(--cat-storage-bg);
+  --color-cat-storage-border: var(--cat-storage-border);
+  --color-cat-security: var(--cat-security);
+  --color-cat-security-bg: var(--cat-security-bg);
+  --color-cat-security-border: var(--cat-security-border);
+  --color-cat-observability: var(--cat-observability);
+  --color-cat-observability-bg: var(--cat-observability-bg);
+  --color-cat-observability-border: var(--cat-observability-border);
+  --color-cat-neutral: var(--cat-neutral);
+  --color-cat-neutral-bg: var(--cat-neutral-bg);
+  --color-cat-neutral-border: var(--cat-neutral-border);
+
+  --radius-sm: calc(var(--radius) - 4px); /* 6px — small controls */
+  --radius-md: calc(var(--radius) - 2px); /* 8px — inputs */
+  --radius-lg: var(--radius); /* 10px — buttons */
+  --radius-xl: calc(var(--radius) + 4px); /* 14px — cards */
+  --radius-2xl: calc(var(--radius) + 6px); /* 16px — dialogs / sheets */
+
+  /* Centred page column shared by every marketing / app section. */
+  --container-page: 1120px;
+
+  /* Type scale — Tailwind's text-* keys retuned to the brand ramp so class
+   * names stay native. rem-based, so it honours the user's text-size setting. */
+  --text-2xs: 0.6875rem; /* 11px — mono eyebrow labels */
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.8125rem; /* 13px */
+  --text-sm: 0.9375rem; /* 15px — body on dense surfaces */
+  --text-xl: 1.3125rem; /* 21px */
+  --text-2xl: 1.625rem; /* 26px — section headings */
+  --text-5xl: 3rem; /* 48px — hero */
+
+  --font-sans: var(--font-source), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SFMono-Regular", monospace;
+
+  --animate-spin-slow: spin 10s linear infinite;
+  --animate-fade-up: fade-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-fade-in: fade-in 0.25s ease both;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    min-width: 0;
+  }
+  /*
+   * Honour the OS "reduce motion" setting everywhere: collapse transitions,
+   * animations and smooth-scroll to near-instant, keeping a 0.01ms duration so
+   * transitionend / animationend handlers still fire.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: #ecdcc4;
+    color: #2b2620;
+  }
+  /* Warm, slim scrollbars to match the design prototype */
+  .tm-scroll::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .tm-scroll::-webkit-scrollbar-thumb {
+    background: #dad3c4;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+}
+
+@layer components {
+  /*
+   * Prose (docs + legal) link styling. Kept at single-class specificity via
+   * :where() so a utility class on the link wins, and a `.not-prose` subtree
+   * opts out entirely.
+   */
+  .prose-content :where(a):not(:where(.not-prose, .not-prose *)) {
+    font-weight: 600;
+    color: var(--primary);
+    text-decoration-line: underline;
+    text-decoration-color: #e3cdb9;
+    text-underline-offset: 3px;
+    transition:
+      color 0.15s ease,
+      text-decoration-color 0.15s ease;
+  }
+  .prose-content :where(a):not(:where(.not-prose, .not-prose *)):hover {
+    color: var(--primary-hover);
+    text-decoration-color: var(--primary-hover);
+  }
+}

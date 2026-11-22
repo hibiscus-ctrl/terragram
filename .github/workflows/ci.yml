@@ -1,0 +1,198 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref. Keyed by workflow+ref (not a hardcoded
+# prefix) so a second workflow added here can never collide with this one's group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege GITHUB_TOKEN: nothing by default, and each job grants only the
+# read scopes it uses. No job here writes anything (a trust-first product holds
+# its own CI to the bar it publishes).
+#
+# Public-repo safe: `pull_request` only (never `pull_request_target`), and every
+# checkout drops its credentials. A fork PR receives no secrets, so its `npm ci`
+# falls back to the read-only job token.
+permissions: {}
+
+jobs:
+  verify:
+    name: Typecheck · Self-test · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read # @infraweaver-io/* from GitHub Packages for npm ci
+    # Dummy values so the Supabase/Stripe admin clients can initialise at build
+    # time. They are NOT secrets — the build never reaches the network.
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://dummy.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_dummy0000000000000000
+      SUPABASE_SECRET_KEY: sb_secret_dummy0000000000000000
+      STRIPE_SECRET_KEY: sk_test_dummy
+      STRIPE_WEBHOOK_SECRET: whsec_dummy
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          # @infraweaver-io/* is on GitHub Packages; this writes the auth line into
+          # the runner npmrc, which NODE_AUTH_TOKEN below fills.
+          registry-url: "https://npm.pkg.github.com"
+
+      - name: Install
+        run: npm ci
+        env:
+          # This repo is outside the infraweaver-io org, so the job token does not
+          # grant read access to its packages — GH_PACKAGES_TOKEN is a fine-grained
+          # read:packages PAT. The job-token fallback is for the day the two repos
+          # share an org, at which point the secret can be dropped.
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # `typecheck:all`, not a bare `tsc --noEmit`: the app tsconfig EXCLUDES
+      # `tests` and `scripts`, so the narrow form left the test suite and the
+      # release gates in scripts/ with no type gate in CI.
+      - name: Typecheck (app + tests + scripts)
+        run: npm run typecheck:all
+
+      # Through the npm script rather than a bare `node`: the script is the one
+      # place the invocation (and its path-alias loader) is defined.
+      - name: Self-tests (OIDC / App-JWT / webhook HMAC / evidence / proxy / tokens / rate limiter)
+        run: npm run test:cloud
+
+      - name: Unit tests (with coverage floor)
+        # Runs the same suite as `npm test` and then fails if coverage drops below
+        # the floor. The percentages describe the files the tests actually load —
+        # the pure engine, emitter, receipt, token and money math — not the React
+        # tree, so treat a drop here as "logic lost a test", not "UI went untested".
+        run: npm run test:coverage
+
+      - name: Component tests
+        # React components, rendered in happy-dom via tsx (JSX needs a transform the
+        # type-stripping runner does not do). Kept a separate step from the pure
+        # suite so a DOM failure is never mistaken for a logic failure.
+        run: npm run test:components
+
+      - name: Build
+        run: npm run build
+
+  # The generated-Terraform gate: every brief and template, both clouds, through
+  # terraform fmt/init/validate, the three scanners (tflint/trivy/checkov run in
+  # their pinned containers here — the runner has Docker), and Infraweaver's own
+  # assess, then every module call against its published interface. This is
+  # the check that the product's output is Terraform a reviewer can apply; it
+  # needs the registry, so it is its own job and does not gate the unit tests.
+  generated-terraform:
+    name: Generated Terraform (fmt · validate · scanners · assess · modules)
+    runs-on: ubuntu-latest
+    # Forty documents' worth of work: twenty `terraform init`s (the Azure ones
+    # fetch twenty Verified Modules each), three container scanners, and one
+    # Infraweaver assess per document. The gate caches providers within a run;
+    # this is the ceiling for a cold one, not the expected time.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read # @infraweaver-io/* from GitHub Packages for npm ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          # @infraweaver-io/* is on GitHub Packages; this writes the auth line into
+          # the runner npmrc, which NODE_AUTH_TOKEN below fills.
+          registry-url: "https://npm.pkg.github.com"
+      - run: npm ci
+        env:
+          # Outside the infraweaver-io org — see the verify job.
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+      - name: Emit gate
+        run: npm run validate:emit
+        env:
+          TF_IN_AUTOMATION: "1"
+      - name: Module interfaces
+        run: npm run check:modules
+
+  lint:
+    name: Lint (Biome · oxlint · lockfile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read # @infraweaver-io/* from GitHub Packages for npm ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          # @infraweaver-io/* is on GitHub Packages; this writes the auth line into
+          # the runner npmrc, which NODE_AUTH_TOKEN below fills.
+          registry-url: "https://npm.pkg.github.com"
+      - run: npm ci
+        env:
+          # Outside the infraweaver-io org — see the verify job.
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+      # `biome ci`: the read-only, CI-reporting form of `biome check`.
+      - run: npm run lint:ci
+
+      # Catches what Biome does not: React and Next.js correctness (components
+      # defined during render, <a> where a Link belongs) and JSX a11y. Config in
+      # .oxlintrc.json — errors gate, warnings are advisory.
+      - run: npm run lint:ox
+
+      # Every resolved package comes from the public registry or GitHub Packages,
+      # over https, with an integrity hash and a URL that matches its name.
+      - run: npm run lint:lockfile
+
+      # Design-token gates: every token pair the app paints clears WCAG AA
+      # (check-contrast), no raw hex or stock Tailwind gray in src/ (DESIGN.md's
+      # No Raw Gray Rule), and DESIGN.md names the colours globals.css declares.
+      - run: npm run check:design
+
+      # Import gate (.dependency-cruiser.cjs): `@/` across directories and never
+      # `../`, no cycles, no privileged client in a component or a "use client"
+      # file, and the Stripe secret key only behind features/billing.
+      - run: npm run check:imports
+
+      # Unused files, exports and dependencies (knip.json). An export kept for a
+      # consumer that does not exist yet carries an `@public` tag saying which.
+      - run: npm run knip
+
+  # Mechanically enforce the SHA-pinning discipline: pinact validates every
+  # third-party `uses:` is pinned to a full commit SHA (.pinact.yaml holds the
+  # one justified exception). check-only (skip_push + fix:false) — it never commits.
+  pinact:
+    name: Action SHA pinning
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: suzuki-shunsuke/pinact-action@896d595f299e71d65b9d28349d6956abe144390a # v3.0.0
+        with:
+          skip_push: "true"
+          fix: "false"
+          # the version comment beside each SHA must name the tag that SHA
+          # actually carries.
+          verify: "true"

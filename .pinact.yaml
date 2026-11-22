@@ -1,0 +1,11 @@
+# pinact config for the SHA-pinning check in ci.yml (pinact-action, verify on).
+version: 3
+
+ignore_actions:
+  # The `aquasecurity` org turned on a GitHub IP allow list, so `--verify`'s API
+  # lookup of the tag behind the comment 403s from every hosted runner. Skipped
+  # ONLY while pinned to a full SHA — a tag or branch ref still fails the check.
+  # The SHA was checked by hand against `git ls-remote` (v0.3.1 = 81e51434…);
+  # re-check it the same way when bumping, since CI can no longer.
+  - name: aquasecurity/setup-trivy
+    ref: "[0-9a-f]{40}"

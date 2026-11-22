@@ -1,0 +1,4 @@
+# The fixtures here are byte-compared against the sibling checkouts that commit
+# the same file (infraweaver-proxy), which keep LF. Pin LF so a CRLF checkout
+# (core.autocrlf=true) does not fail that comparison on line endings alone.
+* text eol=lf

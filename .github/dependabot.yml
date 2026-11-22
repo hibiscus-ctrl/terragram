@@ -1,0 +1,66 @@
+# Dependabot — keep our own deps current (we're a security/remediation product;
+# dogfood the practice). Grouped minor/patch updates follow Renovate's noise-
+# reduction guidance: one PR per ecosystem per week, not one-per-dependency.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/London
+    open-pull-requests-limit: 5
+    # Conventional Commits (.github/COMMIT_CONVENTION.md): `prefix` +
+    # `include: scope` yields `build(deps): …` / `build(deps-dev): …`.
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    # Supply-chain quarantine. A freshly published version is the window in which
+    # a compromised or hijacked release is still undetected; waiting lets the
+    # registry, the maintainers and the wider ecosystem catch it before it lands
+    # in a PR here. Majors wait longest because they get the least review
+    # attention per line changed.
+    #
+    # This does NOT delay Dependabot SECURITY updates — those ignore the cooldown.
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 14
+      semver-patch-days: 7
+    groups:
+      # Minor/patch for everything else lands as one PR, keeping CI and reviewers
+      # sane. The exclusions get their own PR because each one changes runtime
+      # behaviour a grouped diff would bury: the framework and its renderer, the
+      # database client and its generated types, the payments SDK, and the
+      # type-checker the build itself runs.
+      npm-minor-patch:
+        patterns: ["*"]
+        exclude-patterns:
+          - next
+          - react
+          - react-dom
+          - "@supabase/*"
+          - stripe
+          - typescript
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/London
+    # `ci(deps): …` — same reason as above.
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    # Same quarantine rationale as the npm ecosystem above. Actions are pinned to
+    # SHAs, so a bump here rewrites the pin — exactly the mechanism a hijacked
+    # action release would ride in on.
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]

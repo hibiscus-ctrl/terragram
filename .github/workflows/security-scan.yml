@@ -1,0 +1,269 @@
+name: Security scan
+
+# The app holds customer workspaces and billing, so we hold it to the bar we
+# publish: Semgrep SAST over the TypeScript/Next.js source, plus Trivy for
+# committed secrets and known-vulnerable dependencies (it reads package-lock.json).
+#
+# LICENSING — permissive OSS, INTERNAL CI only, never bundled into what we ship:
+#   • Trivy   — Apache-2.0
+#   • Semgrep CE engine — LGPL-2.1; internal use of its registry rules is permitted
+#     (the Semgrep Rules License only restricts shipping them in a competing product).
+#
+# ── GATING ──────────────────────────────────────────────────────────────────
+#
+# An untriaged threshold gate ("fail on any HIGH/CRITICAL") red-walls every
+# unrelated PR on the day it is switched on, so it never gets switched on. The
+# gates here are DIFF-AWARE instead. Each asks "did this branch make it worse?",
+# which needs no baseline and no triage, and fails on the PR that can actually
+# fix the thing:
+#
+#   • Semgrep  — `--baseline-commit` reports only findings introduced since the
+#                merge base. Native Semgrep feature, not a homegrown filter.
+#   • Secrets  — scanned over the files this PR TOUCHED. A secret is a per-file
+#                fact, so the narrowing loses nothing, and a newly committed
+#                credential fails immediately.
+#   • Dep CVEs — the base and head lockfiles are scanned and diffed
+#                (scripts/dep-cve-gate.mjs, unit-tested in tests/).
+#
+# The pre-existing backlog is NOT hidden: the `inventory` job runs every scanner
+# at full scope on main and on a schedule, report-only, and publishes to the
+# Security tab. It is deliberately not a gate — a red main that no single PR
+# owns is how a scanner earns its `|| true` back.
+#
+# The schedule matters independently: a CVE is published against a dependency we
+# already have without any commit here, so PR-triggered scans alone never see it.
+#
+# Public-repo safe: `pull_request` only (never `pull_request_target`), no
+# secrets are read, and every checkout drops its credentials.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # 07:35 UTC daily, offset from the top of the hour (Actions schedules queue
+    # hardest at :00).
+    - cron: "35 7 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Kept equal to the trivy image validate-emit.ts pins for the generated-Terraform
+  # gate. Dependabot's github-actions ecosystem updates `uses:` refs but NOT
+  # `with:`/`env:` values, so nothing bumps this automatically — bump it by hand.
+  # Pinning the TOOL matters: a SHA-pinned setup-trivy still installs
+  # floating-latest without it, which is what made the March 2026
+  # backdoored-trivy window exploitable. Each install is verified below.
+  TRIVY_VERSION: v0.74.0
+  SEMGREP_VERSION: 1.168.0
+
+jobs:
+  # ── PR gates ────────────────────────────────────────────────────────────────
+  sast-diff:
+    name: SAST — no new findings (Semgrep)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # SARIF upload below
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # --baseline-commit walks history; a shallow clone cannot resolve the
+          # merge base and Semgrep then reports the whole file as introduced.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Semgrep
+        run: pipx install "semgrep==${SEMGREP_VERSION}"
+      - name: Semgrep (findings introduced by this branch only)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # `--error` is the gate: exit non-zero when anything is reported. Scoped
+        # by --baseline-commit, so a finding this branch did not introduce
+        # cannot fail it. `--config auto` selects community rulesets; internal
+        # CI use of those rules is permitted by the Semgrep Rules License.
+        run: |
+          set -euo pipefail
+          semgrep scan --config auto src \
+            --baseline-commit "$BASE_SHA" \
+            --error \
+            --sarif --output semgrep.sarif
+      - name: Upload Semgrep SARIF
+        if: always() && hashFiles('semgrep.sarif') != ''
+        continue-on-error: true # don't fail the job if GitHub code scanning (GHAS) is off
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  secrets-diff:
+    name: No secrets in the changed files (Trivy)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+      - run: trivy --version | head -1 | grep -qF "${TRIVY_VERSION#v}"
+      - name: Trivy secret scan over this branch's changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # A committed credential is a per-file fact, so scanning only what the
+        # PR touched loses nothing and needs no baseline. This one gates HARD:
+        # unlike a CVE backlog, "we already had a secret in the tree" is not a
+        # state to grandfather — and if the diff is empty there is nothing to
+        # find, so the step exits clean rather than scanning the world.
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/changed
+          # -z + read -d '' so paths with spaces survive; ACMR skips deletions,
+          # which have no content left to scan.
+          git diff -z --name-only --diff-filter=ACMR "$BASE_SHA...HEAD" \
+            | while IFS= read -r -d '' f; do
+                case "$f" in node_modules/*|*.lock|package-lock.json) continue ;; esac
+                mkdir -p "/tmp/changed/$(dirname "$f")"
+                cp "$f" "/tmp/changed/$f"
+              done
+          if [ -z "$(find /tmp/changed -type f -print -quit)" ]; then
+            echo "no scannable files changed"
+            exit 0
+          fi
+          trivy fs /tmp/changed --scanners secret --exit-code 1 --format table
+
+  dep-cve-diff:
+    name: No new vulnerable dependencies (Trivy)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+      - run: trivy --version | head -1 | grep -qF "${TRIVY_VERSION#v}"
+      # Warm the DB once. Both scans then run --skip-db-update, so a mid-job
+      # refresh cannot make the two sides disagree about the database they were
+      # judged against — which would surface as a phantom "introduced" finding.
+      - run: trivy fs --download-db-only
+
+      - name: Scan the merge base's lockfile
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/dep-base
+          git show "${BASE_SHA}:package-lock.json" > /tmp/dep-base/package-lock.json
+          trivy fs /tmp/dep-base --scanners vuln --format json \
+            --skip-db-update --exit-code 0 --output /tmp/base.json
+      - name: Scan this branch's lockfile
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/dep-head
+          cp package-lock.json /tmp/dep-head/package-lock.json
+          trivy fs /tmp/dep-head --scanners vuln --format json \
+            --skip-db-update --exit-code 0 --output /tmp/head.json
+      # Fails only on a HIGH/CRITICAL this branch introduces AND for which an
+      # upstream fix exists. Unfixable introductions are reported without
+      # blocking: a gate you can only satisfy with an ignore entry is one people
+      # learn to route around. Unit-tested in tests/dep-cve-gate.test.ts.
+      - name: Gate on newly-introduced CVEs
+        run: node scripts/dep-cve-gate.mjs --base /tmp/base.json --head /tmp/head.json
+
+  # ── Full-scope inventory (main + schedule): report-only, on purpose ─────────
+  inventory:
+    name: Full scan (report-only)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Semgrep
+        run: pipx install "semgrep==${SEMGREP_VERSION}"
+      - name: Semgrep (full)
+        # Report-only BY DESIGN, not a flag awaiting a flip: gating lives in
+        # sast-diff above, which can name the PR that introduced a finding.
+        # Failing a scheduled run instead produces a red main nobody owns.
+        run: semgrep scan --config auto src --sarif --output semgrep.sarif || true
+      - name: Upload Semgrep SARIF
+        if: always() && hashFiles('semgrep.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+      - run: trivy --version | head -1 | grep -qF "${TRIVY_VERSION#v}"
+      - name: Trivy filesystem (secrets + vuln)
+        # The whole tree, every severity, including findings with no fix — the
+        # inventory's job is to be complete, not actionable. We scan the
+        # package-lock.json manifest, not the installed node_modules tree.
+        run: |
+          trivy fs . \
+            --scanners vuln,secret \
+            --skip-dirs '**/node_modules/**,**/.next/**' \
+            --format sarif --output trivy.sarif \
+            --exit-code 0
+      - name: Upload Trivy SARIF
+        if: always() && hashFiles('trivy.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-fs
+
+  # Static analysis of the workflows themselves. pinact (ci.yml) already proves
+  # every `uses:` is SHA-pinned; zizmor covers the rest of the Actions threat
+  # model that pinning does not — overbroad `permissions:`, template-injection via
+  # untrusted `github.*` interpolation, artifact/credential leakage,
+  # `pull_request_target` misuse.
+  #
+  # GATING: the action propagates zizmor's non-zero exit on findings.
+  # Suppressions live in .github/zizmor.yml, one justified rule at a time.
+  # `annotations: true` puts findings on the PR diff, where the person who can
+  # fix them is looking; it is mutually exclusive with `advanced-security`, and
+  # needs no `security-events` permission.
+  workflows:
+    name: Workflow lint (zizmor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          advanced-security: false
+          annotations: true
+          persona: regular

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "includes": [
+      "src/**/*.{ts,tsx,js,jsx,mjs,cjs}",
+      "scripts/**/*.{ts,mts,mjs,js}",
+      "tests/**/*.{ts,tsx,mts,mjs,js}",
+      "cypress/**/*.{ts,mts,mjs,js}",
+      "*.{ts,js,mjs,cjs}",
+      "!src/components/ui",
+      "!src/libs/supabase/types.ts",
+      "!next-env.d.ts"
+    ]
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "a11y": {
+        "noSvgWithoutTitle": "off",
+        "noLabelWithoutControl": {
+          "level": "error",
+          "options": {
+            "inputComponents": ["Checkbox", "Input", "Select", "Textarea"]
+          }
+        }
+      },
+      "correctness": {
+        "useJsxKeyInIterable": "off"
+      },
+      "suspicious": {
+        "noArrayIndexKey": "off",
+        "noCommentText": "off",
+        "noTemplateCurlyInString": "off"
+      },
+      "nursery": {
+        "noExtendNative": "error",
+        "noNonScalableViewport": "error"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["tests/**"],
+      "linter": { "rules": { "style": { "noNonNullAssertion": "off" } } }
+    }
+  ],
+  "formatter": { "enabled": false },
+  "assist": { "enabled": false }
+}

@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.github
+.vercel
+coverage
+*.tsbuildinfo
+# Never bake local secrets into the image — Railway injects them at build/runtime.
+.env*.local
+.env
+npm-debug.log*
+.DS_Store
+Dockerfile
+.dockerignore
+README.md
+docs
+supabase/.temp

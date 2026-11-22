@@ -1,0 +1,20 @@
+# Railway service config — https://docs.railway.com/reference/config-as-code
+# Build from the Dockerfile (standalone Next.js server) and gate the deploy on the
+# /api/health/ready readiness probe, which 503s until the database answers: a
+# deployment with a broken Supabase key or an unapplied migration never takes
+# traffic, and the previous one keeps serving. Railway only probes during a
+# deploy, so a later Supabase blip does not restart a running instance.
+# /api/health stays the dependency-free liveness probe.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health/ready"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+# The standalone server reads PORT/HOSTNAME from the env (set in the Dockerfile);
+# Railway overrides PORT at runtime, which Next honours.
+startCommand = "node server.js"

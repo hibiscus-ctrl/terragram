@@ -1,0 +1,27 @@
+{
+  "note": "Cross-repo contract for the managed-model map. The Cloud decides which models it MINTS a tmpx_ token for (infraweaver-ui src/features/billing/managed-models.ts: MANAGED_MODELS, findManagedModel, isUnservableManagedModel) and the EU gateway decides which Bedrock id each one RUNS as (infraweaver-proxy terraform/terraform.tfvars bedrock_model_map, resolved by src/bedrock.ts resolveBedrockModel). An entry on one side without the other is answered by the proxy's default model and metered at its rate, silently. Committed in BOTH repos; each side reads its own copy and byte-compares the sibling's when checked out.",
+  "models": {
+    "anthropic/claude-opus-5-5": {
+      "cloud_slug": "anthropic/claude-opus",
+      "bedrock_id": "eu.anthropic.claude-opus-5-5"
+    },
+    "anthropic/claude-sonnet-5-5": {
+      "cloud_slug": "anthropic/claude-sonnet",
+      "bedrock_id": "eu.anthropic.claude-sonnet-5-5"
+    },
+    "anthropic/claude-opus-5": {
+      "cloud_slug": "anthropic/claude-opus",
+      "bedrock_id": "eu.anthropic.claude-opus-5"
+    },
+    "anthropic/claude-sonnet-5": {
+      "cloud_slug": "anthropic/claude-sonnet",
+      "bedrock_id": "eu.anthropic.claude-sonnet-5"
+    }
+  },
+  "unservable": [
+    "anthropic/claude-fable-5",
+    "anthropic/claude-fable-5-1",
+    "anthropic/claude-haiku-4-5",
+    "anthropic/claude-opus-4-1"
+  ]
+}

@@ -1,0 +1,287 @@
+import { attributeOf, extractReferences, type HclBlock, mapEntries, parseHcl, stringValue } from "./hcl.ts";
+import {
+  cloudSpec,
+  isScaffoldModule,
+  kindDefinition,
+  moduleSourceToKind,
+  resourceTypeToKind,
+} from "./kinds.ts";
+import { reconcileEdges, uniqueNodeId } from "./engine.ts";
+import type { Cloud, InfraModel, ModelEdge, ModelNode } from "./model.ts";
+
+/**
+ * Terraform → model. Reads a real document rather than pattern-matching resource
+ * headers, so three things survive the trip that used to be thrown away: the
+ * attributes a reviewer chose, the topology the file actually declares, and the
+ * parts we cannot translate.
+ *
+ * The rule about topology is the important one. When the file contains references
+ * between resources, those references *are* the diagram — we never overwrite them
+ * with our own spine guesses. Only a file with no cross-references falls back to
+ * derived topology, and in that case we say so rather than pretending we read it.
+ */
+
+export type ParseResult =
+  | { ok: true; model: InfraModel; cloud: Cloud; untranslated: string[] }
+  | { ok: false; error: string };
+
+type Instance = {
+  node: ModelNode;
+  /** The primary block, whose attributes the inspector reads back. */
+  primary: HclBlock | null;
+  /** Every block that belongs to this node, for reference scanning. */
+  blocks: HclBlock[];
+  /** Terraform name the blocks share, e.g. `web`. */
+  tfName: string;
+};
+
+/** `resource "type" "name"` → its address parts; `module "name"` → `module.name`. */
+function resourceLabel(block: HclBlock): { type: string; name: string } | null {
+  if (block.type === "module") {
+    const [name] = block.labels;
+    return name ? { type: "module", name } : null;
+  }
+  const [type, name] = block.labels;
+  return type && name ? { type, name } : null;
+}
+
+function moduleSource(block: HclBlock): string {
+  return stringValue(attributeOf(block, "source")) ?? "";
+}
+
+/** Majority vote on provider prefix (and module namespace), so a mixed file still
+ *  picks a target. */
+function detectCloud(types: string[], sources: string[]): Cloud {
+  let azure = 0;
+  let aws = 0;
+  for (const type of types) {
+    if (type.startsWith("azurerm_") || type.startsWith("azuread_")) azure++;
+    if (type.startsWith("aws_")) aws++;
+  }
+  for (const source of sources) {
+    if (source.startsWith("Azure/")) azure++;
+    if (source.startsWith("terraform-aws-modules/")) aws++;
+  }
+  return aws > azure ? "aws" : "azure";
+}
+
+/** `data.<type>.<name>` inside an expression. */
+const DATA_REFERENCE_RE = /\bdata\.([A-Za-z_][\w-]*)\.([A-Za-z_][\w-]*)/g;
+
+/** Every attribute expression in a block and its children. */
+function expressions(block: HclBlock): string[] {
+  const out = block.attributes.map((a) => a.value);
+  // A settings map's values are references too — that is where wiring lands.
+  for (const attribute of block.attributes) {
+    for (const entry of mapEntries(attribute.value)) out.push(entry.value);
+  }
+  for (const nested of block.blocks) out.push(...expressions(nested));
+  return out;
+}
+
+export function parseTerraform(source: string): ParseResult {
+  const blocks = parseHcl(source);
+  const resources = blocks.filter((b) => b.type === "resource");
+  const modules = blocks.filter(
+    (b) => b.type === "module" && !isScaffoldModule(b),
+  );
+
+  if (resources.length === 0 && modules.length === 0) {
+    return { ok: false, error: "No Terraform resource blocks were found in this file." };
+  }
+
+  const cloud = detectCloud(
+    resources.flatMap((b) => resourceLabel(b)?.type ?? []),
+    modules.map(moduleSource),
+  );
+
+  // Resolve every resource and module block to a kind, keeping what we could not
+  // translate. A module resolves by its registry source, the way a resource does by
+  // its type — so Terragram's own module-based output reads back to the same model.
+  type Resolved = { block: HclBlock; type: string; name: string; kind: string };
+  const resolved: Resolved[] = [];
+  const untranslated: string[] = [];
+  const unreadModules: HclBlock[] = [];
+
+  for (const block of resources) {
+    const label = resourceLabel(block);
+    if (!label) continue;
+    const match = resourceTypeToKind(label.type, cloud, block) ?? resourceTypeToKind(label.type, undefined, block);
+    if (match) resolved.push({ block, ...label, kind: match.kind });
+    else untranslated.push(`${label.type}.${label.name}`);
+  }
+  for (const block of modules) {
+    const label = resourceLabel(block);
+    if (!label) continue;
+    const match = moduleSourceToKind(moduleSource(block), block);
+    if (match) resolved.push({ block, ...label, kind: match.kind });
+    else unreadModules.push(block);
+  }
+
+  if (resolved.length === 0) {
+    return {
+      ok: false,
+      error:
+        "None of the resources in this file are ones Terragram can map yet. It reads the AWS and Azure services in the component palette — compute, networking, storage, identity and monitoring.",
+    };
+  }
+
+  /* -- one node per primary block, secondary blocks attached to the nearest -- */
+
+  const instances: Instance[] = [];
+  const takenIds: string[] = [];
+
+  const byKind = new Map<string, Resolved[]>();
+  for (const item of resolved) {
+    const list = byKind.get(item.kind);
+    if (list) list.push(item);
+    else byKind.set(item.kind, [item]);
+  }
+
+  for (const [kind, items] of byKind) {
+    const spec = cloudSpec(kind, cloud);
+    const def = kindDefinition(kind);
+    // A module block is its own primary when it is the kind's module: the whole
+    // component is that one call. A module the kind merely `moduleMatches` (the
+    // cluster beside an ECS service) attaches to the primary like any secondary.
+    const primaries = items.filter(
+      (i) =>
+        i.type === spec?.type ||
+        (i.type === "module" && moduleSource(i.block) === spec?.moduleSource),
+    );
+    const seeds = primaries.length > 0 ? primaries : [items[0] as Resolved];
+
+    for (const seed of seeds) {
+      const id = uniqueNodeId(kind, takenIds);
+      takenIds.push(id);
+      const node: ModelNode = {
+        id,
+        category: def?.category ?? "compute",
+        kind,
+        label: def?.label ?? kind,
+        flag: null,
+      };
+      instances.push({
+        node,
+        primary: primaries.length > 0 ? seed.block : null,
+        blocks: [seed.block],
+        tfName: seed.name,
+      });
+    }
+
+    // Attach the rest: the instance whose Terraform name prefixes this one's,
+    // else the first instance of the kind.
+    const own = instances.filter((i) => i.node.kind === kind);
+    for (const item of items) {
+      if (seeds.includes(item)) continue;
+      const target =
+        own.find((i) => item.name === i.tfName) ??
+        own.find((i) => item.name.startsWith(i.tfName)) ??
+        own[0];
+      target?.blocks.push(item.block);
+    }
+  }
+
+  // Read reviewer-facing attributes back out of the primary block.
+  for (const instance of instances) {
+    const spec = cloudSpec(instance.node.kind, cloud);
+    if (!spec?.read || !instance.primary) continue;
+    const attributes = spec.read(instance.primary);
+    if (Object.keys(attributes).length > 0) instance.node.attributes = attributes;
+  }
+
+  /* --------------------------------------------- references become edges -- */
+
+  const ownerByAddress = new Map<string, string>();
+  for (const instance of instances) {
+    for (const block of instance.blocks) {
+      const label = resourceLabel(block);
+      if (label) ownerByAddress.set(`${label.type}.${label.name}`, instance.node.id);
+    }
+  }
+
+  const edges: ModelEdge[] = [];
+  const seen = new Set<string>();
+  for (const instance of instances) {
+    for (const block of instance.blocks) {
+      for (const expression of expressions(block)) {
+        for (const address of extractReferences(expression)) {
+          const target = ownerByAddress.get(address);
+          if (!target || target === instance.node.id) continue;
+          const key = `${instance.node.id}->${target}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          edges.push({ id: key, source: instance.node.id, target, origin: "user" });
+        }
+      }
+    }
+  }
+
+  /* -- untranslated modules and data sources stay on the diagram, flagged -- */
+
+  // A data source a translated component reads is part of that component — the
+  // account its key policy names, the managed policy its CDN attaches — not a
+  // block of its own. One that nothing translated reads stays on the diagram.
+  const readByComponents = new Set(
+    instances
+      .flatMap((i) => i.blocks.flatMap(expressions))
+      .flatMap((expression) => [...expression.matchAll(DATA_REFERENCE_RE)].map((m) => `${m[1]}.${m[2]}`)),
+  );
+  const nodes = instances.map((i) => i.node);
+  for (const block of blocks) {
+    if (block.type === "module" ? !unreadModules.includes(block) : block.type !== "data") continue;
+    if (block.type === "module" && isScaffoldModule(block)) continue;
+    if (block.type === "data" && readByComponents.has(block.labels.join("."))) continue;
+    const name = block.labels.at(-1) ?? block.type;
+    const id = uniqueNodeId(`external-${name}`, takenIds);
+    takenIds.push(id);
+    nodes.push({
+      id,
+      category: "edge",
+      kind: "external",
+      label: `${block.type} ${name}`,
+      flag: { reason: `Terragram read this ${block.type} block but cannot translate its contents.` },
+    });
+    untranslated.push(`${block.type}.${name}`);
+  }
+
+  /* ---------------------------------------------------- ingress + assembly -- */
+
+  const hasReferences = edges.length > 0;
+  const internet: ModelNode = {
+    id: "internet",
+    category: "edge",
+    kind: "internet",
+    label: "Internet",
+    flag: null,
+  };
+
+  if (hasReferences) {
+    // The file's own wiring is the topology. Mark it manual so no later turn
+    // re-derives it, and hang the conceptual internet node off the entry point.
+    const entry = entryPoint(nodes, edges);
+    const all = [internet, ...nodes];
+    if (entry) {
+      edges.unshift({
+        id: `internet->${entry}`,
+        source: internet.id,
+        target: entry,
+        origin: "derived",
+      });
+    }
+    return { ok: true, model: { nodes: all, edges, topology: "manual" }, cloud, untranslated };
+  }
+
+  const derived = reconcileEdges({
+    nodes: [internet, ...nodes],
+    edges: [],
+    topology: "derived",
+  });
+  return { ok: true, model: derived, cloud, untranslated };
+}
+
+/** The node nothing else points at — where traffic enters the parsed graph. */
+function entryPoint(nodes: ModelNode[], edges: ModelEdge[]): string | undefined {
+  const consumed = new Set(edges.map((e) => e.target));
+  return nodes.find((n) => !consumed.has(n.id) && n.category !== "edge")?.id ?? nodes[0]?.id;
+}

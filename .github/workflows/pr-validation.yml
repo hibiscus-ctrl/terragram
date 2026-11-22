@@ -1,0 +1,42 @@
+name: PR validation
+
+# Runs `.github/scripts/validate-pr.mjs`: a title that is long enough and not
+# "wip" / "update" / "misc", and a description that isn't an unfilled template.
+# Conventional Commits are the convention here (.github/COMMIT_CONVENTION.md) but
+# are not enforced on the PR title — nothing parses squash-merge titles into a
+# changelog, so a rigid prefix check would buy nothing.
+#
+# Runs on `pull_request` (read-only token, no secrets — safe for fork PRs). It
+# checks out the BASE sha so it always runs the trusted base-branch copy of the
+# validator — never a fork's edited version — and reads the title/body from the
+# event payload via env (so an untrusted title can't inject into the shell).
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Least-privilege: only needs to read the repo to run the validator script.
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout base (trusted validator)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Validate PR title + description
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node .github/scripts/validate-pr.mjs
