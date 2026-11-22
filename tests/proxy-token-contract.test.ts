@@ -98,7 +98,7 @@ describe("proxy-token contract", () => {
 
   it("mints iat in whole seconds, one TTL before exp", () => {
     const before = Math.floor(Date.now() / 1000);
-    const minted = withProxyEnv(() => mintProxyToken("org_contract_fixture", "claude-sonnet-5", 250));
+    const minted = withProxyEnv(() => mintProxyToken("org_contract_fixture", "claude-sonnet-5-5", 250));
     const after = Math.floor(Date.now() / 1000);
     const { iat, exp } = payloadOf(minted.token) as { iat: number; exp: number };
     assert.ok(Number.isInteger(iat) && iat >= before && iat <= after, `iat ${iat} is not now in seconds`);
@@ -122,11 +122,11 @@ describe("proxy-token contract", () => {
         nowMs?: number,
       ) => Record<string, unknown> | null;
     };
-    const minted = withProxyEnv(() => mintProxyToken("org_contract_fixture", "claude-sonnet-5", 250));
+    const minted = withProxyEnv(() => mintProxyToken("org_contract_fixture", "claude-sonnet-5-5", 250));
     const claims = gatewayVerify(minted.token, contract.secret);
     assert.ok(claims, "the gateway rejects a token Terragram minted");
     assert.equal(claims.org, "org_contract_fixture");
-    assert.equal(claims.model, "claude-sonnet-5");
+    assert.equal(claims.model, "claude-sonnet-5-5");
     assert.equal(gatewayVerify(minted.token, `${contract.secret}x`), null);
   });
 

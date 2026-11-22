@@ -89,10 +89,10 @@ describe("mintProxyToken", () => {
   });
 
   it("round-trips the claims it was given", () => {
-    const minted = mintProxyToken("org-1", "claude-opus-5", 2_500);
+    const minted = mintProxyToken("org-1", "claude-opus-5-5", 2_500);
     const claims = verifyProxyToken(minted.token);
     assert.equal(claims?.org, "org-1");
-    assert.equal(claims?.model, "claude-opus-5");
+    assert.equal(claims?.model, "claude-opus-5-5");
     assert.equal(claims?.budget_pence, 2_500);
     assert.equal(claims?.scope, "model-proxy");
     assert.equal(claims?.product, "terragram");

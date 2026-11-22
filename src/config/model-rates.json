@@ -2,7 +2,7 @@
   "currency": "gbp",
   "unit": "pence-per-million-tokens",
   "note": "Our AWS Bedrock (eu-west-2 / EU) token cost. The money meter bills tokens x rate x pricing.json managedCost.markup. Update these from the AWS Bedrock price list; matched longest-first by substring against the Bedrock model id the proxy reports.",
-  "cacheNote": "Prompt-cache tokens are billed off the model's own inputPer1m: Anthropic's Bedrock cache rates are a fixed ratio of the input rate on the Claude models the managed route serves (Sonnet 5, Opus 5) — a read is a tenth of input, a 5-minute write a quarter above it. Bedrock reports all three counts disjointly, so each is billed once at its own rate. Re-check the ratio before mapping any other model onto the managed route.",
+  "cacheNote": "Prompt-cache tokens are billed off the model's own inputPer1m: Anthropic's Bedrock cache rates are a fixed ratio of the input rate on the Claude models the managed route serves (Sonnet 5.5, Opus 5.5) — a read is a tenth of input, a 5-minute write a quarter above it. Bedrock reports all three counts disjointly, so each is billed once at its own rate. Re-check the ratio before mapping any other model onto the managed route.",
   "cacheReadMultiplier": 0.1,
   "cacheWriteMultiplier": 1.25,
   "default": { "inputPer1m": 240, "outputPer1m": 1200 },

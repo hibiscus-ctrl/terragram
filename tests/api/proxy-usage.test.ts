@@ -31,14 +31,14 @@ const report = (token: string, over: Record<string, unknown> = {}) => ({
   token,
   product: "terragram",
   usageId: `apitest-terragram-${randomUUID()}`,
-  model: "claude-sonnet-5",
+  model: "claude-sonnet-5-5",
   inputTokens: 10,
   outputTokens: 5,
   ...over,
 });
 
 /** A token for an org that does not exist — accepted, never billed. */
-const ghostToken = () => mintProxyToken(randomUUID(), "claude-sonnet-5", 100).token;
+const ghostToken = () => mintProxyToken(randomUUID(), "claude-sonnet-5-5", 100).token;
 
 describe("POST /api/proxy-usage", { skip: !READY }, () => {
   it("PU-N1: no secret header is 401 before the body is read", async () => {

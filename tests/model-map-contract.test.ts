@@ -9,7 +9,7 @@
  * does: a byte-for-byte copy of the gateway's own, re-checked against the sibling
  * checkout when it is present.
  *
- * Terragram sends the BARE id (`claude-sonnet-5`); the gateway resolves a bare
+ * Terragram sends the BARE id (`claude-sonnet-5-5`); the gateway resolves a bare
  * name through its `anthropic/` key, so that is the mapping asserted here.
  */
 import assert from "node:assert/strict";

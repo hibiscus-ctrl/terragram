@@ -9,7 +9,12 @@ import {
   describeTurn,
 } from "./engine.ts";
 import { KIND_BY_ID, KIND_LABELS, MODEL_KIND_IDS } from "./kinds.ts";
-import { DEFAULT_MANAGED_MODEL, isManagedModelId, type ManagedModelId } from "./managed-models.ts";
+import {
+  DEFAULT_MANAGED_MODEL,
+  isManagedModelId,
+  type ManagedModelId,
+  migrateManagedModelId,
+} from "./managed-models.ts";
 import { CLOUDS, EMPTY_MODEL, type InfraModel } from "./model.ts";
 
 /**
@@ -35,8 +40,9 @@ import { CLOUDS, EMPTY_MODEL, type InfraModel } from "./model.ts";
  * deployment typo degrades to the default instead of failing every managed turn.
  */
 export function resolvedModel(override?: string): ManagedModelId {
-  if (isManagedModelId(override)) return override;
-  const configured = process.env.TERRAGRAM_WORKSPACE_MODEL;
+  const chosen = migrateManagedModelId(override);
+  if (isManagedModelId(chosen)) return chosen;
+  const configured = migrateManagedModelId(process.env.TERRAGRAM_WORKSPACE_MODEL);
   if (isManagedModelId(configured)) return configured;
   return DEFAULT_MANAGED_MODEL;
 }
