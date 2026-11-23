@@ -8,6 +8,7 @@ import {
   mapEntries,
   mapExpression,
   quote,
+  quoteTemplate,
   stringValue,
 } from "./hcl.ts";
 import type { Cloud, ModelNode, NodeCategory, ReviewFlag } from "./model.ts";
@@ -38,6 +39,9 @@ export type KindField = {
   options?: readonly string[];
   /** Used when the reviewer hasn't chosen — always mirrors the emit default. */
   fallback: string;
+  /** For free text: why a value cannot be used, or null when it can. Such a value is
+   *  written into the plan, so it is checked before anything is emitted. */
+  validate?: (value: string) => string | null;
   /** Phrases in a plain-English brief that choose an option ("powered by Python"),
    *  so the deterministic engine reads the same facts a reviewer would set by hand.
    *  First match wins; listed most specific first. */
@@ -475,7 +479,25 @@ const DELIVERY_FIELD: KindField = {
   fallback: "At least once",
 };
 
-const CIDR_FIELD: KindField = { key: "Address space", fallback: "10.0.0.0/16" };
+/** An IPv4 CIDR block such as `10.0.0.0/16`: four octets and a prefix length. */
+function cidrProblem(value: string): string | null {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(value);
+  const [, a, b, c, d, prefix] = match ?? [];
+  const valid = match !== null && [a, b, c, d].every((octet) => Number(octet) <= 255) && Number(prefix) <= 32;
+  return valid ? null : `${JSON.stringify(value)} is not an IPv4 CIDR block such as 10.0.0.0/16`;
+}
+
+/** A DNS name such as `example.gov.uk`: dot-separated labels of letters, digits and hyphens. */
+function hostnameProblem(value: string): string | null {
+  const labels = value.split(".");
+  const valid =
+    value.length <= 253 &&
+    labels.length >= 2 &&
+    labels.every((label) => /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label));
+  return valid ? null : `${JSON.stringify(value)} is not a DNS name such as example.gov.uk (letters, digits and hyphens between dots)`;
+}
+
+const CIDR_FIELD: KindField = { key: "Address space", fallback: "10.0.0.0/16", validate: cidrProblem };
 
 const CONTAINER_SIZE_AZURE = options({
   "Small (0.5 vCPU)": "0.5",
@@ -500,7 +522,7 @@ const RETENTION_FIELD: KindField = {
   fallback: "30 days",
 };
 
-const DNS_ZONE_FIELD: KindField = { key: "Zone name", fallback: "example.gov.uk" };
+const DNS_ZONE_FIELD: KindField = { key: "Zone name", fallback: "example.gov.uk", validate: hostnameProblem };
 
 /* --------------------------------------------------------------- variables -- */
 
@@ -744,7 +766,7 @@ const AWS_DB_HARDENING = [
 
 /** `"<prefix>-${var.name_prefix}-<slug>"` — unique per node, readable in the plan. */
 function cloudName(prefix: string, slug: string): string {
-  return quote(`${prefix}-\${var.name_prefix}-${slug}`);
+  return quoteTemplate`${prefix}-\${var.name_prefix}-${slug}`;
 }
 
 /**
@@ -1886,7 +1908,7 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
             { key: "function_name", value: cloudName("fn", c.slug) },
             { key: "handler", value: quote(lambdaRuntime(c.attr("Runtime")).handler) },
             { key: "runtime", value: quote(lambdaRuntime(c.attr("Runtime")).runtime) },
-            { key: "source_path", value: quote(`\${path.module}/src/${c.slug}`) },
+            { key: "source_path", value: quoteTemplate`\${path.module}/src/${c.slug}` },
             { key: "create_lambda_function_url", value: "true" },
             { key: "cloudwatch_logs_retention_in_days", value: "30" },
             { key: "tracing_mode", value: quote("Active") },
@@ -2039,7 +2061,7 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
           blocks: [
             moduleBlock("aws/sqs", c.name, [
               // SQS requires a FIFO queue's name to end in .fifo.
-              { key: "name", value: quote(`q-\${var.name_prefix}-${c.slug}${fifo ? ".fifo" : ""}`) },
+              { key: "name", value: quoteTemplate`q-\${var.name_prefix}-${c.slug}${fifo ? ".fifo" : ""}` },
               { key: "fifo_queue", value: String(fifo) },
               { key: "create_dlq", value: "true" },
             ]),
@@ -2778,6 +2800,19 @@ export function cloudSpec(kind: string, cloud: Cloud): CloudSpec | null {
 /** The editable fields the inspector shows for a kind. */
 export function fieldsForKind(kind: string): readonly KindField[] {
   return KIND_BY_ID.get(kind)?.fields ?? [];
+}
+
+/** Why a node's free-text attributes cannot be used, one message per bad value. */
+export function attributeProblems(nodes: readonly ModelNode[]): string[] {
+  const problems: string[] = [];
+  for (const node of nodes) {
+    for (const field of fieldsForKind(node.kind)) {
+      const value = node.attributes?.[field.key];
+      const problem = value === undefined ? null : field.validate?.(value);
+      if (problem) problems.push(`${node.label || node.id}: ${field.key} ${problem}`);
+    }
+  }
+  return problems;
 }
 
 /** Ingress kinds, closest to the internet first. */

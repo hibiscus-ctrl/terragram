@@ -1,6 +1,8 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { ModelAttributeError } from "terragram-engine/terraform";
+
 import pkg from "../package.json" with { type: "json" };
 import { explain } from "./commands/explain.ts";
 import { generate } from "./commands/generate.ts";
@@ -59,7 +61,7 @@ export async function run(argv: string[], io: Io = processIo()): Promise<number>
     if (!handler) throw new UsageError(`unknown command "${command}"`);
     return await handler(rest, io);
   } catch (error) {
-    if (error instanceof CommandError) {
+    if (error instanceof CommandError || error instanceof ModelAttributeError) {
       io.err(`terragram: ${error.message}\n`);
       return 1;
     }
