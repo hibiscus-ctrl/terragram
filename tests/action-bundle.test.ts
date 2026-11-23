@@ -55,6 +55,12 @@ describe("action/dist/index.mjs", () => {
     assert.equal(committed.includes("@infraweaver-io"), false);
   });
 
+  it("carries the licence notice of every third-party package bundled into it", () => {
+    assert.match(committed, /^zod@\d+\.\d+\.\d+ \(MIT\)$/m);
+    assert.match(committed, /Permission is hereby granted, free of charge/);
+    assert.match(committed, /The above copyright notice and this permission notice shall be included/);
+  });
+
   it("starts with the licence line and says it is generated", () => {
     const [first, second] = committed.split("\n");
     // REUSE-IgnoreStart

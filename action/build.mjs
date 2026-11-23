@@ -13,18 +13,20 @@
  * `--outfile <path>` writes elsewhere, for the tests that build without touching dist/.
  */
 
-import { mkdirSync, statSync } from "node:fs";
+import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { build } from "esbuild";
+
+import { bundleNotices } from "../scripts/bundle-notices.mjs";
 
 const root = import.meta.dirname;
 const { values } = parseArgs({ options: { outfile: { type: "string" } } });
 const outfile = values.outfile ? resolve(values.outfile) : join(root, "dist", "index.mjs");
 mkdirSync(dirname(outfile), { recursive: true });
 
-await build({
+const result = await build({
   absWorkingDir: root,
   entryPoints: ["src/main.ts"],
   outfile,
@@ -32,8 +34,8 @@ await build({
   format: "esm",
   platform: "node",
   target: "node24",
-  // Third-party licence notices (zod, dagre) stay in the file, at the end.
-  legalComments: "eof",
+  write: false,
+  metafile: true,
   // Bundled CommonJS (dagre) reaches for `require`, which an ES module lacks.
   banner: {
     js: [
@@ -48,4 +50,6 @@ await build({
   logLevel: "warning",
 });
 
+// The bundled packages' licence notices go at the end of the file (see scripts/bundle-notices.mjs).
+writeFileSync(outfile, `${result.outputFiles[0].text}\n${bundleNotices(result.metafile, root)}`);
 console.log(`index.mjs: ${(statSync(outfile).size / 1024).toFixed(0)} KiB`);

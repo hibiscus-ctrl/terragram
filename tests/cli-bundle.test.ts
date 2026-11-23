@@ -77,6 +77,14 @@ describe("the CLI bundle", () => {
     );
   });
 
+  it("carries the licence notice of every third-party package bundled into it", () => {
+    const source = readFileSync(cliBundle, "utf8");
+    for (const name of ["zod", "dagre", "graphlib", "lodash"]) {
+      assert.match(source, new RegExp(`^${name}@\\d+\\.\\d+\\.\\d+ \\(MIT\\)$`, "m"), `${name}'s notice is missing`);
+    }
+    assert.match(source, /Permission is hereby granted, free of charge/);
+  });
+
   it("runs --version from a directory with no node_modules", () => {
     const bare = mkdtempSync(join(scratch, "bare-"));
     const copy = join(bare, "terragram.mjs");
