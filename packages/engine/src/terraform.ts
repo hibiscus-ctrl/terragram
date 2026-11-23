@@ -9,12 +9,14 @@ import {
   mapEntries,
   mapExpression,
   quote,
+  quoteTemplate,
   renderDocument,
   stringValue,
 } from "./hcl.ts";
 import { MODULE_VERSIONS } from "./module-versions.ts";
 import {
   AWS_US_EAST_1,
+  attributeProblems,
   cloudSpec,
   type CloudSpec,
   type CustomDomain,
@@ -379,7 +381,7 @@ function planNetwork(): HclBlock {
   return block("module", [PLAN_NETWORK], [
     { key: "source", value: quote(pin.source) },
     { key: "version", value: quote(pin.version) },
-    { key: "name", value: quote("vnet-${var.name_prefix}") },
+    { key: "name", value: quoteTemplate`vnet-\${var.name_prefix}` },
     { key: "parent_id", value: "module.resource_group.resource_id" },
     { key: "location", value: "module.resource_group.location" },
     { key: "address_space", value: `[${quote(PLAN_ADDRESS_SPACE)}]` },
@@ -416,7 +418,7 @@ function privateNetworkNote(network: string, zones: Iterable<string>): string {
  */
 function siteOrigin(source: Emitted, target: Emitted, originName: string, hostname: string): HclBlock[] {
   const access = block("resource", ["aws_cloudfront_origin_access_control", originName], [
-    { key: "name", value: quote(`oac-\${var.name_prefix}-${originName.replace(/_/g, "-")}`) },
+    { key: "name", value: quoteTemplate`oac-\${var.name_prefix}-${originName.replace(/_/g, "-")}` },
     { key: "origin_access_control_origin_type", value: quote("s3") },
     { key: "signing_behavior", value: quote("always") },
     { key: "signing_protocol", value: quote("sigv4") },
@@ -478,11 +480,23 @@ function customDomainNote(domain: CustomDomain, cloud: Cloud, zoneAddress: strin
 
 /* ------------------------------------------------------------------- emit -- */
 
+/** A model whose free-text attributes cannot go into a plan; the message says which and why. */
+export class ModelAttributeError extends Error {
+  readonly problems: readonly string[];
+  constructor(problems: readonly string[]) {
+    super(`The model has values that cannot be used:\n${problems.map((p) => `  ${p}`).join("\n")}`);
+    this.name = "ModelAttributeError";
+    this.problems = problems;
+  }
+}
+
 export function emitTerraform(
   model: InfraModel,
   cloud: Cloud,
   tool: TerraformTool = "terraform",
 ): TerraformOutput {
+  const problems = attributeProblems(resourceNodes(model));
+  if (problems.length > 0) throw new ModelAttributeError(problems);
   const config = CLOUD_CONFIG[cloud];
   const provider = providerFor(cloud);
 
@@ -675,7 +689,7 @@ export function emitTerraform(
         block("module", ["resource_group"], [
           { key: "source", value: quote(MODULE_VERSIONS["azure/resource-group"].source) },
           { key: "version", value: quote(MODULE_VERSIONS["azure/resource-group"].version) },
-          { key: "name", value: quote("rg-${var.name_prefix}") },
+          { key: "name", value: quoteTemplate`rg-\${var.name_prefix}` },
           { key: "location", value: "var.location" },
           { key: "enable_telemetry", value: "false" },
           { key: "tags", value: "local.tags" },

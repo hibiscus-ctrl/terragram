@@ -20055,8 +20055,21 @@ function renderDocument(blocks) {
   return blocks.length === 0 ? "" : `${blocks.map((b) => renderBlock(b)).join("\n\n")}
 `;
 }
+var CONTROL_ESCAPES = { "\n": "\\n", "\r": "\\r", "	": "\\t" };
+function escapeText(value) {
+  const text = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$\{/g, () => "$${").replace(/%\{/g, () => "%%{");
+  return Array.from(text, (ch) => {
+    const code = ch.charCodeAt(0);
+    const control = code < 32 || code === 127 || code === 8232 || code === 8233;
+    return control ? CONTROL_ESCAPES[ch] ?? `\\u${code.toString(16).padStart(4, "0")}` : ch;
+  }).join("");
+}
 function quote(value) {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  return `"${escapeText(value)}"`;
+}
+function quoteTemplate(parts, ...values) {
+  const literal2 = (text) => text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${parts.map((part, i) => literal2(part) + (i < values.length ? escapeText(values[i] ?? "") : "")).join("")}"`;
 }
 function mapExpression(entries) {
   if (entries.length === 0) return "{}";
@@ -20357,7 +20370,18 @@ var DELIVERY_FIELD = {
   options: DELIVERY.labels,
   fallback: "At least once"
 };
-var CIDR_FIELD = { key: "Address space", fallback: "10.0.0.0/16" };
+function cidrProblem(value) {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(value);
+  const [, a, b, c, d, prefix] = match ?? [];
+  const valid = match !== null && [a, b, c, d].every((octet) => Number(octet) <= 255) && Number(prefix) <= 32;
+  return valid ? null : `${JSON.stringify(value)} is not an IPv4 CIDR block such as 10.0.0.0/16`;
+}
+function hostnameProblem(value) {
+  const labels = value.split(".");
+  const valid = value.length <= 253 && labels.length >= 2 && labels.every((label) => /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label));
+  return valid ? null : `${JSON.stringify(value)} is not a DNS name such as example.gov.uk (letters, digits and hyphens between dots)`;
+}
+var CIDR_FIELD = { key: "Address space", fallback: "10.0.0.0/16", validate: cidrProblem };
 var CONTAINER_SIZE_AZURE = options({
   "Small (0.5 vCPU)": "0.5",
   "Medium (1 vCPU)": "1.0",
@@ -20379,7 +20403,7 @@ var RETENTION_FIELD = {
   options: RETENTION.labels,
   fallback: "30 days"
 };
-var DNS_ZONE_FIELD = { key: "Zone name", fallback: "example.gov.uk" };
+var DNS_ZONE_FIELD = { key: "Zone name", fallback: "example.gov.uk", validate: hostnameProblem };
 var NAME_PREFIX = {
   name: "name_prefix",
   type: "string",
@@ -20515,7 +20539,7 @@ var AWS_DB_HARDENING = [
   { key: "performance_insights_retention_period", value: "7" }
 ];
 function cloudName(prefix, slug) {
-  return quote(`${prefix}-\${var.name_prefix}-${slug}`);
+  return quoteTemplate`${prefix}-\${var.name_prefix}-${slug}`;
 }
 var AWS_US_EAST_1 = { alias: "us_east_1", region: "us-east-1", ref: "aws.us_east_1" };
 function wafManagedRule(slug, name, group, priority) {
@@ -21564,7 +21588,7 @@ var KIND_DEFINITIONS = [
             { key: "function_name", value: cloudName("fn", c.slug) },
             { key: "handler", value: quote(lambdaRuntime(c.attr("Runtime")).handler) },
             { key: "runtime", value: quote(lambdaRuntime(c.attr("Runtime")).runtime) },
-            { key: "source_path", value: quote(`\${path.module}/src/${c.slug}`) },
+            { key: "source_path", value: quoteTemplate`\${path.module}/src/${c.slug}` },
             { key: "create_lambda_function_url", value: "true" },
             { key: "cloudwatch_logs_retention_in_days", value: "30" },
             { key: "tracing_mode", value: quote("Active") },
@@ -21713,7 +21737,7 @@ var KIND_DEFINITIONS = [
           blocks: [
             moduleBlock("aws/sqs", c.name, [
               // SQS requires a FIFO queue's name to end in .fifo.
-              { key: "name", value: quote(`q-\${var.name_prefix}-${c.slug}${fifo ? ".fifo" : ""}`) },
+              { key: "name", value: quoteTemplate`q-\${var.name_prefix}-${c.slug}${fifo ? ".fifo" : ""}` },
               { key: "fifo_queue", value: String(fifo) },
               { key: "create_dlq", value: "true" }
             ])
@@ -22432,6 +22456,17 @@ function cloudSpec(kind, cloud) {
 function fieldsForKind(kind) {
   return KIND_BY_ID.get(kind)?.fields ?? [];
 }
+function attributeProblems(nodes) {
+  const problems = [];
+  for (const node2 of nodes) {
+    for (const field of fieldsForKind(node2.kind)) {
+      const value = node2.attributes?.[field.key];
+      const problem = value === void 0 ? null : field.validate?.(value);
+      if (problem) problems.push(`${node2.label || node2.id}: ${field.key} ${problem}`);
+    }
+  }
+  return problems;
+}
 var INGRESS_ORDER = KIND_DEFINITIONS.filter(
   (k) => k.role === "ingress" || k.role === "conceptual"
 ).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((k) => k.kind);
@@ -22882,7 +22917,7 @@ function planNetwork() {
   return block("module", [PLAN_NETWORK], [
     { key: "source", value: quote(pin.source) },
     { key: "version", value: quote(pin.version) },
-    { key: "name", value: quote("vnet-${var.name_prefix}") },
+    { key: "name", value: quoteTemplate`vnet-\${var.name_prefix}` },
     { key: "parent_id", value: "module.resource_group.resource_id" },
     { key: "location", value: "module.resource_group.location" },
     { key: "address_space", value: `[${quote(PLAN_ADDRESS_SPACE)}]` },
@@ -22907,7 +22942,7 @@ function privateNetworkNote(network, zones) {
 }
 function siteOrigin(source, target, originName, hostname3) {
   const access = block("resource", ["aws_cloudfront_origin_access_control", originName], [
-    { key: "name", value: quote(`oac-\${var.name_prefix}-${originName.replace(/_/g, "-")}`) },
+    { key: "name", value: quoteTemplate`oac-\${var.name_prefix}-${originName.replace(/_/g, "-")}` },
     { key: "origin_access_control_origin_type", value: quote("s3") },
     { key: "signing_behavior", value: quote("always") },
     { key: "signing_protocol", value: quote("sigv4") }
@@ -22954,7 +22989,18 @@ function customDomainNote(domain2, cloud, zoneAddress, nameServersOutput) {
     waits
   ].join("\n");
 }
+var ModelAttributeError = class extends Error {
+  problems;
+  constructor(problems) {
+    super(`The model has values that cannot be used:
+${problems.map((p) => `  ${p}`).join("\n")}`);
+    this.name = "ModelAttributeError";
+    this.problems = problems;
+  }
+};
 function emitTerraform(model, cloud, tool = "terraform") {
+  const problems = attributeProblems(resourceNodes(model));
+  if (problems.length > 0) throw new ModelAttributeError(problems);
   const config2 = CLOUD_CONFIG[cloud];
   const provider = providerFor(cloud);
   const emitted = [];
@@ -23102,7 +23148,7 @@ function emitTerraform(model, cloud, tool = "terraform") {
         block("module", ["resource_group"], [
           { key: "source", value: quote(MODULE_VERSIONS["azure/resource-group"].source) },
           { key: "version", value: quote(MODULE_VERSIONS["azure/resource-group"].version) },
-          { key: "name", value: quote("rg-${var.name_prefix}") },
+          { key: "name", value: quoteTemplate`rg-\${var.name_prefix}` },
           { key: "location", value: "var.location" },
           { key: "enable_telemetry", value: "false" },
           { key: "tags", value: "local.tags" }
@@ -23763,6 +23809,9 @@ function parseModelDocument(text) {
 ${issues}` };
   }
   const { nodes, edges, topology, cloud } = parsed.data;
+  const problems = attributeProblems(resourceNodes({ nodes, edges, topology }));
+  if (problems.length > 0) return { ok: false, problem: `it has values that cannot be used:
+${problems.map((p) => `  ${p}`).join("\n")}` };
   return { ok: true, document: { model: { nodes, edges, topology }, cloud: cloud ?? DEFAULT_CLOUD } };
 }
 

@@ -408,9 +408,42 @@ export function renderDocument(blocks: HclBlock[]): string {
 
 /* ----------------------------------------------------------------- helpers -- */
 
-/** Quote a plain string as an HCL literal. */
+/** The escapes HCL knows for the control characters it would otherwise read as line breaks. */
+const CONTROL_ESCAPES: Record<string, string> = { "\n": "\\n", "\r": "\\r", "\t": "\\t" };
+
+/**
+ * Escape text for the inside of an HCL quoted string. Beyond `\` and `"`, a template
+ * sequence is escaped (`${` as `$${`, `%{` as `%%{`) so text from a model file is never
+ * evaluated by Terraform, and control characters are written as escapes so a newline
+ * cannot end the string, or the line, early.
+ */
+function escapeText(value: string): string {
+  const text = value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\$\{/g, () => "$${")
+    .replace(/%\{/g, () => "%%{");
+  return Array.from(text, (ch) => {
+    const code = ch.charCodeAt(0);
+    const control = code < 0x20 || code === 0x7f || code === 0x2028 || code === 0x2029;
+    return control ? (CONTROL_ESCAPES[ch] ?? `\\u${code.toString(16).padStart(4, "0")}`) : ch;
+  }).join("");
+}
+
+/** Quote a plain string as an HCL literal. The text is data: it is never evaluated. */
 export function quote(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  return `"${escapeText(value)}"`;
+}
+
+/**
+ * Quote a string that deliberately holds a Terraform reference, such as
+ * `oac-\${var.name_prefix}-${name}`. Use it as a tag: the written parts are the
+ * generator's own and pass as they are (only `\` and `"` are escaped); every
+ * `${value}` spliced into it is data and is escaped like `quote` would.
+ */
+export function quoteTemplate(parts: TemplateStringsArray, ...values: string[]): string {
+  const literal = (text: string) => text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${parts.map((part, i) => literal(part) + (i < values.length ? escapeText(values[i] ?? "") : "")).join("")}"`;
 }
 
 /**

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Text from a model file stays text in the generated Terraform: `${` and `%{` in a quoted value are written as
+  `$${` and `%%{`, and control characters and newlines as escapes, so a `diagram.json` can no longer turn a
+  field such as the DNS zone name into a Terraform expression. The two free-text fields are now checked:
+  "Zone name" must be a DNS name and "Address space" an IPv4 CIDR block, otherwise `terragram` and the Action
+  stop with a message naming the component, the field and the value.
 - Bundle verification (`terragram-engine/verify`) accepts the plan files an AWS function component adds under
   `plan/src/<slug>/`, so `terragram verify` and any host that verifies a bundle no longer refuse them. A plan
   file is accepted when its name is a plain relative path inside `plan/` (no `..`, empty segment, absolute path

@@ -1,7 +1,8 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { type Cloud, type InfraModel, modelDocumentSchema } from "terragram-engine/model";
+import { attributeProblems } from "terragram-engine/kinds";
+import { type Cloud, type InfraModel, modelDocumentSchema, resourceNodes } from "terragram-engine/model";
 
 /** The cloud a model targets when its file does not say: the CLI's default. */
 const DEFAULT_CLOUD: Cloud = "azure";
@@ -29,5 +30,7 @@ export function parseModelDocument(text: string): { ok: true; document: ModelDoc
     return { ok: false, problem: `it is not a diagram model:\n${issues}` };
   }
   const { nodes, edges, topology, cloud } = parsed.data;
+  const problems = attributeProblems(resourceNodes({ nodes, edges, topology }));
+  if (problems.length > 0) return { ok: false, problem: `it has values that cannot be used:\n${problems.map((p) => `  ${p}`).join("\n")}` };
   return { ok: true, document: { model: { nodes, edges, topology }, cloud: cloud ?? DEFAULT_CLOUD } };
 }
