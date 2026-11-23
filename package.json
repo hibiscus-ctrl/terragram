@@ -20,7 +20,7 @@
     "lint:ci": "biome ci .",
     "lint:fix": "biome check --write .",
     "lint:ox": "oxlint",
-    "lint:lockfile": "lockfile-lint --path package-lock.json --type npm --allowed-hosts npm npm.pkg.github.com --validate-https --validate-integrity --validate-package-names",
+    "lint:lockfile": "lockfile-lint --path package-lock.json --type npm --allowed-hosts npm --validate-https --validate-integrity --validate-package-names",
     "test": "node --test \"tests/**/*.test.ts\"",
     "test:packages": "node --test tests/schemas.test.ts tests/cli.test.ts tests/cli-bundle.test.ts",
     "test:coverage": "c8 --all --src packages/engine/src --src packages/cli/src --include \"packages/engine/src/**\" --include \"packages/cli/src/**\" --exclude packages/cli/src/main.ts --check-coverage --lines 98 --statements 98 --branches 88 --functions 99 --reporter text --reporter text-summary node --test \"tests/**/*.test.ts\"",
@@ -35,9 +35,6 @@
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",
     "@cdktf/hcl2json": "^0.21.0",
-    "@infraweaver-io/attest": "^0.1.7",
-    "@infraweaver-io/core": "^0.1.5",
-    "@infraweaver-io/sandbox": "^0.1.8",
     "@swc/core": "^1.16.22",
     "@types/node": "^26.6.6",
     "ajv": "^8.20.0",

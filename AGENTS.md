@@ -71,9 +71,8 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
   port, chosen in `composerFor`. Do not call a model from a command directly.
 - **Builds.** `npm run build:packages` bundles `packages/cli/dist/terragram.mjs` (esbuild: engine, zod
   and dagre inside, no runtime dependencies) and `packages/engine/dist` (ESM + `.d.ts`; only zod
-  and dagre stay external). `@infraweaver-io/*` stay in source but are bundled, never left as an
-  import, so a public install never reaches GitHub Packages; `tests/cli-bundle.test.ts` fails if a
-  specifier survives, and runs the bundle from a directory with no `node_modules`. The engine's
+  and dagre stay external). No `@infraweaver-io/*` package is a dependency, so `npm ci` reaches only the public
+  registry; `tests/cli-bundle.test.ts` fails if such a specifier ever appears in the bundle, and runs the bundle from a directory with no `node_modules`. The engine's
   `exports` still point at `src/`; they flip to `dist/` when it is published, which this repo does not
   do yet: both packages are `"private": true`, with no npm publish. The CLI bundle is published as a GitHub
   release asset by `release-cli.yml` (below).
@@ -183,14 +182,11 @@ Usage and the security notes are in `action/README.md`.
   `contracts/model-map.json`, a copy kept by hand: when the gateway's map changes, copy its `contracts/model-map.json`
   here in the same change. `tests/model-map-contract.test.ts` checks that every offered model is in the copy.
 
-## `@infraweaver-io/*` are real dependencies
+## No restricted packages
 
-- `core`, `sandbox` and `attest` resolve from GitHub Packages through the registry scope line in the
-  repository's npm config. Auth is never committed: the user's npm config locally, `GH_PACKAGES_TOKEN` in CI.
-- This repo is not in the `infraweaver-io` org, so the job's `GITHUB_TOKEN` cannot read the
-  packages.
-- A change in `infraweaver-packages` does nothing here until it is published and the version
-  bumped.
+- `npm ci` reads the public npm registry only, so an outside contributor needs no token. The release gates in
+  `scripts/` use their own small helpers (`scripts/lib/runtime.ts`) rather than the `@infraweaver-io/*` packages,
+  and the tests use `node:crypto`. Do not add a dependency on a package from GitHub Packages.
 
 ## Working rules
 

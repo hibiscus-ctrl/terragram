@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 
-import { verifyBytes } from "@infraweaver-io/attest/signing";
+import { createPublicKey, verify } from "node:crypto";
 import { describe, it } from "node:test";
 
 import { composeFromPrompt } from "terragram-engine/engine";
@@ -23,6 +23,11 @@ import { makeZip } from "./helpers/zip.ts";
  */
 
 const WEB_PROMPT = "A web app with a Postgres database and Redis cache";
+
+/** A detached Ed25519 signature (base64) over exactly these bytes, checked against an SPKI PEM public key. */
+function verifyBytes(bytes: string, signatureB64: string, publicKeyPem: string): boolean {
+  return verify(null, Buffer.from(bytes, "utf8"), createPublicKey(publicKeyPem), Buffer.from(signatureB64, "base64"));
+}
 
 async function signedBundle() {
   const { model } = composeFromPrompt(WEB_PROMPT);

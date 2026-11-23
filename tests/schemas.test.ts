@@ -5,7 +5,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-import type { EvidenceProvenance } from "@infraweaver-io/attest/envelope";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import type { z } from "zod";
@@ -32,8 +31,12 @@ type Equal<A, B> =
 // The receipt schema and the receipt type cannot drift apart: this stops compiling
 // if either changes without the other.
 const receiptSchemaMatchesType: Equal<z.infer<typeof evidenceReceiptSchema>, EvidenceReceipt> = true;
-// The envelope's provenance is what ours was copied from; the two stay assignable.
-const provenanceMatchesAttest: Equal<ReceiptProvenance, EvidenceProvenance> = true;
+// The provenance is the shape the sibling evidence envelope (`@infraweaver-io/attest`, 0.1.x) carries, so one
+// reader understands both: this stops compiling if it changes without the schema and the readers being told.
+const provenanceShape: Equal<
+  ReceiptProvenance,
+  { model: string | null; node: string; scanners: { tool: string; version: string | null }[] }
+> = true;
 
 function load(file: string): object {
   return JSON.parse(readFileSync(new URL(`../schemas/${file}`, import.meta.url), "utf8")) as object;
@@ -164,6 +167,6 @@ describe("schemas/receipt.v2.schema.json", () => {
   });
 
   it("holds the type checks above", () => {
-    assert.equal(receiptSchemaMatchesType && provenanceMatchesAttest, true);
+    assert.equal(receiptSchemaMatchesType && provenanceShape, true);
   });
 });

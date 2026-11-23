@@ -26,7 +26,7 @@
  * It runs as part of `npm run refresh:providers`, so bumping a pin proves the
  * bump before it lands. Exit code is the number of modules with a mismatch.
  */
-import { errorMessage } from "@infraweaver-io/core/errors";
+import { errorMessage } from "./lib/runtime.ts";
 
 import { attributeOf, type HclBlock, parseHcl, stringValue } from "terragram-engine/hcl";
 import { KIND_DEFINITIONS } from "terragram-engine/kinds";
