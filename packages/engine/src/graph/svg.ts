@@ -44,6 +44,13 @@ const STATUS_STYLE: Record<GraphStatus, { stroke?: string; fill: string; dash?: 
   changed: { stroke: "#b45309", fill: "#fffbeb", mark: "~" },
 };
 
+/** Stroke, fill and dash of a box that did not change: each level of the nesting a shade darker. */
+const GROUP_STYLE: Record<ViewGroup["kind"], readonly [string, string, string]> = {
+  scope: ["#cfc7b4", "#f6f3ec", ""],
+  environment: ["#c9bfa6", "#f1ede2", "2 3"],
+  module: ["#c4baa0", "#efe9da", "6 4"],
+};
+
 const EDGE_STYLE: Record<EdgeStatus, { stroke: string; width: number; dash?: string }> = {
   unchanged: { stroke: "#a8a090", width: 1.5 },
   added: { stroke: "#15803d", width: 2 },
@@ -90,10 +97,10 @@ function marker(tally: NonNullable<ViewNode["findings"]>, right: number, y: numb
 
 function groupSvg(group: ViewGroup, box: Box): string {
   const style = STATUS_STYLE[group.status];
-  const isScope = group.kind === "scope";
-  const stroke = style.stroke ?? (isScope ? "#cfc7b4" : "#c4baa0");
-  const fill = style.stroke ? style.fill : isScope ? "#f6f3ec" : "#efe9da";
-  const dash = style.dash ?? (isScope ? "" : "6 4");
+  const [plainStroke, plainFill, plainDash] = GROUP_STYLE[group.kind];
+  const stroke = style.stroke ?? plainStroke;
+  const fill = style.stroke ? style.fill : plainFill;
+  const dash = style.dash ?? plainDash;
   const status = group.status === "unchanged" || group.status === "context" ? "" : ` [${group.status}]`;
   const heading = `${group.label}${group.detail ? ` ${group.detail}` : ""}${status}`;
   const right = box.x + box.width - 10;

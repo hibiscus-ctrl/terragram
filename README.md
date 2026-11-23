@@ -117,18 +117,22 @@ terragram graph graph.json --base main/graph.json --delta      # only the change
 terragram graph graph.json --findings ocsf-findings.json       # lay findings over it
 ```
 
-An account (or subscription, or project) is a box, a module call is a box inside it, and an arrow
-runs from a resource to what it refers to. **Glue is hidden**: attachments and associations
+An account (or subscription, or project) is a box, an environment is a box inside it when the graph
+names the environment of its roots, a module call is a box inside that, and an arrow runs from a
+resource to what it refers to. A graph that names no environment has no environment boxes. **Glue is hidden**: attachments and associations
 (`*_attachment`, `*_association`), `aws_iam_role_policy` and its kin, Google IAM bindings,
 `random_*`, `time_*`, `null_resource`, `terraform_data`; a line that went through one still joins
 the two ends, and the footer counts what was hidden. The rule is `DEFAULT_GLUE`, which
 `projectGraph` takes a replacement for (`glue: false` hides nothing; the CLI has `--show-glue`,
 `--hide` and `--keep`).
 
-Findings are placed by what `graph/v1` can name: a resource by its `type` and `id`, a scope by its
-`account`. infraharvest's `ocsf-findings` land on the account of the root they were found in.
-A finding that only has a Terraform address is counted as not placed unless the caller resolves it
-(`resolveAddress`), never guessed at.
+Findings are placed by what `graph/v1` can name: a resource by its `type` and `id`, or by its Terraform
+address when the graph keeps addresses (`redaction.addresses: plain`; a module call by `module.<name>`), a scope
+by its `account`. infraharvest's `ocsf-findings` land on the account of the root they were found in.
+The same address recurs in every root, so a finding with only an address is placed when exactly one node
+has it, narrowed by the finding's `account` and `environment` when it names them. A finding that cannot be
+placed that way (a hashed or dropped address, or an address several nodes share) is counted as not placed
+unless the caller resolves it (`resolveAddress`), never guessed at.
 
 In code, import `terragram-engine/graph`: `parseGraphDocument`, `projectGraph(doc, options)` (a view
 model), `renderGraphSvg(view)`, `renderGraphMermaid(view)` and `diffGraphs(base, head)`.

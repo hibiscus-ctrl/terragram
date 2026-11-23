@@ -8,14 +8,18 @@ import { describeIssues, GraphDocumentError } from "./schema.ts";
 /**
  * Findings to lay over a graph: a check that failed, a rule a resource breaks.
  *
- * graph/v1 names a resource by its type and ID and a scope by its account; it has no
- * Terraform addresses. So a finding is placed by what it can say in those terms:
+ * graph/v1 names a resource by its type and ID and a scope by its account, and may carry a
+ * Terraform address on a resource or module call (see `redaction.addresses`). So a finding
+ * is placed by what it can say:
  *
- * - `type` and `id` (and `account`, when given): the finding is on that resource;
+ * - `type` and `id` (and `account` or `environment`, when given): the finding is on that resource;
+ * - an `address` only, as a Terraform review reports it: the one resource or module call
+ *   of the graph that has that address (narrowed by `account` and `environment`, since the
+ *   same address recurs in each root). An address the graph does not keep (it was hashed or
+ *   dropped), or that more than one node has, is turned into a type and ID by the caller's
+ *   `resolveAddress` when it passes one to `projectGraph`, and is otherwise unplaced;
  * - `account` alone: the finding is on that account's scope, which is where
- *   infraharvest's own gate findings land (they name a root's account, not a resource);
- * - an `address` only, as a Terraform review reports it: unplaced, unless the caller
- *   passes `resolveAddress` to `projectGraph` to turn an address into a type and ID.
+ *   infraharvest's own gate findings land (they name a root's account, not a resource).
  *
  * Unplaced findings are counted and said so in the picture, never guessed at.
  */
@@ -29,6 +33,8 @@ export type GraphFinding = {
   type?: string;
   id?: string;
   account?: string;
+  /** The environment of the root the finding is in, when the review names it. */
+  environment?: string;
   region?: string;
   address?: string;
 };
@@ -46,6 +52,7 @@ const reviewFindingsSchema = z.object({
         type: text.optional(),
         id: text.optional(),
         account: text.optional(),
+        environment: text.optional(),
         region: text.optional(),
         resource: text.optional(),
         address: text.optional(),
@@ -110,6 +117,7 @@ export function findingsFromReview(input: unknown): GraphFinding[] {
       ...(f.type && { type: f.type }),
       ...(f.id && { id: f.id }),
       ...(f.account && { account: f.account }),
+      ...(f.environment && { environment: f.environment }),
       ...(f.region && { region: f.region }),
       ...(address && { address }),
     };

@@ -29,6 +29,10 @@ export type NormalNode = {
   region?: string;
   /** The environment of the node's root, when the graph names one. */
   environment?: string;
+  /** A resource's Terraform address, as the graph kept it (plain, or hashed). */
+  address?: string;
+  /** A module call's address (`module.<name>`), likewise. */
+  moduleAddress?: string;
   source?: string;
   version?: string;
   /** The key of the module call the resource is in. */
@@ -111,6 +115,8 @@ export function normalizeGraph(doc: GraphDocument, glue: Readonly<GlueRule> | fa
       ...(n.id !== undefined && { id: n.id }),
       ...(n.region !== undefined && { region: n.region }),
       ...(n.environment !== undefined && { environment: n.environment }),
+      ...(n.address !== undefined && { address: n.address }),
+      ...(n.module_address !== undefined && { moduleAddress: n.module_address }),
       ...(n.source !== undefined && { source: n.source }),
       ...(n.version !== undefined && { version: n.version }),
       ...(container !== undefined && { container }),
