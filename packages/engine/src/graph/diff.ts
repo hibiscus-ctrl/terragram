@@ -13,7 +13,7 @@ export type GraphDiff = {
   nodes: {
     added: GraphNodeRef[];
     removed: GraphNodeRef[];
-    /** Same node in both, with a different region, module version, module call or environment. */
+    /** Same node in both, with a different region, module version, module call, environment or root. */
     changed: { before: GraphNodeRef; after: GraphNodeRef }[];
   };
   edges: { added: GraphEdgeRef[]; removed: GraphEdgeRef[] };
@@ -22,12 +22,19 @@ export type GraphDiff = {
 /** What about a node a diff compares: everything but its key and its address, which a hashed graph changes from run to run. */
 const fingerprint = (n: NormalNode) => [n.region ?? "", n.version ?? "", n.container ?? "", n.environment ?? ""].join("|");
 
+/**
+ * Whether a node moved to another root. Only when both graphs name the root: a graph from
+ * before infraharvest wrote roots has none, and that is not every node moving.
+ */
+const rootMoved = (before: NormalNode, after: NormalNode) =>
+  before.root !== undefined && after.root !== undefined && before.root !== after.root;
+
 export function diffNormal(base: NormalGraph, head: NormalGraph): GraphDiff {
   const diff: GraphDiff = { nodes: { added: [], removed: [], changed: [] }, edges: { added: [], removed: [] } };
   for (const [key, after] of head.nodes) {
     const before = base.nodes.get(key);
     if (before === undefined) diff.nodes.added.push(after);
-    else if (fingerprint(before) !== fingerprint(after)) diff.nodes.changed.push({ before, after });
+    else if (fingerprint(before) !== fingerprint(after) || rootMoved(before, after)) diff.nodes.changed.push({ before, after });
   }
   for (const [key, before] of base.nodes) {
     if (!head.nodes.has(key)) diff.nodes.removed.push(before);
@@ -46,7 +53,7 @@ export function diffNormal(base: NormalGraph, head: NormalGraph): GraphDiff {
 
 /**
  * What changed between two graphs of the same estate: the nodes and the references that
- * were added, removed, or (for a node) moved to another region, module call, environment or module
+ * were added, removed, or (for a node) moved to another region, module call, environment, root or module
  * version. Glue resources are left out of both sides by the same rule the picture uses,
  * so a new policy attachment is not a change; pass `glue: false` to count them.
  */

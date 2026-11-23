@@ -133,8 +133,9 @@ the CLI, so its output is a contract.
   update it, copy it and change the commit.
 - **Glue** is data (`graph/glue.ts`, `DEFAULT_GLUE`): a type list, patterns and a keep list. Changing
   it changes every picture, so change the goldens with it and say why in the PR.
-- **graph/v1 has no addresses and no environments**, so findings match by `type` + `id` or `account`
-  only; do not add a heuristic that guesses from an address.
+- **graph/v1 may have addresses, environments and roots, but not always** (an address may be hashed or dropped, and a graph from
+  before them has none), so findings match by the graph's own address narrowed by `account`, `environment` and `root`, or by
+  `type` + `id`, or by `account` only; do not add a heuristic that guesses from an address.
 
 ## The Action: `action/`
 

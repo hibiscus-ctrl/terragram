@@ -130,7 +130,9 @@ Findings are placed by what `graph/v1` can name: a resource by its `type` and `i
 address when the graph keeps addresses (`redaction.addresses: plain`; a module call by `module.<name>`), a scope
 by its `account`. infraharvest's `ocsf-findings` land on the account of the root they were found in.
 The same address recurs in every root, so a finding with only an address is placed when exactly one node
-has it, narrowed by the finding's `account` and `environment` when it names them. A finding that cannot be
+has it, narrowed by the finding's `account`, `environment` and `root` when it names them (a node's `root` is the
+root it was generated in, so the same address in two roots of one environment, such as two regions, is told apart by it).
+A finding that cannot be
 placed that way (a hashed or dropped address, or an address several nodes share) is counted as not placed,
 even when it names an account, unless the caller resolves it (`resolveAddress`), never guessed at. Only a
 finding that names no resource at all lands on its account's scope.

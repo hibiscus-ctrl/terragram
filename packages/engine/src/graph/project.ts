@@ -150,7 +150,8 @@ function placeFindings(head: NormalGraph, findings: readonly GraphFinding[], res
   for (const finding of findings) {
     const where = (n: NormalNode) =>
       (finding.account === undefined || n.account === finding.account) &&
-      (finding.environment === undefined || n.environment === finding.environment);
+      (finding.environment === undefined || n.environment === finding.environment) &&
+      (finding.root === undefined || n.root === finding.root);
 
     if (finding.type === undefined && finding.address !== undefined) {
       // The graph's own address: one node, since the same address recurs in every root.
@@ -167,7 +168,10 @@ function placeFindings(head: NormalGraph, findings: readonly GraphFinding[], res
     const account = finding.account ?? resolved?.account;
     if (type !== undefined && id !== undefined) {
       const matches = (byIdentity.get(`${type}|${id}`) ?? []).filter(
-        (n) => (account === undefined || n.account === account) && (finding.environment === undefined || n.environment === finding.environment),
+        (n) =>
+          (account === undefined || n.account === account) &&
+          (finding.environment === undefined || n.environment === finding.environment) &&
+          (finding.root === undefined || n.root === finding.root),
       );
       if (matches.length === 0) continue;
       for (const n of matches) place(n, finding.severity);
