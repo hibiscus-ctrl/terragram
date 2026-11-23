@@ -172,7 +172,11 @@ function placeFindings(head: NormalGraph, findings: readonly GraphFinding[], res
       if (matches.length === 0) continue;
       for (const n of matches) place(n, finding.severity);
       placed.push(finding.severity);
-    } else if (account !== undefined && resources.some((n) => n.account === account)) {
+    } else if (finding.address === undefined && account !== undefined && resources.some((n) => n.account === account)) {
+      // A finding that names no resource is the account's. One that names an address which
+      // did not narrow to a node (several roots share it, or it is hashed or dropped) is about
+      // a resource we cannot find, and showing it as an account-wide finding would say more
+      // than the finding does, so it stays unplaced.
       push(onAccount, account, finding.severity);
       placed.push(finding.severity);
     }

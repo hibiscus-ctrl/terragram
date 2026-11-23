@@ -18,8 +18,10 @@ import { describeIssues, GraphDocumentError } from "./schema.ts";
  *   same address recurs in each root). An address the graph does not keep (it was hashed or
  *   dropped), or that more than one node has, is turned into a type and ID by the caller's
  *   `resolveAddress` when it passes one to `projectGraph`, and is otherwise unplaced;
- * - `account` alone: the finding is on that account's scope, which is where
- *   infraharvest's own gate findings land (they name a root's account, not a resource).
+ * - `account` alone, with no address, type or ID: the finding is on that account's scope, which is
+ *   where infraharvest's own gate findings land (they name a root's account, not a resource). A
+ *   finding that names an address which does not narrow to one node stays unplaced even when it
+ *   also names an account: it is about a resource, and on the scope it would read as account-wide.
  *
  * Unplaced findings are counted and said so in the picture, never guessed at.
  */
