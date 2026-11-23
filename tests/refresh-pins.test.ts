@@ -12,7 +12,9 @@ import { describe, it } from "node:test";
 // Plain .mjs ops script helpers, deliberately untyped like their peers in scripts/.
 import { newestOnLine, renderModuleFile, renderProviderFile } from "../scripts/lib/pins.mjs";
 
+// REUSE-IgnoreStart: the generated header, as text, not this file's licence.
 const HEADER = "// Copyright 2026 Gabriel Ignat\n// SPDX-License-Identifier: AGPL-3.0-only\n\n";
+// REUSE-IgnoreEnd
 
 describe("newestOnLine", () => {
   it("picks the newest release on the pinned major", () => {
