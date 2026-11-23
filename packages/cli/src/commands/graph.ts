@@ -19,15 +19,16 @@ import { CommandError, type Io, readText, UsageError, writeText } from "../io.ts
 const GRAPH_HELP = `Usage: terragram graph <graph.json> [options]
 
 Draw an imported estate from infraharvest's graph/v1 document (infraharvest export
---schema graph): scopes and module calls as boxes, the references between resources as
-arrows. The same document gives the same bytes.
+--schema graph): scopes, environments and module calls as boxes, the references between
+resources as arrows. The same document gives the same bytes.
 
 Options:
   --base <graph.json>      an earlier graph: mark what was added, removed or changed
   --delta                  with --base: draw only what changed and one reference of context
   --findings <file>        findings to lay over the graph: infraharvest's ocsf-findings export,
                            or JSON with a "findings" list (severity, title or rule_id, and
-                           type + id, or account, to place each one)
+                           type + id, a Terraform address that the graph keeps, or account,
+                           to place each one)
   -f, --format <format>    svg (default), mermaid (a flowchart) or json (the view model)
   --title <text>           a title for the picture
   --show-glue              draw the resources that are hidden as glue (attachments,

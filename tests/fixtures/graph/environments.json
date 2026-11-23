@@ -1,0 +1,147 @@
+{
+  "schema": "infraharvest/graph/v1",
+  "run_id": "7a2d0e4f-1b63-4c9f-8d58-3e2a4b6c8d01",
+  "generated_at": "2026-11-23T10:00:00Z",
+  "tool": {
+    "name": "infraharvest",
+    "version": "0.5.0"
+  },
+  "cloud": "aws",
+  "nodes": [
+    {
+      "kind": "module",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "source": "terraform-aws-modules/vpc/aws",
+      "version": "5.13.0",
+      "module_address": "module.network"
+    },
+    {
+      "kind": "resource",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "type": "aws_vpc",
+      "id": "vpc-0a1b2c3d",
+      "environment": "prod",
+      "parent": 0,
+      "address": "module.network.aws_vpc.this"
+    },
+    {
+      "kind": "resource",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "type": "aws_subnet",
+      "id": "subnet-0f1e2d3c",
+      "environment": "prod",
+      "parent": 0,
+      "address": "module.network.aws_subnet.private"
+    },
+    {
+      "kind": "resource",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "type": "aws_instance",
+      "id": "i-0web1",
+      "environment": "prod",
+      "address": "aws_instance.web"
+    },
+    {
+      "kind": "resource",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "type": "aws_security_group",
+      "id": "sg-0web",
+      "environment": "prod",
+      "address": "aws_security_group.web"
+    },
+    {
+      "kind": "resource",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "type": "aws_instance",
+      "id": "i-0stg1",
+      "environment": "staging",
+      "address": "aws_instance.web"
+    },
+    {
+      "kind": "resource",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "type": "aws_security_group",
+      "id": "sg-0stg",
+      "environment": "staging",
+      "address": "aws_security_group.web"
+    },
+    {
+      "kind": "resource",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "type": "aws_s3_bucket",
+      "id": "logs-bucket",
+      "environment": "staging",
+      "address": "aws_s3_bucket.logs"
+    },
+    {
+      "kind": "resource",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "type": "aws_iam_role",
+      "id": "web-role",
+      "address": "aws_iam_role.web"
+    },
+    {
+      "kind": "resource",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "type": "aws_iam_role_policy_attachment",
+      "id": "web-role/arn:aws:iam::aws:policy/ReadOnlyAccess",
+      "environment": "prod",
+      "address": "aws_iam_role_policy_attachment.web"
+    },
+    {
+      "kind": "resource",
+      "account": "210987654321",
+      "region": "eu-west-1",
+      "type": "aws_instance",
+      "id": "i-0dev1",
+      "environment": "dev",
+      "address": "aws_instance.web"
+    }
+  ],
+  "edges": [
+    {
+      "from": 3,
+      "to": 4
+    },
+    {
+      "from": 3,
+      "to": 2
+    },
+    {
+      "from": 4,
+      "to": 1
+    },
+    {
+      "from": 5,
+      "to": 6
+    },
+    {
+      "from": 5,
+      "to": 7
+    },
+    {
+      "from": 3,
+      "to": 8
+    },
+    {
+      "from": 8,
+      "to": 9
+    }
+  ],
+  "redaction": {
+    "ids_hashed": false,
+    "hash_alg": "hmac-sha256",
+    "addresses": "plain"
+  }
+}

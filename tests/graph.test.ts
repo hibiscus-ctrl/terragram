@@ -47,6 +47,8 @@ const load = (name: string): GraphDocument => parseGraphDocument(readFileSync(fi
 const small = load("small");
 const smallBase = load("small-base");
 const medium = load("medium");
+const environments = load("environments");
+const environmentsBase = load("environments-base");
 
 function golden(name: string, actual: string): void {
   const path = fixture(`golden/${name}`);
@@ -209,6 +211,78 @@ describe("projecting a graph", () => {
     assert.ok(view(long).nodes.some((n) => n.label === "last-part"));
     const hashed = { ...small, redaction: { ids_hashed: true, hash_alg: "hmac-sha256" as const }, nodes: small.nodes.map((n) => (n.id === "web-role" ? { ...n, id: "f".repeat(64) } : n)) };
     assert.ok(view(hashed).nodes.some((n) => n.label === "ffffffff"));
+  });
+});
+
+describe("environments", () => {
+  const groupsOf = (v: GraphView, kind: ViewGroup["kind"]) => v.groups.filter((g) => g.kind === kind);
+  const byLabel = (v: GraphView, label: string) => v.groups.find((g) => g.label === label);
+
+  it("nests a scope, then an environment, then a module call, then the resources", () => {
+    const v = view(environments);
+    const [scope, other] = scopes(v);
+    assert.equal(scopes(v).length, 2);
+    assert.equal(other?.label, "AWS account 210987654321");
+    const prod = byLabel(v, "environment prod");
+    const staging = byLabel(v, "environment staging");
+    const dev = byLabel(v, "environment dev");
+    assert.equal(prod?.parent, scope?.id);
+    assert.equal(staging?.parent, scope?.id);
+    assert.equal(dev?.parent, other?.id);
+    assert.deepEqual(groupsOf(v, "environment").map((g) => g.label), ["environment prod", "environment staging", "environment dev"]);
+    const module = groupsOf(v, "module")[0];
+    assert.equal(module?.parent, prod?.id, "a module call sits in its root's environment");
+    assert.equal(nodeOf(v, "aws_vpc")?.group, module?.id, "a resource of a module call is in its box");
+    assert.equal(nodeOf(v, "aws_s3_bucket")?.group, staging?.id);
+    assert.equal(v.nodes.find((n) => n.label === "i-0dev1")?.group, dev?.id);
+    assert.equal(nodeOf(v, "aws_iam_role")?.group, scope?.id, "a resource with no environment sits in its scope");
+  });
+
+  it("draws an environment box in both formats, and none for a graph that names no environment", () => {
+    const v = view(environments);
+    const svg = renderGraphSvg(v);
+    assert.match(svg, />environment prod</);
+    assert.match(svg, />environment staging</);
+    const mermaid = renderGraphMermaid(v);
+    assert.match(mermaid, /subgraph g\d+\["environment prod"\]\n\s+subgraph g\d+\["module terraform-aws-modules\/vpc\/aws 5\.13\.0"\]/);
+    for (const doc of [small, medium]) {
+      assert.deepEqual(groupsOf(view(doc), "environment"), []);
+      assert.doesNotMatch(renderGraphSvg(view(doc)), /environment/);
+      assert.doesNotMatch(renderGraphMermaid(view(doc)), /environment/);
+    }
+  });
+
+  it("draws every environment box around its members, inside its scope", () => {
+    const v = view(environments);
+    const layout = layoutGraph(v);
+    for (const group of v.groups.filter((g) => g.parent !== null)) {
+      const box = layout.groups.get(group.id);
+      const outer = layout.groups.get(group.parent ?? "");
+      assert.ok(box && outer, group.label);
+      assert.ok(box.x >= outer.x && box.y >= outer.y && box.x + box.width <= outer.x + outer.width && box.y + box.height <= outer.y + outer.height, group.label);
+    }
+  });
+
+  it("does not depend on the order the document lists its nodes in", () => {
+    for (const seed of [1, 2, 3]) {
+      const other = shuffled(environments, seed);
+      assert.notDeepEqual(other.nodes, environments.nodes, "the shuffle should move something");
+      assert.equal(renderGraphSvg(view(other)), renderGraphSvg(view(environments)));
+      assert.equal(renderGraphMermaid(view(other)), renderGraphMermaid(view(environments)));
+    }
+  });
+
+  it("shows a root that moved to another environment as a change", () => {
+    const diff = diffGraphs(environmentsBase, environments);
+    assert.deepEqual(diff.nodes.changed.map((c) => [c.before.environment, c.after.environment]), [["prod", "staging"]]);
+    const v = view(environments, { base: environmentsBase });
+    assert.equal(nodeOf(v, "aws_s3_bucket")?.status, "changed");
+    assert.equal(v.changes?.nodesChanged, 1);
+    assert.equal(v.changes?.nodesAdded, 1);
+    // The same graph against itself changes nothing, whatever its addresses say.
+    assert.equal(diffGraphs(environments, environments).nodes.changed.length, 0);
+    const rehashed = { ...environments, nodes: environments.nodes.map((n) => (n.address ? { ...n, address: `h-${n.address}` } : n)) };
+    assert.equal(diffGraphs(environments, rehashed).nodes.changed.length, 0);
   });
 });
 
@@ -501,6 +575,72 @@ describe("findings", () => {
     assert.equal(v.nodes.find((n) => n.type === "aws_iam_role")?.findings?.count, 1);
   });
 
+  describe("by the graph's own addresses", () => {
+    const place = (finding: Omit<GraphFinding, "severity" | "title">, options: ProjectOptions = {}) =>
+      view(environments, { findings: [{ severity: "high", title: "x", ...finding }], ...options });
+    const countOn = (v: GraphView, id: string) => v.nodes.find((n) => n.label === id)?.findings?.count;
+
+    it("places a finding on the one resource that has the address, with no resolver", () => {
+      const v = place({ address: "aws_iam_role.web" });
+      assert.equal(countOn(v, "web-role"), 1);
+      assert.deepEqual(v.findings, { total: 1, unplaced: 0, bySeverity: { high: 1 } });
+      assert.equal(countOn(place({ address: "module.network.aws_vpc.this" }), "vpc-0a1b2c3d"), 1);
+      assert.equal(countOn(place({ address: "aws_s3_bucket.logs" }), "logs-bucket"), 1);
+    });
+
+    it("places a finding on a module call's box by its module address", () => {
+      const v = place({ address: "module.network" });
+      const box = v.groups.find((g) => g.kind === "module");
+      assert.equal(box?.findings?.count, 1);
+      assert.equal(v.findings?.unplaced, 0);
+    });
+
+    it("leaves an address that every root has unplaced, unless the finding names the root", () => {
+      assert.equal(place({ address: "aws_instance.web" }).findings?.unplaced, 1, "three roots have it");
+      // With only the account to go on, the finding is on the account's scope, as any finding with an account is.
+      const inAccount = place({ address: "aws_instance.web", account: "123456789012" });
+      assert.equal(inAccount.nodes.filter((n) => n.findings).length, 0, "two roots in the account have it, so no card is chosen");
+      assert.equal(scopes(inAccount)[0]?.findings?.count, 1);
+      const prod = place({ address: "aws_instance.web", account: "123456789012", environment: "prod" });
+      assert.equal(countOn(prod, "i-0web1"), 1);
+      assert.equal(countOn(prod, "i-0stg1"), undefined);
+      assert.equal(countOn(place({ address: "aws_instance.web", account: "210987654321" }), "i-0dev1"), 1);
+      assert.equal(countOn(place({ address: "aws_instance.web", environment: "staging" }), "i-0stg1"), 1);
+    });
+
+    it("narrows a finding with a type and ID by environment too", () => {
+      assert.equal(place({ type: "aws_instance", id: "i-0web1", environment: "staging" }).findings?.unplaced, 1);
+      assert.equal(countOn(place({ type: "aws_instance", id: "i-0web1", environment: "prod" }), "i-0web1"), 1);
+    });
+
+    it("shows a finding on a hidden glue resource on its environment's box", () => {
+      const v = place({ address: "aws_iam_role_policy_attachment.web" });
+      assert.equal(v.findings?.unplaced, 0);
+      assert.equal(v.groups.find((g) => g.label === "environment prod")?.findings?.count, 1);
+    });
+
+    it("does not place an address the graph does not keep, unless the caller resolves it", () => {
+      const hashed = { ...environments, redaction: { ...environments.redaction, addresses: "hashed" as const }, nodes: environments.nodes.map((n) => (n.address ? { ...n, address: "4f2a9c" } : n)) };
+      const finding = { severity: "high" as const, title: "x", address: "aws_iam_role.web" };
+      assert.equal(view(hashed, { findings: [finding] }).findings?.unplaced, 1);
+      const resolved = view(hashed, { findings: [finding], resolveAddress: () => ({ type: "aws_iam_role", id: "web-role" }) });
+      assert.equal(resolved.findings?.unplaced, 0);
+      const dropped = { ...hashed, nodes: environments.nodes.map(({ address: _address, ...n }) => n) };
+      assert.equal(view(dropped, { findings: [finding] }).findings?.unplaced, 1);
+    });
+
+    it("lets the caller's resolver answer an address the graph also keeps only when the graph cannot", () => {
+      const v = place({ address: "aws_instance.web" }, { resolveAddress: () => ({ type: "aws_instance", id: "i-0stg1" }) });
+      assert.equal(countOn(v, "i-0stg1"), 1);
+    });
+
+    it("reads an environment from a review's findings", () => {
+      assert.deepEqual(findingsFromReview({ findings: [{ severity: "low", title: "t", resource: "aws_instance.web", environment: "prod" }] }), [
+        { severity: "low", title: "t", environment: "prod", address: "aws_instance.web" },
+      ]);
+    });
+  });
+
   it("matches the account when the finding names one, so the same ID in another account is left alone", () => {
     const v = view(medium, { findings: [{ severity: "low", title: "x", type: "aws_vpc", id: "vpc-0a1b2c3d", account: "210987654321" }] });
     assert.equal(v.findings?.unplaced, 1);
@@ -564,6 +704,19 @@ describe("goldens", () => {
     golden("small-diff.mmd", renderGraphMermaid(view(small, { base: smallBase })));
     golden("small-delta.svg", `${renderGraphSvg(view(small, { base: smallBase, delta: true }))}\n`);
     golden("small-delta.mmd", renderGraphMermaid(view(small, { base: smallBase, delta: true })));
+  });
+
+  it("draws an estate with environments, and what changed in it, with findings over it", () => {
+    const findings: GraphFinding[] = [
+      { severity: "high", title: "open ingress", address: "aws_security_group.web", account: "123456789012", environment: "prod" },
+      { severity: "medium", title: "no versioning", address: "aws_s3_bucket.logs" },
+      { severity: "low", title: "old module", address: "module.network" },
+      { severity: "info", title: "ambiguous", address: "aws_instance.web" },
+    ];
+    golden("environments.svg", `${renderGraphSvg(view(environments, { findings }))}\n`);
+    golden("environments.mmd", renderGraphMermaid(view(environments, { findings })));
+    golden("environments-diff.svg", `${renderGraphSvg(view(environments, { base: environmentsBase }))}\n`);
+    golden("environments-diff.mmd", renderGraphMermaid(view(environments, { base: environmentsBase })));
   });
 
   it("draws the medium estate with findings over it", () => {

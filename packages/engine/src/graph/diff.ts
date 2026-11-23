@@ -13,14 +13,14 @@ export type GraphDiff = {
   nodes: {
     added: GraphNodeRef[];
     removed: GraphNodeRef[];
-    /** Same node in both, with a different region, module version or module call. */
+    /** Same node in both, with a different region, module version, module call or environment. */
     changed: { before: GraphNodeRef; after: GraphNodeRef }[];
   };
   edges: { added: GraphEdgeRef[]; removed: GraphEdgeRef[] };
 };
 
-/** What about a node a diff compares: everything but its key. */
-const fingerprint = (n: NormalNode) => [n.region ?? "", n.version ?? "", n.container ?? ""].join("|");
+/** What about a node a diff compares: everything but its key and its address, which a hashed graph changes from run to run. */
+const fingerprint = (n: NormalNode) => [n.region ?? "", n.version ?? "", n.container ?? "", n.environment ?? ""].join("|");
 
 export function diffNormal(base: NormalGraph, head: NormalGraph): GraphDiff {
   const diff: GraphDiff = { nodes: { added: [], removed: [], changed: [] }, edges: { added: [], removed: [] } };
@@ -46,7 +46,7 @@ export function diffNormal(base: NormalGraph, head: NormalGraph): GraphDiff {
 
 /**
  * What changed between two graphs of the same estate: the nodes and the references that
- * were added, removed, or (for a node) moved to another region, module call or module
+ * were added, removed, or (for a node) moved to another region, module call, environment or module
  * version. Glue resources are left out of both sides by the same rule the picture uses,
  * so a new policy attachment is not a change; pass `glue: false` to count them.
  */

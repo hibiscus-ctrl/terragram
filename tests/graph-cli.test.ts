@@ -22,6 +22,7 @@ const fixtures = new URL("./fixtures/graph/", import.meta.url).pathname;
 const small = join(fixtures, "small.json");
 const base = join(fixtures, "small-base.json");
 const medium = join(fixtures, "medium.json");
+const environments = join(fixtures, "environments.json");
 const doc = (path: string) => parseGraphDocument(readFileSync(path, "utf8"));
 
 const scratch = mkdtempSync(join(tmpdir(), "terragram-graph-test-"));
@@ -60,6 +61,23 @@ describe("terragram graph", () => {
     assert.equal(JSON.parse(full.stdout).changes.nodesAdded, 1);
     const delta = await cli("graph", small, "--base", base, "--delta", "-f", "mermaid");
     assert.equal(delta.stdout, renderGraphMermaid(projectGraph(doc(small), { base: doc(base), delta: true })));
+  });
+
+  it("places a finding by the Terraform address the graph keeps, with no resolver, and boxes each environment", async () => {
+    writeFileSync(
+      join(scratch, "by-address.json"),
+      JSON.stringify({ findings: [
+        { severity: "high", title: "wildcard", resource: "aws_iam_role.web" },
+        { severity: "low", title: "in every root", resource: "aws_instance.web" },
+      ] }),
+    );
+    const result = await cli("graph", environments, "--findings", "by-address.json", "-f", "json");
+    assert.equal(result.code, 0, result.stderr);
+    const view = JSON.parse(result.stdout);
+    assert.deepEqual(view.findings, { total: 2, unplaced: 1, bySeverity: { high: 1 } });
+    assert.deepEqual(view.groups.filter((g: { kind: string }) => g.kind === "environment").map((g: { label: string }) => g.label), ["environment prod", "environment staging", "environment dev"]);
+    const mermaid = await cli("graph", environments, "-f", "mermaid");
+    assert.equal(mermaid.stdout, renderGraphMermaid(projectGraph(doc(environments))));
   });
 
   it("lays findings over the graph, from infraharvest's OCSF export or a findings list", async () => {

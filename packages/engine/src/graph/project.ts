@@ -13,10 +13,11 @@ import type { GraphDocument } from "./schema.ts";
  * the document, never by the order it was written in. The SVG and Mermaid renderers
  * both read this, and `terragram graph --format json` prints it.
  *
- * The nesting is scope (an account, subscription or project) then module call, then the
- * resources. A resource of a module call is inside it; a module call that other
- * resources refer to, or that changed, has a card of its own inside its box, because a
- * line has to end somewhere.
+ * The nesting is scope (an account, subscription or project), then environment (when the
+ * graph names the environment of its roots), then module call, then the resources. A
+ * resource of a module call is inside it; a module call that other resources refer to, or
+ * that changed, has a card of its own inside its box, because a line has to end somewhere.
+ * A node with no environment sits directly in its scope.
  */
 
 export type GraphStatus = "unchanged" | "added" | "removed" | "changed" | "context";
@@ -25,7 +26,7 @@ export type GraphCategory = "network" | "compute" | "storage" | "identity" | "da
 
 export type ViewGroup = {
   id: string;
-  kind: "scope" | "module";
+  kind: "scope" | "environment" | "module";
   label: string;
   detail?: string;
   parent: string | null;
@@ -75,7 +76,7 @@ export type ProjectOptions = {
   /** With `base`: draw only what changed and the nodes one reference away from it. */
   delta?: boolean;
   findings?: readonly GraphFinding[];
-  /** Turn a Terraform address into the type and ID graph/v1 names a resource by, when the caller can. */
+  /** Turn a Terraform address into the type and ID graph/v1 names a resource by, for an address the graph itself does not keep or does not tell apart. */
   resolveAddress?: (address: string) => { type: string; id: string; account?: string } | undefined;
 };
 
@@ -114,38 +115,69 @@ type Entry = { node: NormalNode; status: GraphStatus };
 
 type Resolver = NonNullable<ProjectOptions["resolveAddress"]>;
 
+/** The key of an environment inside a scope. */
+const environmentKey = (account: string, environment: string) => `${account}\u0000${environment}`;
+
 /** Which findings sit on which node or scope, and how many found nothing to sit on. */
 function placeFindings(head: NormalGraph, findings: readonly GraphFinding[], resolve: Resolver | undefined) {
   const onNode = new Map<string, Severity[]>();
   const onAccount = new Map<string, Severity[]>();
+  const onEnvironment = new Map<string, Severity[]>();
   const onModule = new Map<string, Severity[]>();
   const push = (map: Map<string, Severity[]>, key: string, severity: Severity) => map.set(key, [...(map.get(key) ?? []), severity]);
 
-  const resources = [...head.nodes.values(), ...head.hidden].filter((n) => n.kind === "resource");
+  const all = [...head.nodes.values(), ...head.hidden];
+  const resources = all.filter((n) => n.kind === "resource");
   const byIdentity = new Map<string, NormalNode[]>();
   for (const n of resources) byIdentity.set(`${n.type}|${n.id}`, [...(byIdentity.get(`${n.type}|${n.id}`) ?? []), n]);
+  // What the graph itself keeps of addresses: a resource's, or a module call's.
+  const byAddress = new Map<string, NormalNode[]>();
+  for (const n of all) {
+    const address = n.kind === "resource" ? n.address : n.moduleAddress;
+    if (address !== undefined) byAddress.set(address, [...(byAddress.get(address) ?? []), n]);
+  }
   const placed: Severity[] = [];
 
+  /** Where a finding on `n` is shown: a module call's box, a resource's card, or for a hidden glue resource what it sits in (its module call, environment or scope). */
+  const place = (n: NormalNode, severity: Severity) => {
+    if (n.kind === "module") push(onModule, n.key, severity);
+    else if (head.nodes.has(n.key)) push(onNode, n.key, severity);
+    else if (n.container !== undefined) push(onModule, n.container, severity);
+    else if (n.environment !== undefined) push(onEnvironment, environmentKey(n.account, n.environment), severity);
+    else push(onAccount, n.account, severity);
+  };
+
   for (const finding of findings) {
+    const where = (n: NormalNode) =>
+      (finding.account === undefined || n.account === finding.account) &&
+      (finding.environment === undefined || n.environment === finding.environment);
+
+    if (finding.type === undefined && finding.address !== undefined) {
+      // The graph's own address: one node, since the same address recurs in every root.
+      const own = (byAddress.get(finding.address) ?? []).filter(where);
+      if (own.length === 1 && own[0] !== undefined) {
+        place(own[0], finding.severity);
+        placed.push(finding.severity);
+        continue;
+      }
+    }
     const resolved = finding.type === undefined && finding.address !== undefined ? resolve?.(finding.address) : undefined;
     const type = finding.type ?? resolved?.type;
     const id = finding.id ?? resolved?.id;
     const account = finding.account ?? resolved?.account;
     if (type !== undefined && id !== undefined) {
-      const matches = (byIdentity.get(`${type}|${id}`) ?? []).filter((n) => account === undefined || n.account === account);
+      const matches = (byIdentity.get(`${type}|${id}`) ?? []).filter(
+        (n) => (account === undefined || n.account === account) && (finding.environment === undefined || n.environment === finding.environment),
+      );
       if (matches.length === 0) continue;
-      for (const n of matches) {
-        if (head.nodes.has(n.key)) push(onNode, n.key, finding.severity);
-        else if (n.container !== undefined) push(onModule, n.container, finding.severity);
-        else push(onAccount, n.account, finding.severity);
-      }
+      for (const n of matches) place(n, finding.severity);
       placed.push(finding.severity);
     } else if (account !== undefined && resources.some((n) => n.account === account)) {
       push(onAccount, account, finding.severity);
       placed.push(finding.severity);
     }
   }
-  return { onNode, onAccount, onModule, placed };
+  return { onNode, onAccount, onEnvironment, onModule, placed };
 }
 
 export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): GraphView {
@@ -202,6 +234,14 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
   const boxModules = [...entries.keys()].filter((key) => usedModules.has(key) && entries.get(key)?.node.kind === "module").sort(compareText);
 
   const accounts = [...new Set([...resourceKeys, ...boxModules].map(accountOf))].sort(compareText);
+  // An environment box sits in a scope, around the module boxes and the resources of that root
+  // that are not in a module box. Where a graph names no environment there are none.
+  const environmentOf = (key: string) => entries.get(key)?.node.environment;
+  const inEnvironment = [...boxModules, ...resourceKeys.filter((key) => containerOf(key) === undefined)];
+  const environments = [...new Set(inEnvironment.flatMap((key) => {
+    const environment = environmentOf(key);
+    return environment === undefined ? [] : [environmentKey(accountOf(key), environment)];
+  }))].sort(compareText);
   const placement = placeFindings(head, options.findings ?? [], options.resolveAddress);
 
   const groups: ViewGroup[] = accounts.map((account, i) => ({
@@ -213,18 +253,35 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
     findings: tally(placement.onAccount.get(account) ?? []),
   }));
   const scopeId = new Map(accounts.map((account, i) => [account, `g${i}`]));
+  const environmentId = new Map<string, string>();
+  for (const key of environments) {
+    const [account = "", environment = ""] = key.split("\u0000");
+    const id = `g${accounts.length + environmentId.size}`;
+    environmentId.set(key, id);
+    groups.push({
+      id,
+      kind: "environment",
+      label: `environment ${environment}`,
+      parent: scopeId.get(account) ?? null,
+      status: "unchanged",
+      findings: tally(placement.onEnvironment.get(key) ?? []),
+    });
+  }
+  /** The box a node that is in no module box sits in: its environment's, else its scope's. */
+  const boxOf = (account: string, environment: string | undefined) =>
+    (environment === undefined ? undefined : environmentId.get(environmentKey(account, environment))) ?? scopeId.get(account);
   const moduleId = new Map<string, string>();
   boxModules.forEach((key, i) => {
     const entry = shown.get(key) ?? entries.get(key);
     if (entry === undefined) return;
-    const id = `g${accounts.length + i}`;
+    const id = `g${accounts.length + environments.length + i}`;
     moduleId.set(key, id);
     groups.push({
       id,
       kind: "module",
       label: `module ${shortSource(entry.node.source ?? "")}`,
       ...(entry.node.version !== undefined && { detail: entry.node.version }),
-      parent: scopeId.get(entry.node.account) ?? null,
+      parent: boxOf(entry.node.account, entry.node.environment) ?? null,
       status: entry.status === "context" ? "unchanged" : entry.status,
       findings: tally(placement.onModule.get(key) ?? []),
     });
@@ -240,7 +297,7 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
     const n = entry.node;
     const container = containerOf(key);
     const isCard = n.kind === "module";
-    const group = (isCard ? moduleId.get(key) : container === undefined ? undefined : moduleId.get(container)) ?? scopeId.get(n.account) ?? "";
+    const group = (isCard ? moduleId.get(key) : container === undefined ? undefined : moduleId.get(container)) ?? boxOf(n.account, n.environment) ?? "";
     nodes.push({
       id,
       group,
