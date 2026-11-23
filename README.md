@@ -137,6 +137,11 @@ placed that way (a hashed or dropped address, or an address several nodes share)
 even when it names an account, unless the caller resolves it (`resolveAddress`), never guessed at. Only a
 finding that names no resource at all lands on its account's scope.
 
+With `--base`, a node that moved to another root is shown as changed, but only when both graphs keep
+their roots as they are (`redaction.addresses` `plain`). A root move is not shown when either side's roots are hashed or
+dropped, or when either side predates roots: two hash keys cannot be compared, and a graph without roots
+has nothing to compare.
+
 In code, import `terragram-engine/graph`: `parseGraphDocument`, `projectGraph(doc, options)` (a view
 model), `renderGraphSvg(view)`, `renderGraphMermaid(view)` and `diffGraphs(base, head)`.
 

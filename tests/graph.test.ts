@@ -348,6 +348,39 @@ describe("roots", () => {
     assert.equal(diffGraphs(roots, roots).nodes.changed.length, 0);
   });
 
+  it("compares roots only when both graphs keep them plain", () => {
+    const hash = (doc: GraphDocument, key: string): GraphDocument => ({
+      ...doc,
+      redaction: { ...doc.redaction, addresses: "hashed" },
+      nodes: doc.nodes.map((n) => ({
+        ...n,
+        ...(n.address !== undefined && { address: `${key}${n.address}` }),
+        ...(n.root !== undefined && { root: `${key}${n.root}` }),
+      })),
+    });
+    const moved = { ...roots, nodes: roots.nodes.map((n) => (n.id === "i-0web1" ? { ...n, root: eu2 } : n)) };
+    assert.equal(diffGraphs(roots, moved).nodes.changed.length, 1, "plain against plain, with a real move");
+    assert.equal(diffGraphs(roots, hash(roots, "aa")).nodes.changed.length, 0, "plain against hashed");
+    assert.equal(diffGraphs(hash(roots, "aa"), roots).nodes.changed.length, 0, "hashed against plain");
+    assert.equal(diffGraphs(hash(roots, "aa"), hash(roots, "bb")).nodes.changed.length, 0, "a rotated hash key");
+    assert.equal(diffGraphs(hash(roots, "aa"), hash(moved, "aa")).nodes.changed.length, 0, "hashed against hashed cannot be compared");
+    const dropped: GraphDocument = { ...roots, redaction: { ...roots.redaction, addresses: "dropped" }, nodes: roots.nodes.map(({ root: _root, ...n }) => n) };
+    assert.equal(diffGraphs(roots, dropped).nodes.changed.length, 0, "dropped roots");
+  });
+
+  it("never writes a hostile root unescaped into the SVG or Mermaid", () => {
+    const hostile = "\"><script>alert(1)</script>'`\nroot";
+    const withRoot = (root: string): GraphDocument => ({ ...roots, nodes: roots.nodes.map((n) => (n.root === undefined ? n : { ...n, root })) });
+    const doc = withRoot(hostile);
+    const finding = { severity: "high" as const, title: "x", address: "aws_instance.web", environment: "prod", root: hostile };
+    for (const v of [view(doc), view(doc, { base: withRoot("aws/other") }), view(withRoot("aws/other"), { base: doc }), view(doc, { findings: [finding] })]) {
+      for (const out of [renderGraphSvg(v), renderGraphMermaid(v)]) {
+        assert.ok(!out.includes("<script"), "no script element");
+        assert.ok(!out.includes("alert(1)"), "no part of the root is written out");
+      }
+    }
+  });
+
   it("draws a graph without roots as before", () => {
     const stripped = { ...roots, nodes: roots.nodes.map(({ root: _root, ...n }) => n).filter((n) => n.id !== "i-0web2") };
     assert.equal(renderGraphSvg(view(stripped)), renderGraphSvg(view(environments)));

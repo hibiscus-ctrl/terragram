@@ -43,6 +43,8 @@ export type NormalNode = {
 
 export type NormalGraph = {
   idsHashed: boolean;
+  /** Whether the node addresses and roots are kept as they are: a hashed one cannot be compared with another graph's, whose key may differ. */
+  addressesPlain: boolean;
   /** Everything drawn, resources and module calls, by key in key order. */
   nodes: Map<string, NormalNode>;
   /** The references between them, glue folded away, by key in key order. */
@@ -166,5 +168,5 @@ export function normalizeGraph(doc: GraphDocument, glue: Readonly<GlueRule> | fa
     else nodes.set(key, n);
   }
   const sortedEdges = new Map([...edges].sort(([a], [b]) => compareText(a, b)));
-  return { idsHashed: doc.redaction.ids_hashed, nodes, edges: sortedEdges, hidden };
+  return { idsHashed: doc.redaction.ids_hashed, addressesPlain: doc.redaction.addresses === "plain", nodes, edges: sortedEdges, hidden };
 }

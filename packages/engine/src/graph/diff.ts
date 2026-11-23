@@ -23,18 +23,19 @@ export type GraphDiff = {
 const fingerprint = (n: NormalNode) => [n.region ?? "", n.version ?? "", n.container ?? "", n.environment ?? ""].join("|");
 
 /**
- * Whether a node moved to another root. Only when both graphs name the root: a graph from
- * before infraharvest wrote roots has none, and that is not every node moving.
+ * Whether a node moved to another root. Only when both graphs keep their roots as they are
+ * (`redaction.addresses` `plain`): a hashed root differs between two runs with different
+ * keys, and a graph from before roots has none, and neither is every node moving.
  */
-const rootMoved = (before: NormalNode, after: NormalNode) =>
-  before.root !== undefined && after.root !== undefined && before.root !== after.root;
+const rootMoved = (base: NormalGraph, head: NormalGraph, before: NormalNode, after: NormalNode) =>
+  base.addressesPlain && head.addressesPlain && before.root !== undefined && after.root !== undefined && before.root !== after.root;
 
 export function diffNormal(base: NormalGraph, head: NormalGraph): GraphDiff {
   const diff: GraphDiff = { nodes: { added: [], removed: [], changed: [] }, edges: { added: [], removed: [] } };
   for (const [key, after] of head.nodes) {
     const before = base.nodes.get(key);
     if (before === undefined) diff.nodes.added.push(after);
-    else if (fingerprint(before) !== fingerprint(after) || rootMoved(before, after)) diff.nodes.changed.push({ before, after });
+    else if (fingerprint(before) !== fingerprint(after) || rootMoved(base, head, before, after)) diff.nodes.changed.push({ before, after });
   }
   for (const [key, before] of base.nodes) {
     if (!head.nodes.has(key)) diff.nodes.removed.push(before);
