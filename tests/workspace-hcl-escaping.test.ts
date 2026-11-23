@@ -68,7 +68,11 @@ describe("free-text attributes", () => {
     "",
     "-a.example.org",
     "single",
+    "single.",
     "a..example.org",
+    ".",
+    "example.org..",
+    ".example.org",
   ];
   for (const cloud of CLOUDS) {
     for (const value of badZones) {
@@ -85,6 +89,34 @@ describe("free-text attributes", () => {
       });
     }
   }
+
+  it("explains why a single label is refused", () => {
+    const [problem] = attributeProblems(withAttribute("dns", "Zone name", "internal").nodes);
+    assert.match(problem ?? "", /one label.*Route 53 and Azure DNS.*top-level domains/);
+  });
+
+  for (const cloud of CLOUDS) {
+    it(`emits a zone name written with its trailing dot, without the dot, on ${cloud}`, () => {
+      const dotted = emitTerraform(withAttribute("dns", "Zone name", "My-Zone.example.gov.uk."), cloud);
+      const plain = emitTerraform(withAttribute("dns", "Zone name", "My-Zone.example.gov.uk"), cloud);
+      assert.equal(dotted.files[0]?.content, plain.files[0]?.content);
+      assert.match(dotted.files[0]?.content ?? "", /"My-Zone\.example\.gov\.uk"/);
+      assert.doesNotMatch(dotted.files[0]?.content ?? "", /gov\.uk\."/);
+    });
+  }
+
+  it("keeps a trailing dot out of the custom domain a zone serves", () => {
+    const { model } = composeFromPrompt("A website on a custom domain with DNS, a web app and a database");
+    const dns = model.nodes.find((n) => n.kind === "dns");
+    assert.ok(dns);
+    const dotted = setNodeAttribute(model, dns.id, "Zone name", "example.gov.uk.");
+    for (const cloud of CLOUDS) {
+      const out = emitTerraform(dotted, cloud);
+      const text = out.files.map((file) => file.content).join("\n");
+      assert.match(text, /"www\.example\.gov\.uk"/, cloud);
+      assert.doesNotMatch(text, /gov\.uk\.["\s]/, cloud);
+    }
+  });
 
   const badSpaces = [
     "${var.db_password}",

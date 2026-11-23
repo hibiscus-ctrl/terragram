@@ -42,6 +42,9 @@ export type KindField = {
   /** For free text: why a value cannot be used, or null when it can. Such a value is
    *  written into the plan, so it is checked before anything is emitted. */
   validate?: (value: string) => string | null;
+  /** For free text: the form of an accepted value that is emitted, when it differs from
+   *  how the reviewer wrote it (a DNS name's trailing dot). Applied before `attr` returns. */
+  normalize?: (value: string) => string;
   /** Phrases in a plain-English brief that choose an option ("powered by Python"),
    *  so the deterministic engine reads the same facts a reviewer would set by hand.
    *  First match wins; listed most specific first. */
@@ -487,14 +490,28 @@ function cidrProblem(value: string): string | null {
   return valid ? null : `${JSON.stringify(value)} is not an IPv4 CIDR block such as 10.0.0.0/16`;
 }
 
-/** A DNS name such as `example.gov.uk`: dot-separated labels of letters, digits and hyphens. */
+/** A DNS name without the root label's dot: `example.com.` is `example.com`. */
+function withoutTrailingDot(value: string): string {
+  return value.endsWith(".") ? value.slice(0, -1) : value;
+}
+
+/**
+ * A DNS name such as `example.gov.uk`: dot-separated labels of letters, digits and hyphens,
+ * with the root dot optional (`example.com.` is accepted and emitted as `example.com`).
+ * A single label is refused: the zone is a public one, delegated from a registrar, and
+ * neither target hosts a top-level domain. Route 53 documents that it does not, Azure DNS
+ * refuses a name that is only a public suffix, and Azure Private DNS needs two labels too.
+ */
 function hostnameProblem(value: string): string | null {
-  const labels = value.split(".");
-  const valid =
-    value.length <= 253 &&
-    labels.length >= 2 &&
-    labels.every((label) => /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label));
-  return valid ? null : `${JSON.stringify(value)} is not a DNS name such as example.gov.uk (letters, digits and hyphens between dots)`;
+  const name = withoutTrailingDot(value);
+  const labels = name.split(".");
+  const wellFormed =
+    name.length <= 253 && labels.every((label) => /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label));
+  if (wellFormed && labels.length >= 2) return null;
+  const shape = `is not a DNS name such as example.gov.uk (letters, digits and hyphens between dots)`;
+  return wellFormed
+    ? `${JSON.stringify(value)} ${shape}: it has one label, and Route 53 and Azure DNS zones need a domain with at least two, since they do not host top-level domains`
+    : `${JSON.stringify(value)} ${shape}`;
 }
 
 const CIDR_FIELD: KindField = { key: "Address space", fallback: "10.0.0.0/16", validate: cidrProblem };
@@ -522,7 +539,12 @@ const RETENTION_FIELD: KindField = {
   fallback: "30 days",
 };
 
-const DNS_ZONE_FIELD: KindField = { key: "Zone name", fallback: "example.gov.uk", validate: hostnameProblem };
+const DNS_ZONE_FIELD: KindField = {
+  key: "Zone name",
+  fallback: "example.gov.uk",
+  validate: hostnameProblem,
+  normalize: withoutTrailingDot,
+};
 
 /* --------------------------------------------------------------- variables -- */
 

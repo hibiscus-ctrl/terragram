@@ -542,8 +542,11 @@ export function emitTerraform(
       node,
       name,
       slug: tfSlug(node.id),
-      attr: (key) =>
-        node.attributes?.[key] ?? fields.find((f) => f.key === key)?.fallback ?? "",
+      attr: (key) => {
+        const field = fields.find((f) => f.key === key);
+        const value = node.attributes?.[key] ?? field?.fallback ?? "";
+        return field?.normalize?.(value) ?? value;
+      },
       net,
       private: privateNet?.api ?? null,
     };

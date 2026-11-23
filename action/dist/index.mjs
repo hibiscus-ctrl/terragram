@@ -20376,10 +20376,16 @@ function cidrProblem(value) {
   const valid = match !== null && [a, b, c, d].every((octet) => Number(octet) <= 255) && Number(prefix) <= 32;
   return valid ? null : `${JSON.stringify(value)} is not an IPv4 CIDR block such as 10.0.0.0/16`;
 }
+function withoutTrailingDot(value) {
+  return value.endsWith(".") ? value.slice(0, -1) : value;
+}
 function hostnameProblem(value) {
-  const labels = value.split(".");
-  const valid = value.length <= 253 && labels.length >= 2 && labels.every((label) => /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label));
-  return valid ? null : `${JSON.stringify(value)} is not a DNS name such as example.gov.uk (letters, digits and hyphens between dots)`;
+  const name = withoutTrailingDot(value);
+  const labels = name.split(".");
+  const wellFormed = name.length <= 253 && labels.every((label) => /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label));
+  if (wellFormed && labels.length >= 2) return null;
+  const shape = `is not a DNS name such as example.gov.uk (letters, digits and hyphens between dots)`;
+  return wellFormed ? `${JSON.stringify(value)} ${shape}: it has one label, and Route 53 and Azure DNS zones need a domain with at least two, since they do not host top-level domains` : `${JSON.stringify(value)} ${shape}`;
 }
 var CIDR_FIELD = { key: "Address space", fallback: "10.0.0.0/16", validate: cidrProblem };
 var CONTAINER_SIZE_AZURE = options({
@@ -20403,7 +20409,12 @@ var RETENTION_FIELD = {
   options: RETENTION.labels,
   fallback: "30 days"
 };
-var DNS_ZONE_FIELD = { key: "Zone name", fallback: "example.gov.uk", validate: hostnameProblem };
+var DNS_ZONE_FIELD = {
+  key: "Zone name",
+  fallback: "example.gov.uk",
+  validate: hostnameProblem,
+  normalize: withoutTrailingDot
+};
 var NAME_PREFIX = {
   name: "name_prefix",
   type: "string",
@@ -23031,7 +23042,11 @@ function emitTerraform(model, cloud, tool = "terraform") {
       node: node2,
       name,
       slug: tfSlug(node2.id),
-      attr: (key) => node2.attributes?.[key] ?? fields.find((f) => f.key === key)?.fallback ?? "",
+      attr: (key) => {
+        const field = fields.find((f) => f.key === key);
+        const value = node2.attributes?.[key] ?? field?.fallback ?? "";
+        return field?.normalize?.(value) ?? value;
+      },
       net,
       private: privateNet?.api ?? null
     };
