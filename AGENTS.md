@@ -104,7 +104,7 @@ To cut a release:
 1. Bump `version` in `packages/cli/package.json` (`--version` and the help read it) and, in `CHANGELOG.md`, rename
    `## [Unreleased]` to `## [X.Y.Z] - date`, adding a new empty `Unreleased`. That section becomes the release notes.
 2. Merge it, then from `main`: `git tag cli-vX.Y.Z && git push origin cli-vX.Y.Z`. Never tag by hand from a branch.
-3. The workflow checks the tag equals the package version (`scripts/release-cli.ts`, tested in
+3. The workflow refuses a tag whose commit is not on the default branch, checks the tag equals the package version (`scripts/release-cli.ts`, tested in
    `tests/release-cli.test.ts`), runs the whole test suite on a fresh build, then, in a second job that runs none of
    the repository's code, attests the files and runs `gh release create`. A pre-release version (`X.Y.Z-rc.1`) is
    marked as a pre-release. A failed run before the release exists can be re-run from the tag; a release that exists
