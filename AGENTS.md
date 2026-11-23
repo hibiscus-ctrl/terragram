@@ -180,8 +180,8 @@ Usage and the security notes are in `action/README.md`.
 ## Hand-synced with another repo: change one, change both
 
 - `packages/engine/src/managed-models.ts` `MANAGED_MODEL_IDS` <=> the model gateway's `bedrock_model_map`, pinned by
-  `contracts/model-map.json`. `tests/model-map-contract.test.ts` byte-compares the sibling checkout's copy when it is
-  present. Nothing else catches a model offered here that the gateway does not map.
+  `contracts/model-map.json`, a copy kept by hand: when the gateway's map changes, copy its `contracts/model-map.json`
+  here in the same change. `tests/model-map-contract.test.ts` checks that every offered model is in the copy.
 
 ## `@infraweaver-io/*` are real dependencies
 
