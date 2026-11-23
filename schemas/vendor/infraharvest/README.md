@@ -1,7 +1,7 @@
 # Vendored schemas
 
 `graph-v1.schema.json` is infraharvest's `graph/v1` document, copied unchanged from
-`schemas/graph-v1.schema.json` of the infraharvest repository at commit `bbe63122`
+`schemas/graph-v1.schema.json` of the infraharvest repository at commit `6988dfa4`
 (`feat(export): let a graph node name the root it was generated in`).
 It is Apache-2.0, like the schemas Terragram publishes itself.
 
