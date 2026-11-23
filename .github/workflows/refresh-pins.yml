@@ -141,12 +141,27 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          # Only the paths a refresh regenerates; a patch that names anything else is refused.
-          if git apply --numstat "$PATCH" | cut -f3 | grep -qv -e '^packages/engine/src/' -e '^action/dist/' -e '^tests/fixtures/action/'; then
-            echo "The patch touches paths outside the refresh's own." >&2
+          # A refresh only edits or adds regular files under its own paths. Apply the
+          # patch, then judge what git staged rather than the patch text: every staged
+          # entry must be a modified or added file with mode 100644 under those paths.
+          git apply --index "$PATCH"
+          bad=0
+          count=0
+          while IFS= read -r -d '' meta && IFS= read -r -d '' path; do
+            count=$((count + 1))
+            read -r _ new_mode _ _ status <<< "${meta#:}"
+            case "$status" in M | A) ;; *) bad=1 ;; esac
+            [ "$new_mode" = 100644 ] || bad=1
+            case "$path" in
+              *..*) bad=1 ;;
+              packages/engine/src/* | action/dist/* | tests/fixtures/action/*) ;;
+              *) bad=1 ;;
+            esac
+          done < <(git diff --cached --raw -z --no-renames)
+          if [ "$bad" -ne 0 ] || [ "$count" -eq 0 ]; then
+            echo "The patch does more than edit or add regular files under the refresh's own paths." >&2
             exit 1
           fi
-          git apply --index "$PATCH"
           git commit -m "chore(deps): refresh the provider and module pins"
           # One standing branch: a run that finds an open pull request updates it.
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
