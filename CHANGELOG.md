@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Action uploads the receipt bundle only from a `push` run, as its README says. Before, any event except
+  `pull_request` (a `workflow_run` that checked out a fork's head, a `workflow_dispatch`, a `schedule`) uploaded
+  with the repository's identity; those runs now skip the upload and say why.
 - Text from a model file stays text in the generated Terraform: `${` and `%{` in a quoted value are written as
   `$${` and `%%{`, and control characters and newlines as escapes, so a `diagram.json` can no longer turn a
   field such as the DNS zone name into a Terraform expression. The two free-text fields are now checked:
@@ -25,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `schemas/diagram-bundle-v1.schema.json`, the JSON Schema of the document the Action uploads
+  (`diagram.bundle/v1`), so a control plane can validate what it receives. The Action's own tests check the
+  document it sends against it.
 - The Action's `control-plane-url` now uploads the receipt bundle: it exchanges the job's GitHub
   identity token (`id-token: write`) for a repository-pinned token and sends the bundle to the
   control plane's `/api/v1/ingest/diagram`, failing the step with the control plane's reason when it

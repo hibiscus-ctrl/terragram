@@ -13,6 +13,8 @@ import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 
+import { Ajv2020 } from "ajv/dist/2020.js";
+
 import { run as terragram } from "../packages/cli/src/cli.ts";
 import type { Io } from "../packages/cli/src/io.ts";
 
@@ -393,6 +395,40 @@ describe("uploading the bundle", () => {
       const result = await runAction(ws, { "control-plane-url": plane.url }, runnerEnv(plane));
       assert.equal(result.status, 1);
       assert.equal(plane.count("/api/v1/ingest/diagram"), 1);
+    }));
+
+  for (const event of ["workflow_dispatch", "workflow_run", "schedule", "issue_comment", "merge_group", "release", ""]) {
+    it(`uploads nothing from a ${event || "run with no event"}, and says why`, () =>
+      withPlane({}, async (plane) => {
+        const result = await runAction(workspace(), { "control-plane-url": plane.url }, runnerEnv(plane, { GITHUB_EVENT_NAME: event }));
+        assert.equal(result.status, 0, result.stdout);
+        assert.match(result.stdout, /::notice::the bundle was not uploaded: it is uploaded only from a push/);
+        assert.equal(plane.seen.length, 0);
+        assert.equal(result.outputs["snapshot-id"], undefined);
+      }));
+  }
+
+  it("sends a document that validates against schemas/diagram-bundle-v1.schema.json", () =>
+    withPlane({}, async (plane) => {
+      const result = await runAction(workspace(), { "control-plane-url": plane.url, "signing-key": pem }, runnerEnv(plane));
+      assert.equal(result.status, 0, result.stdout);
+      const { document } = sentDocument(plane);
+      const schema = JSON.parse(readFileSync(join(root, "schemas/diagram-bundle-v1.schema.json"), "utf8")) as object;
+      const validate = new Ajv2020({ strict: true, allErrors: true }).compile(schema);
+      assert.equal(validate(document), true, JSON.stringify(validate.errors));
+      assert.equal(new Set(document.entries.map((e) => e.name)).size, document.entries.length, "entry names are unique");
+
+      // The schema is not vacuous: it refuses what the receiver refuses.
+      const broken: unknown[] = [
+        { ...document, schema: "diagram.bundle/v2" },
+        { ...document, model_path: "" },
+        { ...document, sha: "NOT-A-SHA" },
+        { ...document, entries: document.entries.slice(0, 1) },
+        { ...document, entries: Array.from({ length: 65 }, (_, i) => ({ name: `f${i}`, content: "" })) },
+        { ...document, entries: [{ name: "a" }, { name: "b", content: "" }] },
+        { schema: document.schema, entries: document.entries },
+      ];
+      for (const candidate of broken) assert.equal(validate(candidate), false, JSON.stringify(candidate).slice(0, 80));
     }));
 
   it("uploads nothing from a pull request, and says why", () =>

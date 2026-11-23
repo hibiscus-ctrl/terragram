@@ -83,7 +83,10 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
   and commit the schema. `tests/schemas.test.ts` validates real documents with Ajv and ties the
   receipt schema to the `EvidenceReceipt` type. Ids are `diagram.model/v1` and `diagram.receipt/v2`
   (dots, as the receipt always has); `$id` URLs sit under the repository for now and will move with
-  the name. `terragram verify` still accepts receipts carrying `terragram.receipt/v1` and `/v2`
+  the name. `schemas/diagram-bundle-v1.schema.json` is the exception: it describes the document the Action uploads
+  (`action/src/upload.ts`), which the Action owns rather than the engine, so it is written by hand, and
+  `tests/action-upload.test.ts` validates the document the Action really sends against it; change both together.
+  `terragram verify` still accepts receipts carrying `terragram.receipt/v1` and `/v2`
   (`VERIFIABLE_RECEIPT_SCHEMAS`); the model reader accepts only `diagram.model/v1`.
 - **Codename versus wire names.** `terragram` is the repository, package and command name for now.
   Anything that lands in a document, generated code or a customer's repository says `diagram`:

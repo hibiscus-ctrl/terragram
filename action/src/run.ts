@@ -26,6 +26,9 @@ import { ActionError, createWorkflow, type Host, type Workflow } from "./workflo
 /** Where the receipt bundle goes, under the workspace: for `terragram verify` and upload-artifact. */
 const BUNDLE_DIR = "_diagram";
 
+/** The one event whose model is an approved one, so the only one the bundle is uploaded from. */
+const UPLOAD_EVENT = "push";
+
 /**
  * Run the Action and return the process exit status: 0, or 1 when the step failed (a check
  * that found drift, or anything the Action could not do). Outputs are written before it fails.
@@ -143,8 +146,15 @@ async function execute(host: Host, workflow: Workflow): Promise<number> {
   // A failed upload fails the step, but after the drift check below has had its say: both are reported.
   let uploadFailed = false;
   if (inputs.controlPlaneUrl) {
-    if (eventName === "pull_request") {
-      workflow.notice("the bundle was not uploaded: a pull request's model is not approved yet. Upload from a push to the default branch.");
+    // An allow-list: only a push is the approval of a model. Other events (a pull request, a
+    // workflow_run that checked out a fork's head, an issue comment, a schedule) can run with a
+    // model nobody has merged, and the run token would still carry the repository's identity.
+    if (eventName !== UPLOAD_EVENT) {
+      workflow.notice(
+        eventName === "pull_request"
+          ? "the bundle was not uploaded: a pull request's model is not approved yet. Upload from a push to the default branch."
+          : `the bundle was not uploaded: it is uploaded only from a push, and this run was triggered by ${JSON.stringify(eventName)}. Upload from a push to the default branch.`,
+      );
     } else {
       try {
         const sent = await uploadBundle(

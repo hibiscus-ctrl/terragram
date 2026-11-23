@@ -24156,6 +24156,7 @@ function replaceDirectory(root, dir, entries) {
 
 // src/run.ts
 var BUNDLE_DIR = "_diagram";
+var UPLOAD_EVENT = "push";
 async function run(host) {
   const workflow = createWorkflow(host);
   try {
@@ -24251,8 +24252,10 @@ async function execute(host, workflow) {
   }
   let uploadFailed = false;
   if (inputs.controlPlaneUrl) {
-    if (eventName === "pull_request") {
-      workflow.notice("the bundle was not uploaded: a pull request's model is not approved yet. Upload from a push to the default branch.");
+    if (eventName !== UPLOAD_EVENT) {
+      workflow.notice(
+        eventName === "pull_request" ? "the bundle was not uploaded: a pull request's model is not approved yet. Upload from a push to the default branch." : `the bundle was not uploaded: it is uploaded only from a push, and this run was triggered by ${JSON.stringify(eventName)}. Upload from a push to the default branch.`
+      );
     } else {
       try {
         const sent = await uploadBundle(
