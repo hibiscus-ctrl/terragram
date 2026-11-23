@@ -11,17 +11,20 @@
  * Not minified: the file is what a user is asked to trust, so it should be readable.
  */
 
-import { chmodSync, rmSync, statSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { build } from "esbuild";
+
+import { bundleNotices } from "../../scripts/bundle-notices.mjs";
 
 const root = import.meta.dirname;
 const outfile = join(root, "dist", "terragram.mjs");
 
 rmSync(join(root, "dist"), { recursive: true, force: true });
+mkdirSync(join(root, "dist"), { recursive: true });
 
-await build({
+const result = await build({
   absWorkingDir: root,
   entryPoints: ["src/main.ts"],
   outfile,
@@ -40,8 +43,13 @@ await build({
       "const require = __createRequire(import.meta.url);",
     ].join("\n"),
   },
+  write: false,
+  metafile: true,
   logLevel: "info",
 });
+
+// The bundled packages' licence notices go at the end of the file (see scripts/bundle-notices.mjs).
+writeFileSync(outfile, `${result.outputFiles[0].text}\n${bundleNotices(result.metafile, root)}`);
 
 chmodSync(outfile, 0o755);
 console.log(`terragram.mjs: ${(statSync(outfile).size / 1024).toFixed(0)} KiB`);
