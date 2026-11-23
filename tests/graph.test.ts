@@ -597,10 +597,12 @@ describe("findings", () => {
 
     it("leaves an address that every root has unplaced, unless the finding names the root", () => {
       assert.equal(place({ address: "aws_instance.web" }).findings?.unplaced, 1, "three roots have it");
-      // With only the account to go on, the finding is on the account's scope, as any finding with an account is.
+      // Two roots of the account have it: the finding names a resource that cannot be told apart, so it is not
+      // moved to the account's scope, where it would read as an account-wide finding.
       const inAccount = place({ address: "aws_instance.web", account: "123456789012" });
       assert.equal(inAccount.nodes.filter((n) => n.findings).length, 0, "two roots in the account have it, so no card is chosen");
-      assert.equal(scopes(inAccount)[0]?.findings?.count, 1);
+      assert.equal(scopes(inAccount)[0]?.findings?.count, undefined);
+      assert.deepEqual(inAccount.findings, { total: 1, unplaced: 1, bySeverity: {} });
       const prod = place({ address: "aws_instance.web", account: "123456789012", environment: "prod" });
       assert.equal(countOn(prod, "i-0web1"), 1);
       assert.equal(countOn(prod, "i-0stg1"), undefined);

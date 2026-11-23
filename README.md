@@ -131,8 +131,9 @@ address when the graph keeps addresses (`redaction.addresses: plain`; a module c
 by its `account`. infraharvest's `ocsf-findings` land on the account of the root they were found in.
 The same address recurs in every root, so a finding with only an address is placed when exactly one node
 has it, narrowed by the finding's `account` and `environment` when it names them. A finding that cannot be
-placed that way (a hashed or dropped address, or an address several nodes share) is counted as not placed
-unless the caller resolves it (`resolveAddress`), never guessed at.
+placed that way (a hashed or dropped address, or an address several nodes share) is counted as not placed,
+even when it names an account, unless the caller resolves it (`resolveAddress`), never guessed at. Only a
+finding that names no resource at all lands on its account's scope.
 
 In code, import `terragram-engine/graph`: `parseGraphDocument`, `projectGraph(doc, options)` (a view
 model), `renderGraphSvg(view)`, `renderGraphMermaid(view)` and `diffGraphs(base, head)`.
