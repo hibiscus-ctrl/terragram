@@ -37,7 +37,7 @@ inputs:
     description: >-
       Optional control-plane address (https://, no path needed). When set, the receipt bundle is
       uploaded after the check, authenticated with the job's GitHub identity token, so the job needs
-      `permissions: id-token: write`. Not uploaded on a pull_request run. A failed upload fails the step.
+      `permissions: id-token: write`. Uploaded only from a push to the default branch. A failed upload fails the step.
     required: false
   control-plane-audience:
     description: >-

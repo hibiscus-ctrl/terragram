@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `terragram graph` and the `terragram-engine/graph` renderer: draw an existing estate from infraharvest's
   `graph/v1` document as SVG, Mermaid or JSON, with scopes and module calls as boxes, a diff against an earlier
   document and finding overlays.
-- The Action's `control-plane-url` now uploads the receipt bundle: it exchanges the job's GitHub
+- The Action's `control-plane-url` now uploads the receipt bundle from a push to the default branch: it exchanges the job's GitHub
   identity token (`id-token: write`) for a repository-pinned token and sends the bundle to the
   control plane's `/api/v1/ingest/diagram`, failing the step with the control plane's reason when it
   is refused. New input `control-plane-audience` and output `snapshot-id`.

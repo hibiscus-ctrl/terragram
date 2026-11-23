@@ -20,13 +20,14 @@ import { type BaseModel, readBaseModel, readPullRequest } from "./pull-request.t
 import { type BaseState, commentBody, renderReport } from "./report.ts";
 import { loadSigner, maskableParts } from "./signer.ts";
 import { compareFiles, replaceDirectory, writeFiles } from "./terraform-files.ts";
+import { pushSkipReason } from "./push.ts";
 import { uploadBundle } from "./upload.ts";
 import { ActionError, createWorkflow, type Host, type Workflow } from "./workflow.ts";
 
 /** Where the receipt bundle goes, under the workspace: for `terragram verify` and upload-artifact. */
 const BUNDLE_DIR = "_diagram";
 
-/** The one event whose model is an approved one, so the only one the bundle is uploaded from. */
+/** The one event whose model can be an approved one, so the only one the bundle is uploaded from (and then only on the default branch). */
 const UPLOAD_EVENT = "push";
 
 /**
@@ -146,15 +147,18 @@ async function execute(host: Host, workflow: Workflow): Promise<number> {
   // A failed upload fails the step, but after the drift check below has had its say: both are reported.
   let uploadFailed = false;
   if (inputs.controlPlaneUrl) {
-    // An allow-list: only a push is the approval of a model. Other events (a pull request, a
-    // workflow_run that checked out a fork's head, an issue comment, a schedule) can run with a
-    // model nobody has merged, and the run token would still carry the repository's identity.
-    if (eventName !== UPLOAD_EVENT) {
-      workflow.notice(
-        eventName === "pull_request"
+    // An allow-list: only a push to the default branch is the approval of a model. Other events
+    // (a pull request, a workflow_run that checked out a fork's head, an issue comment, a schedule)
+    // and pushes to other branches or tags can run with a model nobody has merged, and the run
+    // token would still carry the repository's identity.
+    const skipped =
+      eventName !== UPLOAD_EVENT
+        ? eventName === "pull_request"
           ? "the bundle was not uploaded: a pull request's model is not approved yet. Upload from a push to the default branch."
-          : `the bundle was not uploaded: it is uploaded only from a push, and this run was triggered by ${JSON.stringify(eventName)}. Upload from a push to the default branch.`,
-      );
+          : `the bundle was not uploaded: it is uploaded only from a push, and this run was triggered by ${JSON.stringify(eventName)}. Upload from a push to the default branch.`
+        : pushSkipReason(host);
+    if (skipped) {
+      workflow.notice(skipped);
     } else {
       try {
         const sent = await uploadBundle(
