@@ -31,7 +31,7 @@ You need Node.js 24 or later. Each `cli-v<version>` tag publishes a
 runtime dependencies, beside a `SHA256SUMS` file:
 
 ```bash
-version=0.1.0
+version=0.2.0
 curl --fail --location --proto '=https' --tlsv1.2 --remote-name \
   "https://github.com/hibiscus-ctrl/terragram/releases/download/cli-v${version}/terragram-${version}.mjs"
 echo "<sha256 from the release's SHA256SUMS>  terragram-${version}.mjs" | sha256sum --check --strict
@@ -54,7 +54,7 @@ download, both checks and puts `terragram` on `PATH`; it needs Node 24 on the ru
     node-version: "24"
 - uses: hibiscus-ctrl/terragram/action/install-cli@<full commit SHA>
   with:
-    version: "0.1.0"
+    version: "0.2.0"
     sha256: "<sha256 from the release's SHA256SUMS>"
     # verify-attestation: "true" (default) fails the step when `gh attestation verify` fails
 - run: terragram generate --mermaid diagram.mmd -o infra/
