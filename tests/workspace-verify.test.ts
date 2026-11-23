@@ -171,12 +171,16 @@ describe("evidence bundle", () => {
       ["plan", [1, 2]],
       ["cloud", undefined],
       ["contentHash", 7],
+      ["publicKey", 7],
+      ["signature", { value: "x" }],
     ];
     for (const [field, value] of cases) {
-      const report = await verifyBundle(broken(field, value), { acceptBundledKey: true });
-      assert.equal(report.ok, false, field);
-      assert.equal(report.receipt, null, field);
-      assert.match(report.error ?? "", new RegExp(`no usable ${field}`), field);
+      for (const options of [{ acceptBundledKey: true }, { trustedKeys: ["MCowBQYDK2VwAyEA"] }]) {
+        const report = await verifyBundle(broken(field, value), options);
+        assert.equal(report.ok, false, field);
+        assert.equal(report.receipt, null, field);
+        assert.match(report.error ?? "", new RegExp(`no usable ${field}`), field);
+      }
     }
   });
 

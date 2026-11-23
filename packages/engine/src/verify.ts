@@ -93,6 +93,9 @@ function malformedField(receipt: Partial<Record<keyof EvidenceReceipt, unknown>>
   if (typeof receipt.cloud !== "string") return "cloud";
   if (typeof receipt.contentHash !== "string") return "contentHash";
   if (!Array.isArray(receipt.plan) || !receipt.plan.every((name) => typeof name === "string")) return "plan";
+  // Optional, but a string when present: the signature check reads both as text.
+  if (receipt.publicKey != null && typeof receipt.publicKey !== "string") return "publicKey";
+  if (receipt.signature != null && typeof receipt.signature !== "string") return "signature";
   return null;
 }
 
