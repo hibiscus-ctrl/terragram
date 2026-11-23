@@ -36,7 +36,7 @@ SPDX-FileCopyrightText = "Copyright 2026 Gabriel Ignat"
 SPDX-License-Identifier = "Apache-2.0"
 
 # infraharvest's graph/v1 JSON Schema, copied unchanged from
-# IgnatG/infraharvest schemas/graph-v1.schema.json at commit a51f6e9b (see
+# IgnatG/infraharvest schemas/graph-v1.schema.json at commit 6988dfa4 (see
 # schemas/vendor/infraharvest/README.md). It is Apache-2.0 there, so it stays so here;
 # `terragram graph` reads documents written against it.
 [[annotations]]

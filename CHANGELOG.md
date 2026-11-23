@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `action/install-cli` action that downloads a pinned version, checks its
   SHA-256 and attestation, and puts `terragram` on the runner's PATH.
 - `terragram graph` and the `terragram-engine/graph` renderer: draw an existing estate from infraharvest's
-  `graph/v1` document as SVG, Mermaid or JSON, with scopes, environments and module calls as boxes, findings placed by Terraform address, a diff against an earlier
+  `graph/v1` document as SVG, Mermaid or JSON, with scopes, environments and module calls as boxes, findings placed by Terraform address (told apart by environment and by the root a node was generated in), a diff against an earlier
   document and finding overlays.
 - The Action's `control-plane-url` now uploads the receipt bundle from a push to the default branch: it exchanges the job's GitHub
   identity token (`id-token: write`) for a repository-pinned token and sends the bundle to the

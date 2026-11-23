@@ -33,6 +33,8 @@ export type NormalNode = {
   address?: string;
   /** A module call's address (`module.<name>`), likewise. */
   moduleAddress?: string;
+  /** The root the node was generated in, as the graph kept it (plain, or hashed): the same address in two roots of one environment is two nodes. */
+  root?: string;
   source?: string;
   version?: string;
   /** The key of the module call the resource is in. */
@@ -41,6 +43,8 @@ export type NormalNode = {
 
 export type NormalGraph = {
   idsHashed: boolean;
+  /** Whether the node addresses and roots are kept as they are: a hashed one cannot be compared with another graph's, whose key may differ. */
+  addressesPlain: boolean;
   /** Everything drawn, resources and module calls, by key in key order. */
   nodes: Map<string, NormalNode>;
   /** The references between them, glue folded away, by key in key order. */
@@ -95,8 +99,9 @@ export function normalizeGraph(doc: GraphDocument, glue: Readonly<GlueRule> | fa
       const container = n?.parent === undefined ? "" : (keyOfIndex.get(n.parent) ?? "");
       return `${n?.region ?? ""}|${container}`;
     };
+    const rootOf = (i: number) => doc.nodes[i]?.root ?? "";
     members
-      .sort((a, b) => compareText(tie(a), tie(b)))
+      .sort((a, b) => compareText(tie(a), tie(b)) || compareText(rootOf(a), rootOf(b)))
       .forEach((index, ordinal) => {
         keyOfIndex.set(index, ordinal === 0 ? base : `${base}|#${ordinal}`);
       });
@@ -117,6 +122,7 @@ export function normalizeGraph(doc: GraphDocument, glue: Readonly<GlueRule> | fa
       ...(n.environment !== undefined && { environment: n.environment }),
       ...(n.address !== undefined && { address: n.address }),
       ...(n.module_address !== undefined && { moduleAddress: n.module_address }),
+      ...(n.root !== undefined && { root: n.root }),
       ...(n.source !== undefined && { source: n.source }),
       ...(n.version !== undefined && { version: n.version }),
       ...(container !== undefined && { container }),
@@ -162,5 +168,5 @@ export function normalizeGraph(doc: GraphDocument, glue: Readonly<GlueRule> | fa
     else nodes.set(key, n);
   }
   const sortedEdges = new Map([...edges].sort(([a], [b]) => compareText(a, b)));
-  return { idsHashed: doc.redaction.ids_hashed, nodes, edges: sortedEdges, hidden };
+  return { idsHashed: doc.redaction.ids_hashed, addressesPlain: doc.redaction.addresses === "plain", nodes, edges: sortedEdges, hidden };
 }

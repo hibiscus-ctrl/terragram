@@ -12,10 +12,10 @@ import { describeIssues, GraphDocumentError } from "./schema.ts";
  * Terraform address on a resource or module call (see `redaction.addresses`). So a finding
  * is placed by what it can say:
  *
- * - `type` and `id` (and `account` or `environment`, when given): the finding is on that resource;
+ * - `type` and `id` (and `account`, `environment` or `root`, when given): the finding is on that resource;
  * - an `address` only, as a Terraform review reports it: the one resource or module call
- *   of the graph that has that address (narrowed by `account` and `environment`, since the
- *   same address recurs in each root). An address the graph does not keep (it was hashed or
+ *   of the graph that has that address (narrowed by `account`, `environment` and `root`, since the
+ *   same address recurs in each root, and in each root of an environment). An address the graph does not keep (it was hashed or
  *   dropped), or that more than one node has, is turned into a type and ID by the caller's
  *   `resolveAddress` when it passes one to `projectGraph`, and is otherwise unplaced;
  * - `account` alone, with no address, type or ID: the finding is on that account's scope, which is
@@ -37,6 +37,8 @@ export type GraphFinding = {
   account?: string;
   /** The environment of the root the finding is in, when the review names it. */
   environment?: string;
+  /** The root the finding is in, as the graph names its roots (a path in the output directory, or its hash). */
+  root?: string;
   region?: string;
   address?: string;
 };
@@ -55,6 +57,7 @@ const reviewFindingsSchema = z.object({
         id: text.optional(),
         account: text.optional(),
         environment: text.optional(),
+        root: text.optional(),
         region: text.optional(),
         resource: text.optional(),
         address: text.optional(),
@@ -120,6 +123,7 @@ export function findingsFromReview(input: unknown): GraphFinding[] {
       ...(f.id && { id: f.id }),
       ...(f.account && { account: f.account }),
       ...(f.environment && { environment: f.environment }),
+      ...(f.root && { root: f.root }),
       ...(f.region && { region: f.region }),
       ...(address && { address }),
     };

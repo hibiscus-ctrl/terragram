@@ -133,6 +133,9 @@ describe("graph/v1 schema", () => {
     ["hashed addresses", mutate((d) => { node(d, 1).address = "4f2a9c"; d.redaction = { ids_hashed: true, hash_alg: "hmac-sha256", addresses: "hashed" }; }), true],
     ["an address way that is not plain, hashed or dropped", mutate((d) => { d.redaction = { ids_hashed: false, hash_alg: "hmac-sha256", addresses: "masked" }; }), false],
     ["an empty environment", mutate((d) => { node(d, 1).environment = ""; }), false],
+    ["a root on a resource and on a module call", mutate((d) => { node(d, 0).root = "aws/123456789012/eu-west-1"; node(d, 1).root = "aws/123456789012/eu-west-1"; }), true],
+    ["a hashed root", mutate((d) => { node(d, 1).root = "4f2a9c"; d.redaction = { ids_hashed: true, hash_alg: "hmac-sha256", addresses: "hashed" }; }), true],
+    ["an empty root", mutate((d) => { node(d, 1).root = ""; }), false],
     ["a resource with a module address", mutate((d) => { node(d, 1).module_address = "module.network"; }), false],
     ["a module with a resource address", mutate((d) => { node(d, 0).address = "aws_vpc.this"; }), false],
   ];
@@ -283,6 +286,111 @@ describe("environments", () => {
     assert.equal(diffGraphs(environments, environments).nodes.changed.length, 0);
     const rehashed = { ...environments, nodes: environments.nodes.map((n) => (n.address ? { ...n, address: `h-${n.address}` } : n)) };
     assert.equal(diffGraphs(environments, rehashed).nodes.changed.length, 0);
+  });
+});
+
+describe("roots", () => {
+  const eu1 = "aws/123456789012/eu-west-1";
+  const eu2 = "aws/123456789012/eu-west-2";
+  // The prod roots of one environment in two regions, each with a web server at the same address.
+  const withRoots = (): GraphDocument => {
+    const doc = structuredClone(environments);
+    const web = doc.nodes.find((n) => n.address === "aws_instance.web" && n.environment === "prod");
+    assert.ok(web);
+    doc.nodes = doc.nodes.map((n) => (n.environment === "prod" ? { ...n, root: eu1 } : n));
+    doc.nodes.push({ ...web, region: "eu-west-2", id: "i-0web2", root: eu2 });
+    return doc;
+  };
+  const roots = withRoots();
+  const place = (finding: Omit<GraphFinding, "severity" | "title">, doc: GraphDocument = roots) =>
+    view(doc, { findings: [{ severity: "high", title: "x", ...finding }] });
+  const countOn = (v: GraphView, id: string) => v.nodes.find((n) => n.label === id)?.findings?.count;
+
+  it("tells the same address in two roots of one environment apart, when the finding names the root", () => {
+    const both = place({ address: "aws_instance.web", account: "123456789012", environment: "prod" });
+    assert.equal(both.findings?.unplaced, 1, "two roots of the environment have it");
+    const second = place({ address: "aws_instance.web", account: "123456789012", environment: "prod", root: eu2 });
+    assert.equal(countOn(second, "i-0web2"), 1);
+    assert.equal(countOn(second, "i-0web1"), undefined);
+    assert.equal(second.findings?.unplaced, 0);
+    assert.equal(countOn(place({ address: "aws_instance.web", environment: "prod", root: eu1 }), "i-0web1"), 1);
+    assert.equal(place({ address: "aws_instance.web", environment: "prod", root: "aws/other" }).findings?.unplaced, 1);
+  });
+
+  it("narrows a finding with a type and ID by root", () => {
+    assert.equal(place({ type: "aws_instance", id: "i-0web1", root: eu2 }).findings?.unplaced, 1);
+    assert.equal(countOn(place({ type: "aws_instance", id: "i-0web1", root: eu1 }), "i-0web1"), 1);
+  });
+
+  it("places a finding that names no root as it did before, when the graph names none", () => {
+    assert.equal(countOn(place({ address: "aws_instance.web", environment: "staging" }, environments), "i-0stg1"), 1);
+    assert.equal(place({ address: "aws_instance.web", environment: "prod", root: eu1 }, environments).findings?.unplaced, 1, "no node has a root to match");
+  });
+
+  it("keeps a resource that two roots list at the same type and ID as two nodes, in any order", () => {
+    const twice = (doc: GraphDocument): GraphDocument => ({ ...doc, nodes: doc.nodes.map((n) => (n.id === "i-0web2" ? { ...n, id: "i-0web1", region: "eu-west-1" } : n)) });
+    const doc = twice(roots);
+    const key = (d: GraphDocument) => view(d).nodes.filter((n) => n.label === "i-0web1").length;
+    assert.equal(key(doc), 2);
+    const other = shuffled(doc, 7);
+    assert.equal(renderGraphSvg(view(other)), renderGraphSvg(view(doc)));
+    const placed = place({ address: "aws_instance.web", environment: "prod", root: eu2 }, doc);
+    assert.equal(placed.nodes.filter((n) => n.findings).length, 1);
+  });
+
+  it("shows a node that moved to another root as a change, and a graph that gains roots as none", () => {
+    const moved = { ...roots, nodes: roots.nodes.map((n) => (n.id === "i-0web1" ? { ...n, root: eu2 } : n)) };
+    const diff = diffGraphs(roots, moved);
+    assert.deepEqual(diff.nodes.changed.map((c) => [c.before.root, c.after.root]), [[eu1, eu2]]);
+    assert.equal(view(moved, { base: roots }).nodes.find((n) => n.label === "i-0web1")?.status, "changed");
+    assert.equal(diffGraphs(environments, roots).nodes.changed.length, 0, "a base from before roots is not a move");
+    assert.equal(diffGraphs(roots, environments).nodes.changed.length, 0);
+    assert.equal(diffGraphs(roots, roots).nodes.changed.length, 0);
+  });
+
+  it("compares roots only when both graphs keep them plain", () => {
+    const hash = (doc: GraphDocument, key: string): GraphDocument => ({
+      ...doc,
+      redaction: { ...doc.redaction, addresses: "hashed" },
+      nodes: doc.nodes.map((n) => ({
+        ...n,
+        ...(n.address !== undefined && { address: `${key}${n.address}` }),
+        ...(n.root !== undefined && { root: `${key}${n.root}` }),
+      })),
+    });
+    const moved = { ...roots, nodes: roots.nodes.map((n) => (n.id === "i-0web1" ? { ...n, root: eu2 } : n)) };
+    assert.equal(diffGraphs(roots, moved).nodes.changed.length, 1, "plain against plain, with a real move");
+    assert.equal(diffGraphs(roots, hash(roots, "aa")).nodes.changed.length, 0, "plain against hashed");
+    assert.equal(diffGraphs(hash(roots, "aa"), roots).nodes.changed.length, 0, "hashed against plain");
+    assert.equal(diffGraphs(hash(roots, "aa"), hash(roots, "bb")).nodes.changed.length, 0, "a rotated hash key");
+    assert.equal(diffGraphs(hash(roots, "aa"), hash(moved, "aa")).nodes.changed.length, 0, "hashed against hashed cannot be compared");
+    const dropped: GraphDocument = { ...roots, redaction: { ...roots.redaction, addresses: "dropped" }, nodes: roots.nodes.map(({ root: _root, ...n }) => n) };
+    assert.equal(diffGraphs(roots, dropped).nodes.changed.length, 0, "dropped roots");
+  });
+
+  it("never writes a hostile root unescaped into the SVG or Mermaid", () => {
+    const hostile = "\"><script>alert(1)</script>'`\nroot";
+    const withRoot = (root: string): GraphDocument => ({ ...roots, nodes: roots.nodes.map((n) => (n.root === undefined ? n : { ...n, root })) });
+    const doc = withRoot(hostile);
+    const finding = { severity: "high" as const, title: "x", address: "aws_instance.web", environment: "prod", root: hostile };
+    for (const v of [view(doc), view(doc, { base: withRoot("aws/other") }), view(withRoot("aws/other"), { base: doc }), view(doc, { findings: [finding] })]) {
+      for (const out of [renderGraphSvg(v), renderGraphMermaid(v)]) {
+        assert.ok(!out.includes("<script"), "no script element");
+        assert.ok(!out.includes("alert(1)"), "no part of the root is written out");
+      }
+    }
+  });
+
+  it("draws a graph without roots as before", () => {
+    const stripped = { ...roots, nodes: roots.nodes.map(({ root: _root, ...n }) => n).filter((n) => n.id !== "i-0web2") };
+    assert.equal(renderGraphSvg(view(stripped)), renderGraphSvg(view(environments)));
+    assert.equal(renderGraphMermaid(view(stripped)), renderGraphMermaid(view(environments)));
+  });
+
+  it("reads the root from a review's findings", () => {
+    assert.deepEqual(findingsFromReview({ findings: [{ severity: "low", title: "t", resource: "aws_instance.web", environment: "prod", root: eu2 }] }), [
+      { severity: "low", title: "t", environment: "prod", root: eu2, address: "aws_instance.web" },
+    ]);
   });
 });
 

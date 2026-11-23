@@ -130,10 +130,17 @@ Findings are placed by what `graph/v1` can name: a resource by its `type` and `i
 address when the graph keeps addresses (`redaction.addresses: plain`; a module call by `module.<name>`), a scope
 by its `account`. infraharvest's `ocsf-findings` land on the account of the root they were found in.
 The same address recurs in every root, so a finding with only an address is placed when exactly one node
-has it, narrowed by the finding's `account` and `environment` when it names them. A finding that cannot be
+has it, narrowed by the finding's `account`, `environment` and `root` when it names them (a node's `root` is the
+root it was generated in, so the same address in two roots of one environment, such as two regions, is told apart by it).
+A finding that cannot be
 placed that way (a hashed or dropped address, or an address several nodes share) is counted as not placed,
 even when it names an account, unless the caller resolves it (`resolveAddress`), never guessed at. Only a
 finding that names no resource at all lands on its account's scope.
+
+With `--base`, a node that moved to another root is shown as changed, but only when both graphs keep
+their roots as they are (`redaction.addresses` `plain`). A root move is not shown when either side's roots are hashed or
+dropped, or when either side predates roots: two hash keys cannot be compared, and a graph without roots
+has nothing to compare.
 
 In code, import `terragram-engine/graph`: `parseGraphDocument`, `projectGraph(doc, options)` (a view
 model), `renderGraphSvg(view)`, `renderGraphMermaid(view)` and `diffGraphs(base, head)`.

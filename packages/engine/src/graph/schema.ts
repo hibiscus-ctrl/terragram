@@ -32,6 +32,8 @@ const graphNodeSchema = z
     address: text.optional(),
     /** A module call's address (`module.<name>`), likewise. */
     module_address: text.optional(),
+    /** The root the node was generated in, as a path in the output directory, likewise (hashed, or left out, as the addresses are). */
+    root: text.optional(),
     source: text.optional(),
     version: text.optional(),
     parent: index.optional(),
