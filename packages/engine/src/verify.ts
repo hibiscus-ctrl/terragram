@@ -14,17 +14,20 @@ import {
 /**
  * Offline bundle verification.
  *
- * Runs entirely in the reader's browser with WebCrypto: recompute the hash from the
- * model and plan in the bundle, compare it to the receipt, then check the Ed25519
- * signature against the public key the bundle carries. Nothing here contacts
- * Terragram, which is the only way the claim "an auditor can check this without us"
- * is actually true — including after we are gone.
+ * Runs on WebCrypto: recompute the hash from the model and plan in the bundle,
+ * compare it to the receipt, then check the Ed25519 signature against a public key
+ * the caller trusts (`trustedKeys`). Nothing here contacts Terragram, which is the
+ * only way the claim "an auditor can check this without us" is actually true. A key
+ * carried inside the bundle proves nothing by itself: whoever can alter the bundle can
+ * replace it, so without a trusted key the result is never `ok`, unless the caller
+ * says `acceptBundledKey`.
  */
 
 type VerifyStatus = "pass" | "fail" | "unavailable";
 
 export type VerifyReport = {
-  /** Overall: pass only when the hash matches and any signature present verifies. */
+  /** Overall: true only when the hash matches and the signature verifies against a
+   *  trusted key (or, with `acceptBundledKey`, the bundle's own key or no signature). */
   ok: boolean;
   hash: { status: VerifyStatus; expected: string; actual: string; detail: string };
   signature: { status: VerifyStatus; detail: string };
@@ -58,24 +61,51 @@ function failure(error: string): VerifyReport {
   };
 }
 
+/** A plan file name that stays inside plan/: relative, with no empty or `..` segment and no backslash. */
+function isSafePlanName(name: string): boolean {
+  if (name === "" || name.startsWith("/") || name.includes("\\")) return false;
+  return name.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
+}
+
 /**
  * Why the entries cannot be read as one bundle, or null when they can. Each file is
  * matched by its exact name, so a look-alike such as `old-receipt.json` is never read
- * in place of `receipt.json`; and a name that appears twice, or a plan file in a
- * sub-folder, is refused, since the host showing the bundle and this check could
- * otherwise each pick a different copy.
+ * in place of `receipt.json`; and a name that appears twice is refused, since the host
+ * showing the bundle and this check could otherwise each pick a different copy. Plan
+ * files may sit in sub-folders (a function's handler is `plan/src/<slug>/<file>`), but a
+ * name must stay inside plan/ and, when the receipt records its plan files, be one of
+ * them: a file the hash does not cover is a file nobody vouched for.
  */
 function ambiguousEntry(entries: readonly BundleEntry[]): string | null {
   const seen = new Set<string>();
   for (const { name } of entries) {
     if (seen.has(name)) return `The bundle holds more than one ${name}.`;
     seen.add(name);
-    if (name.startsWith("plan/") && !/^plan\/[^/\\]+$/.test(name)) {
-      return `The bundle's plan files must sit directly in plan/, not ${name}.`;
+    if (name.startsWith("plan/") && !isSafePlanName(name.slice("plan/".length))) {
+      return `The bundle's plan file name is not allowed: ${name}.`;
     }
   }
   return null;
 }
+
+/** A plan file the receipt does not record, which the content hash would not cover. */
+function unrecordedPlanFile(entries: readonly BundleEntry[], recorded: unknown): string | null {
+  if (!Array.isArray(recorded)) return null;
+  const extra = entries.find((e) => e.name.startsWith("plan/") && !recorded.includes(e.name.slice("plan/".length)));
+  return extra ? `The bundle's plan file ${extra.name} is not one the receipt records.` : null;
+}
+
+/** A public key as base64 SPKI, from either that or a PEM block. */
+function spkiOf(key: string): string {
+  return key.replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "").replace(/\s+/g, "");
+}
+
+/** What `verifyBundle` accepts beyond the entries. */
+export type VerifyOptions = {
+  alsoAccept?: readonly string[];
+  trustedKeys?: readonly string[];
+  acceptBundledKey?: boolean;
+};
 
 /**
  * Verify a bundle's entries. `entries` is whatever the reader dropped in: the files
@@ -83,12 +113,14 @@ function ambiguousEntry(entries: readonly BundleEntry[]): string | null {
  * `plan/main.tf`), or a pasted `receipt.json` on its own (in which case the hash cannot
  * be recomputed and we say so rather than reporting a pass). `alsoAccept` names receipt
  * schema ids beyond this build's own that the caller still trusts, such as an older
- * schema name its receipts were written under.
+ * schema name its receipts were written under. `trustedKeys` are the signer public keys
+ * (base64 SPKI, as the receipt carries them, or PEM) the caller obtained apart from the
+ * bundle: the signature must verify against one of them, and the receipt must carry it.
+ * With none, the result is not `ok` unless `acceptBundledKey` is set, which falls back
+ * to checking the signature against the key the bundle carries (that proves integrity
+ * against accident, not who signed) and lets an unsigned receipt pass on its hash.
  */
-export async function verifyBundle(
-  entries: BundleEntry[],
-  options: { alsoAccept?: readonly string[] } = {},
-): Promise<VerifyReport> {
+export async function verifyBundle(entries: BundleEntry[], options: VerifyOptions = {}): Promise<VerifyReport> {
   const ambiguous = ambiguousEntry(entries);
   if (ambiguous) return failure(ambiguous);
   const receiptEntry = entries.find((e) => e.name === "receipt.json");
@@ -100,12 +132,15 @@ export async function verifyBundle(
   } catch {
     return failure("receipt.json is not valid JSON.");
   }
+  if (typeof receipt !== "object" || receipt === null) return failure("receipt.json is not a receipt.");
   // Older receipts still verify: the schema grew a provenance section, but the
   // bytes it hashes and the way it signs them never changed.
   const schema = receipt?.schema as string;
   if (!VERIFIABLE_RECEIPT_SCHEMAS.includes(schema) && !(options.alsoAccept ?? []).includes(schema)) {
     return failure(`Unrecognised receipt schema: ${String(receipt?.schema ?? "missing")}.`);
   }
+  const unrecorded = unrecordedPlanFile(entries, receipt.plan);
+  if (unrecorded) return failure(unrecorded);
 
   /* ------------------------------------------------------------------ hash -- */
 
@@ -122,7 +157,13 @@ export async function verifyBundle(
         "The receipt alone cannot be hash-checked. Provide the whole bundle — model.json and the plan/ files — to confirm the content hash.",
     };
   } else {
-    const parsed = infraModelSchema.safeParse(JSON.parse(modelEntry.content));
+    let modelJson: unknown;
+    try {
+      modelJson = JSON.parse(modelEntry.content);
+    } catch {
+      return failure("model.json is not valid JSON.");
+    }
+    const parsed = infraModelSchema.safeParse(modelJson);
     if (!parsed.success) {
       hash = {
         status: "fail",
@@ -150,19 +191,35 @@ export async function verifyBundle(
 
   /* ------------------------------------------------------------- signature -- */
 
+  const trusted = (options.trustedKeys ?? []).map(spkiOf);
+  const requireTrusted = trusted.length > 0;
   let signature: VerifyReport["signature"];
   if (!receipt.signature || !receipt.publicKey) {
+    signature = receipt.signed
+      ? {
+          status: "fail",
+          detail: "The receipt claims to be signed but carries no signature or key, so there is nothing to check.",
+        }
+      : requireTrusted
+        ? { status: "fail", detail: "This receipt is unsigned, but a signature from a trusted key was required." }
+        : {
+            status: "unavailable",
+            detail:
+              "This receipt is unsigned. The content hash still proves the bundle is unaltered; a signature would also prove who produced it.",
+          };
+  } else if (!requireTrusted && !options.acceptBundledKey) {
     signature = {
       status: "unavailable",
-      detail: receipt.signed
-        ? "The receipt claims a signature but does not carry the key needed to check it."
-        : "This receipt is unsigned. The content hash still proves the bundle is unaltered; a signature would also prove who produced it.",
+      detail:
+        "No trusted key was given, so the signature was not checked: a key carried in the bundle proves nothing about who signed it.",
     };
+  } else if (requireTrusted && !trusted.includes(spkiOf(receipt.publicKey))) {
+    signature = { status: "fail", detail: "The key this receipt carries is not one of the trusted keys." };
   } else {
     try {
       const key = await globalThis.crypto.subtle.importKey(
         "spki",
-        decodeBase64(receipt.publicKey),
+        decodeBase64(spkiOf(receipt.publicKey)),
         { name: "Ed25519" },
         false,
         ["verify"],
@@ -173,23 +230,31 @@ export async function verifyBundle(
         decodeBase64(receipt.signature),
         new TextEncoder().encode(receipt.contentHash),
       );
+      const by = `key ${receipt.keyId ?? "unknown"} on ${receipt.signedAt ?? "an unrecorded date"}`;
       signature = {
         status: valid ? "pass" : "fail",
-        detail: valid
-          ? `Signed by key ${receipt.keyId ?? "unknown"} on ${receipt.signedAt ?? "an unrecorded date"}.`
-          : "The signature does not verify against the key in this bundle.",
+        detail: !valid
+          ? requireTrusted
+            ? "The signature does not verify against the trusted key."
+            : "The signature does not verify against the key in this bundle."
+          : requireTrusted
+            ? `Signed by trusted ${by}.`
+            : `Signed by ${by}; the key came from the bundle itself and was not independently trusted.`,
       };
     } catch {
       signature = {
         status: "unavailable",
         detail:
-          "This browser cannot check Ed25519 signatures. The content hash result above still stands; try a current Chrome, Firefox or Safari to check the signature.",
+          "This runtime cannot check Ed25519 signatures. The content hash result above still stands; try a current Node, Chrome, Firefox or Safari to check the signature.",
       };
     }
   }
 
+  // With trusted keys the signature must pass. Without, the caller has said to go by the
+  // hash and the bundle's own signature, or the result cannot be ok at all.
+  const signatureOk = requireTrusted ? signature.status === "pass" : options.acceptBundledKey === true && signature.status !== "fail";
   return {
-    ok: hash.status === "pass" && signature.status !== "fail",
+    ok: hash.status === "pass" && signatureOk,
     hash,
     signature,
     receipt,

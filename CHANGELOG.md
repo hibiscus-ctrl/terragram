@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Bundle verification (`terragram-engine/verify`) accepts the plan files an AWS function component adds under
+  `plan/src/<slug>/`, so `terragram verify` and any host that verifies a bundle no longer refuse them. A plan
+  file is accepted when its name is a plain relative path inside `plan/` (no `..`, empty segment, absolute path
+  or backslash) and the receipt records it, so a file the content hash does not cover is still refused.
+- `verifyBundle` takes `trustedKeys` (signer public keys obtained apart from the bundle) and no longer reports
+  `ok` on a key the bundle carries itself: without a trusted key the result is not `ok` unless the caller passes
+  `acceptBundledKey`. A receipt that says `signed` but has no signature fails, and a `model.json` that is not JSON
+  returns a failure report instead of rejecting. `terragram verify` behaves as before.
+
 ### Added
 
 - The Action's `control-plane-url` now uploads the receipt bundle: it exchanges the job's GitHub

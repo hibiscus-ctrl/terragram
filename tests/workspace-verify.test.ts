@@ -7,6 +7,8 @@ import { verifyBytes } from "@infraweaver-io/attest/signing";
 import { describe, it } from "node:test";
 
 import { composeFromPrompt } from "terragram-engine/engine";
+import { addNode } from "terragram-engine/inspector";
+import { EMPTY_MODEL } from "terragram-engine/model";
 import { explainModel } from "terragram-engine/explain";
 import { DEFAULT_MANAGED_MODEL } from "terragram-engine/managed-models";
 import { buildBundle, receiptJson } from "terragram-engine/receipt";
@@ -34,6 +36,12 @@ async function signedBundle() {
   };
 }
 
+/** The key a host would hold for the signer, apart from the bundle. */
+function trusting(receipt: { publicKey?: string | null }) {
+  assert.ok(receipt.publicKey);
+  return { trustedKeys: [receipt.publicKey] };
+}
+
 describe("evidence bundle", () => {
   it("carries its own public key so it needs nothing from us", async () => {
     const { receipt } = await signedBundle();
@@ -44,11 +52,68 @@ describe("evidence bundle", () => {
   });
 
   it("verifies offline, with the server unreachable", async () => {
-    const { bundle } = await signedBundle();
-    const report = await verifyBundle(bundle);
+    const { bundle, receipt } = await signedBundle();
+    const report = await verifyBundle(bundle, trusting(receipt));
     assert.equal(report.hash.status, "pass", report.hash.detail);
     assert.equal(report.signature.status, "pass", report.signature.detail);
     assert.equal(report.ok, true);
+  });
+
+  it("is not ok without a trusted key, however well the bundle signs itself", async () => {
+    const { bundle } = await signedBundle();
+    const report = await verifyBundle(bundle);
+    assert.equal(report.hash.status, "pass");
+    assert.equal(report.signature.status, "unavailable");
+    assert.equal(report.ok, false);
+  });
+
+  it("is ok on the bundle's own key only when the caller opts out of trusting one", async () => {
+    const { bundle } = await signedBundle();
+    const report = await verifyBundle(bundle, { acceptBundledKey: true });
+    assert.equal(report.signature.status, "pass");
+    assert.match(report.signature.detail, /not independently trusted/);
+    assert.equal(report.ok, true);
+  });
+
+  it("fails a forged bundle re-signed with the forger's own key", async () => {
+    const genuine = await signedBundle();
+    const forged = await signedBundle();
+    const report = await verifyBundle(forged.bundle, trusting(genuine.receipt));
+    assert.equal(report.hash.status, "pass");
+    assert.equal(report.signature.status, "fail");
+    assert.equal(report.ok, false);
+    // Opting out of trust would have waved it through, which is why it is not the default.
+    assert.equal((await verifyBundle(forged.bundle, { acceptBundledKey: true })).ok, true);
+  });
+
+  it("accepts a trusted key given as a PEM block", async () => {
+    const { bundle, receipt } = await signedBundle();
+    const pem = `-----BEGIN PUBLIC KEY-----\n${receipt.publicKey}\n-----END PUBLIC KEY-----\n`;
+    assert.equal((await verifyBundle(bundle, { trustedKeys: [pem] })).ok, true);
+  });
+
+  it("fails a receipt that says it is signed but carries no signature", async () => {
+    const { bundle } = await signedBundle();
+    const stripped = bundle.map((entry) => {
+      if (entry.name !== "receipt.json") return entry;
+      const receipt = JSON.parse(entry.content);
+      receipt.signature = null;
+      return { ...entry, content: JSON.stringify(receipt) };
+    });
+    for (const options of [{}, { acceptBundledKey: true }]) {
+      const report = await verifyBundle(stripped, options);
+      assert.equal(report.signature.status, "fail");
+      assert.equal(report.ok, false);
+    }
+  });
+
+  it("fails an unsigned receipt when a trusted key is required", async () => {
+    const { receipt: signed } = await signedBundle();
+    const { model } = composeFromPrompt(WEB_PROMPT);
+    const { receipt, terraform } = await buildEvidenceReceipt(model, "azure", "deterministic", "alice", "2026-09-11T00:00:00Z");
+    const report = await verifyBundle(buildBundle(receipt, model, terraform.files), trusting(signed));
+    assert.equal(report.signature.status, "fail");
+    assert.equal(report.ok, false);
   });
 
   it("fails when a single byte of the plan changes", async () => {
@@ -58,7 +123,7 @@ describe("evidence bundle", () => {
         ? { ...entry, content: entry.content.replace("Standard", "Premium") }
         : entry,
     );
-    const report = await verifyBundle(tampered);
+    const report = await verifyBundle(tampered, { acceptBundledKey: true });
     assert.equal(report.hash.status, "fail");
     assert.equal(report.ok, false);
   });
@@ -71,15 +136,24 @@ describe("evidence bundle", () => {
         ? { ...entry, content: JSON.stringify(other, null, 2) }
         : entry,
     );
-    const report = await verifyBundle(tampered);
+    const report = await verifyBundle(tampered, { acceptBundledKey: true });
     assert.equal(report.hash.status, "fail");
     assert.equal(report.ok, false);
+  });
+
+  it("returns a failure report, not a rejection, for a model.json that is not JSON", async () => {
+    const { bundle } = await signedBundle();
+    const broken = bundle.map((entry) => (entry.name === "model.json" ? { ...entry, content: "{ not json" } : entry));
+    const report = await verifyBundle(broken, { acceptBundledKey: true });
+    assert.equal(report.ok, false);
+    assert.equal(report.hash.status, "fail");
+    assert.match(report.error ?? "", /model\.json is not valid JSON/);
   });
 
   it("reports the hash as not-checked when given the receipt alone", async () => {
     const { bundle } = await signedBundle();
     const receiptOnly = bundle.filter((e) => e.name === "receipt.json");
-    const report = await verifyBundle(receiptOnly);
+    const report = await verifyBundle(receiptOnly, { acceptBundledKey: true });
     // Not a pass and not a failure: we were not given enough to check the contents,
     // and saying so is the only honest answer.
     assert.equal(report.hash.status, "unavailable");
@@ -120,7 +194,7 @@ describe("evidence bundle", () => {
 
 describe("bundle zip round-trip", () => {
   it("reads back exactly what a zip writer produced", async () => {
-    const { bundle } = await signedBundle();
+    const { bundle, receipt } = await signedBundle();
     // The reader and the writer are the two halves of the download, and they are the
     // one seam a unit test of either half alone would miss.
     const blob = makeZip(bundle);
@@ -136,7 +210,7 @@ describe("bundle zip round-trip", () => {
       assert.equal(read?.content, original.content, `${original.name} did not survive the zip`);
     }
 
-    const report = await verifyBundle(entries);
+    const report = await verifyBundle(entries, trusting(receipt));
     assert.equal(report.ok, true, report.hash.detail);
   });
 });
@@ -287,7 +361,7 @@ describe("bundle entry names", () => {
     const { bundle } = await signedBundle();
     const receipt = bundle.find((e) => e.name === "receipt.json")!;
     const decoy = { name: "old-receipt.json", content: JSON.stringify({ schema: "something/else" }) };
-    const report = await verifyBundle([decoy, ...bundle]);
+    const report = await verifyBundle([decoy, ...bundle], { acceptBundledKey: true });
     assert.equal(report.ok, true, report.hash.detail);
     assert.equal(report.receipt?.contentHash, JSON.parse(receipt.content).contentHash);
   });
@@ -302,11 +376,39 @@ describe("bundle entry names", () => {
     }
   });
 
-  it("refuses plan files in a sub-folder of plan/", async () => {
+  it("refuses a plan file the receipt does not record, in plan/ or a sub-folder", async () => {
     const { bundle } = await signedBundle();
-    const report = await verifyBundle([...bundle, { name: "plan/extra/main.tf", content: "" }]);
-    assert.equal(report.ok, false);
-    assert.match(report.error ?? "", /directly in plan\//);
+    for (const name of ["plan/extra.tf", "plan/extra/main.tf"]) {
+      const report = await verifyBundle([...bundle, { name, content: "" }], { acceptBundledKey: true });
+      assert.equal(report.ok, false);
+      assert.match(report.error ?? "", /not one the receipt records/);
+    }
+  });
+
+  it("refuses plan file names that leave plan/ or are not plain relative paths", async () => {
+    const { bundle } = await signedBundle();
+    for (const name of ["plan/../model.json", "plan/a/../b.tf", "plan//main.tf", "plan/a//b.tf", "plan//etc/passwd", "plan/a\\b.tf", "plan/./main.tf", "plan/"]) {
+      const report = await verifyBundle([...bundle.filter((e) => e.name !== name), { name, content: "" }], { acceptBundledKey: true });
+      assert.equal(report.ok, false, name);
+      assert.match(report.error ?? "", /plan file name is not allowed/, name);
+    }
+  });
+
+  it("verifies a bundle that carries a function's handler under plan/src/", async () => {
+    const added = addNode(EMPTY_MODEL, "functions");
+    assert.ok(added);
+    const built = await buildEvidenceReceipt(added.model, "aws", "deterministic", "alice", "2026-09-11T00:00:00Z", {
+      signer: testSigner(),
+    });
+    const bundle = buildBundle(built.receipt, added.model, built.terraform.files, built.attestation);
+    assert.ok(bundle.some((e) => e.name === "plan/src/functions/index.mjs"));
+    const report = await verifyBundle(bundle, trusting(built.receipt));
+    assert.equal(report.hash.status, "pass", report.hash.detail);
+    assert.equal(report.ok, true, report.error ?? report.signature.detail);
+
+    // The handler is hashed: changing it breaks the bundle.
+    const tampered = bundle.map((e) => (e.name === "plan/src/functions/index.mjs" ? { ...e, content: `${e.content}// x\n` } : e));
+    assert.equal((await verifyBundle(tampered, trusting(built.receipt))).hash.status, "fail");
   });
 
   it("reads a bundle zipped from its folder", async () => {
@@ -315,7 +417,7 @@ describe("bundle entry names", () => {
     const file = new File([await makeZip(nested).arrayBuffer()], "bundle.zip");
     const entries = await readBundleZip(file);
     assert.deepEqual(entries.map((e) => e.name).sort(), bundle.map((e) => e.name).sort());
-    assert.equal((await verifyBundle(entries)).ok, true);
+    assert.equal((await verifyBundle(entries, { acceptBundledKey: true })).ok, true);
   });
 
   it("keeps names as they are when the entries do not share one folder", async () => {
