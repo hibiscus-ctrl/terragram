@@ -7,7 +7,7 @@ import { type ComposeResult, composeFromPrompt } from "./engine.ts";
 import { EMPTY_MODEL, type InfraModel, infraModelSchema } from "./model.ts";
 import { type Logger, ManagedCapReachedError } from "./ports.ts";
 
-/** Body of POST /api/workspace/translate — a prompt plus the current model. */
+/** A translate request: a prompt plus the current model. */
 export const translateRequestSchema = z.object({
   prompt: z.string().min(1).max(4000),
   model: infraModelSchema.optional(),
