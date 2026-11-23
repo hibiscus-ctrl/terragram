@@ -44,7 +44,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      packages: read # @infraweaver-io/* from GitHub Packages for npm ci
     outputs:
       version: ${{ steps.version.outputs.version }}
     env:
@@ -88,16 +87,9 @@ jobs:
           node-version-file: .nvmrc
           # No cache is restored into a release build.
           package-manager-cache: false
-          # @infraweaver-io/* is on GitHub Packages; this writes the auth line into
-          # the runner npmrc, which NODE_AUTH_TOKEN below fills.
-          registry-url: "https://npm.pkg.github.com"
 
       - name: Install
         run: npm ci
-        env:
-          # This repo is outside the infraweaver-io org, so the job token does not
-          # grant read access to its packages; see ci.yml.
-          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:

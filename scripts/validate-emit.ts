@@ -60,9 +60,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writ
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { errorMessage } from "@infraweaver-io/core/errors";
-import { retry } from "@infraweaver-io/core/retry";
-import { spawn } from "@infraweaver-io/sandbox/subprocess";
+import { errorMessage, retry, spawn } from "./lib/runtime.ts";
 
 import { composeFromPrompt } from "terragram-engine/engine";
 import { type Cloud, CLOUDS, type InfraModel } from "terragram-engine/model";
@@ -534,9 +532,6 @@ if (!existsSync(assessCli)) {
         args: [assessCli, "assess", scanDirOf(item), "--format", "json", "--fail-on", "never"],
         cwd: scanRoot,
         timeout: ASSESS_TIMEOUT_MS,
-        // The CLI prints nothing until it has a verdict, so the idle guard has to
-        // be the wall clock or it fires on a working process.
-        activityTimeout: ASSESS_TIMEOUT_MS,
         killGroup: process.platform !== "win32",
         env: { ...process.env, TF_IN_AUTOMATION: "1" },
       });

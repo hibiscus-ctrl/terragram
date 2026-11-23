@@ -40,8 +40,6 @@ Terragram is a TypeScript monorepo (the engine, the CLI and the GitHub Action). 
 npm ci
 ```
 
-`@infraweaver-io/*` packages come from GitHub Packages, so `npm ci` needs a token with `read:packages` for them. If you can't get one, open the pull request anyway and say so: a maintainer will help get the checks run.
-
 [README.md](README.md) covers what is in the repository and how to build it. [AGENTS.md](AGENTS.md) covers the conventions the code follows (the engine boundary, the CLI and Action rules, the committed Action bundle), and applies to people as much as to coding agents.
 
 ## Checking a change

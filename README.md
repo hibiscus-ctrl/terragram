@@ -66,7 +66,7 @@ You need Node.js 24 or later and npm. Terraform or OpenTofu is only needed for t
 and the generated-Terraform gate.
 
 ```bash
-npm ci            # @infraweaver-io/* come from GitHub Packages, so this needs a read:packages token
+npm ci
 npm run build:packages
 node packages/cli/dist/terragram.mjs --help
 ```
