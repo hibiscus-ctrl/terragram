@@ -8,7 +8,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 6.64"
+      version = "~> 6.73"
     }
   }
 }
@@ -158,7 +158,7 @@ resource "aws_wafv2_web_acl_logging_configuration" "front_door" {
 
 module "app_service" {
   source                      = "terraform-aws-modules/ec2-instance/aws"
-  version                     = "6.4.0"
+  version                     = "6.4.1"
   name                        = "web-${var.name_prefix}-app-service"
   instance_type               = "t3.medium"
   subnet_id                   = var.public_subnet_ids[0]
@@ -206,7 +206,7 @@ module "app_service" {
 
 module "redis_cache" {
   source                     = "terraform-aws-modules/elasticache/aws"
-  version                    = "1.11.1"
+  version                    = "1.11.2"
   replication_group_id       = "redis-${var.name_prefix}-redis-cache"
   engine                     = "redis"
   engine_version             = "7.1"
@@ -220,7 +220,7 @@ module "redis_cache" {
 
 module "postgres" {
   source                                = "terraform-aws-modules/rds/aws"
-  version                               = "7.2.1"
+  version                               = "7.2.2"
   identifier                            = "pg-${var.name_prefix}-postgres"
   engine                                = "postgres"
   engine_version                        = "16"
