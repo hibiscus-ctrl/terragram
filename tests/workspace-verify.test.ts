@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createPublicKey, verify } from "node:crypto";
 import { describe, it } from "node:test";
@@ -11,7 +14,7 @@ import { addNode } from "terragram-engine/inspector";
 import { EMPTY_MODEL } from "terragram-engine/model";
 import { explainModel } from "terragram-engine/explain";
 import { DEFAULT_MANAGED_MODEL } from "terragram-engine/managed-models";
-import { buildBundle, receiptJson } from "terragram-engine/receipt";
+import { type BundleEntry, buildBundle, receiptJson } from "terragram-engine/receipt";
 import { buildEvidenceReceipt, testSigner } from "./helpers/receipt.ts";
 import { readBundleZip, verifyBundle } from "terragram-engine/verify";
 import { makeZip } from "./helpers/zip.ts";
@@ -21,6 +24,18 @@ import { makeZip } from "./helpers/zip.ts";
  * These tests are that promise: build a bundle, verify it with nothing but its own
  * contents, and confirm that changing a single byte of the plan breaks it.
  */
+
+/** The bundle of a `diagram.receipt/v2` receipt, issued before v3 existed, as files. */
+function readFixtureBundle(): BundleEntry[] {
+  const root = fileURLToPath(new URL("./fixtures/receipt-v2/", import.meta.url));
+  const read = (dir: string): BundleEntry[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory()
+        ? read(join(dir, e.name))
+        : [{ name: relative(root, join(dir, e.name)).split("\\").join("/"), content: readFileSync(join(dir, e.name), "utf8") }],
+    );
+  return read(root);
+}
 
 const WEB_PROMPT = "A web app with a Postgres database and Redis cache";
 
@@ -261,7 +276,7 @@ describe("bundle zip round-trip", () => {
 describe("receipt provenance", () => {
   it("says which runtime produced it, and that nothing scanned it", async () => {
     const { receipt } = await signedBundle();
-    assert.equal(receipt.schema, "diagram.receipt/v2");
+    assert.equal(receipt.schema, "diagram.receipt/v3");
     assert.equal(receipt.provenance.node, process.version);
     assert.deepEqual(
       receipt.provenance.scanners,
@@ -331,7 +346,8 @@ describe("receipt provenance", () => {
     ["under the codename schema id", "terragram.receipt/v2"],
   ] as const) {
     it(`verifies a receipt written ${name} only when the caller accepts its id`, async () => {
-      const { bundle } = await signedBundle();
+      // Receipts under these ids were hashed the original way, as the v2 fixture is.
+      const bundle = readFixtureBundle();
       const older = bundle.map((entry) =>
         entry.name === "receipt.json"
           ? { ...entry, content: entry.content.replace("diagram.receipt/v2", oldId) }
@@ -349,7 +365,7 @@ describe("receipt provenance", () => {
     const { bundle } = await signedBundle();
     const foreign = bundle.map((entry) =>
       entry.name === "receipt.json"
-        ? { ...entry, content: entry.content.replace("diagram.receipt/v2", "diagram.receipt/v9") }
+        ? { ...entry, content: entry.content.replace("diagram.receipt/v3", "diagram.receipt/v9") }
         : entry,
     );
     const report = await verifyBundle(foreign);

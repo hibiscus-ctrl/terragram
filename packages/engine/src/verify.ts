@@ -7,7 +7,6 @@ import {
   bundlePlanFiles,
   contentHashFor,
   type EvidenceReceipt,
-  planText,
   VERIFIABLE_RECEIPT_SCHEMAS,
 } from "./receipt.ts";
 
@@ -143,8 +142,9 @@ export async function verifyBundle(entries: BundleEntry[], options: VerifyOption
     return failure("receipt.json is not valid JSON.");
   }
   if (typeof receipt !== "object" || receipt === null) return failure("receipt.json is not a receipt.");
-  // Older receipts still verify: the schema grew a provenance section, but the
-  // bytes it hashes and the way it signs them never changed.
+  // Receipts already issued still verify: `diagram.receipt/v2` (and the older ids a
+  // caller passes in `alsoAccept`) by the original hash, `diagram.receipt/v3` by the
+  // canonical one. The id decides which; an id nobody listed is refused.
   const schema = receipt?.schema as string;
   if (!VERIFIABLE_RECEIPT_SCHEMAS.includes(schema) && !(options.alsoAccept ?? []).includes(schema)) {
     return failure(`Unrecognised receipt schema: ${String(receipt?.schema ?? "missing")}.`);
@@ -184,11 +184,11 @@ export async function verifyBundle(entries: BundleEntry[], options: VerifyOption
         detail: "model.json does not match the model schema.",
       };
     } else {
-      const actual = await contentHashFor({
-        model: parsed.data,
-        cloud: receipt.cloud,
-        planText: planText(planFiles, receipt.plan),
-      });
+      // The receipt's schema id names the serialization it was hashed under.
+      const actual = await contentHashFor(
+        { model: parsed.data, cloud: receipt.cloud, files: planFiles, order: receipt.plan },
+        schema,
+      );
       const match = equalStrings(actual, receipt.contentHash);
       hash = {
         status: match ? "pass" : "fail",

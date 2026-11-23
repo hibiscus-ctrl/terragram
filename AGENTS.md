@@ -80,13 +80,17 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
   `npm run schemas:gen` from `modelDocumentSchema` (`model.ts`) and `evidenceReceiptSchema`
   (`receipt-schema.ts`); CI runs `schemas:check`. Change a document's shape in the zod schema, regenerate
   and commit the schema. `tests/schemas.test.ts` validates real documents with Ajv and ties the
-  receipt schema to the `EvidenceReceipt` type. Ids are `diagram.model/v1` and `diagram.receipt/v2`
+  receipt schema to the `EvidenceReceipt` type. Ids are `diagram.model/v1` and `diagram.receipt/v3`
   (dots, as the receipt always has); `$id` URLs sit under the repository for now and will move with
   the name. `schemas/diagram-bundle-v1.schema.json` is the exception: it describes the document the Action uploads
   (`action/src/upload.ts`), which the Action owns rather than the engine, so it is written by hand, and
   `tests/action-upload.test.ts` validates the document the Action really sends against it; change both together.
-  `terragram verify` still accepts receipts carrying `terragram.receipt/v1` and `/v2`
-  (`VERIFIABLE_RECEIPT_SCHEMAS`); the model reader accepts only `diagram.model/v1`.
+  `diagram.receipt/v3` hashes a JSON canonical form in code-unit order (`canonicalPayload` in `receipt.ts`,
+  worded in the schema); `diagram.receipt/v2` hashed with the process locale and unescaped delimiters.
+  `verifyBundle` and `terragram verify` pick the hash by the receipt's schema id: v3 by the canonical form,
+  `diagram.receipt/v2` and the `terragram.receipt/v1`/`v2` ids by the original one, kept unchanged so issued
+  receipts verify (`VERIFIABLE_RECEIPT_SCHEMAS`); any other id is refused. New receipts are always v3. A change to
+  what the v3 hash covers needs a new schema id, never an edit. The model reader accepts only `diagram.model/v1`.
 - **Codename versus wire names.** `terragram` is the repository, package and command name for now.
   Anything that lands in a document, generated code or a customer's repository says `diagram`:
   the schema ids, the `ManagedBy = "diagram"` tag, the Action's `diagram.json`, `_diagram/` and
@@ -125,7 +129,7 @@ the CLI, so its output is a contract.
   → `normalizeGraph` (index-free keys, glue folded away) → `projectGraph` (the `GraphView`: groups,
   nodes, edges, statuses, finding tallies) → `renderGraphSvg` / `renderGraphMermaid`. Layout is
   dagre as a compound graph, boxes drawn around members (`graph/layout.ts`).
-- **Deterministic by construction.** Every order is by key with `compareText` (never `localeCompare`),
+- **Deterministic by construction.** Every order is by key with `compareText` (never `localeCompare`; the receipt hash, the preview id and the variable order included),
   ids are assigned after sorting, coordinates are rounded, nothing reads the clock or the environment.
   `tests/graph.test.ts` shuffles the input and requires identical bytes; keep that when adding output.
 - **Goldens** are in `tests/fixtures/graph/golden/`; `UPDATE_GOLDEN=1 npm test` rewrites them, then read

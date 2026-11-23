@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { EngineKind } from "./engine.ts";
+import { compareText } from "./graph/normalize.ts";
 import type { Cloud, InfraModel } from "./model.ts";
 import { resourceNodes } from "./model.ts";
 import type { TerraformOutput } from "./terraform.ts";
@@ -48,7 +49,7 @@ function fnv1a(input: string): string {
 
 function canonical(model: InfraModel): string {
   const nodes = [...model.nodes]
-    .sort((a, b) => a.id.localeCompare(b.id))
+    .sort((a, b) => compareText(a.id, b.id))
     .map((n) => `${n.id}:${n.category}:${n.kind}`)
     .join("|");
   const edges = [...model.edges].map((e) => e.id).sort().join("|");

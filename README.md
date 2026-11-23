@@ -12,7 +12,7 @@ Action that keeps a repository's Terraform in line with a model file.
 | [`packages/engine`](packages/engine) | `terragram-engine`: the model and kind registry, the Terraform/OpenTofu emitter, the HCL parser, Mermaid import, verifier, explainer, evidence receipts, layout and SVG export. Pure functions: models, signing and logging come in through ports. |
 | [`packages/cli`](packages/cli) | `terragram`: the command line, bundled into one file with no runtime dependencies. |
 | [`action`](action) | The GitHub Action, one committed bundle, and `action/install-cli`, the action that installs a released command line. See [`action/README.md`](action/README.md). |
-| [`schemas`](schemas) | JSON Schemas for the model (`diagram.model/v1`) and the evidence receipt (`diagram.receipt/v2`), generated from the engine's zod schemas. |
+| [`schemas`](schemas) | JSON Schemas for the model (`diagram.model/v1`) and the evidence receipt (`diagram.receipt/v3`, with `v2` kept for receipts already issued), generated from the engine's zod schemas. |
 | [`scripts`](scripts) | The release gates (generated-Terraform validation, module-interface check, schema generation) and the provider-version refresher. |
 
 The engine is deterministic: keyword compose, HCL parse and template emit, with no model call and no
@@ -148,8 +148,10 @@ model), `renderGraphSvg(view)`, `renderGraphMermaid(view)` and `diffGraphs(base,
 ## Schemas
 
 [`schemas/model.v1.schema.json`](schemas/model.v1.schema.json) and
-[`schemas/receipt.v2.schema.json`](schemas/receipt.v2.schema.json) describe the documents the CLI and
-the Action read and write. They are Apache-2.0, so a tool can build against the formats without taking
+[`schemas/receipt.v3.schema.json`](schemas/receipt.v3.schema.json) describe the documents the CLI and
+the Action read and write. [`schemas/receipt.v2.schema.json`](schemas/receipt.v2.schema.json) stays for the receipts issued before
+v3: they keep verifying, by the content hash they were signed under, and the schema id in a receipt picks which one is used.
+The v3 content hash is spelled out in its schema (JSON canonical form, code-unit order, so it is the same on every machine). They are Apache-2.0, so a tool can build against the formats without taking
 on the AGPL, and they are generated (`npm run schemas:gen`), not hand-written.
 
 ## Scripts
