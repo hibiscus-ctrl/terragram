@@ -92,7 +92,7 @@ What it does, in order: requests the identity token from `ACTIONS_ID_TOKEN_REQUE
 - Both tokens are masked in the log the moment they are received, and neither is written anywhere.
 - The address must be `https://` (a machine's own loopback excepted), with no credentials or query. Redirects are not followed, so a token is never sent to a place you did not name.
 - A request that gets a 429 or a 5xx, or no answer within 30 seconds, is tried up to three times. Anything else fails the step with the control plane's own reason, and with what to fix for a missing `id-token: write`, a plan that does not keep uploads (402) or a token that is not a repository's (403).
-- The upload happens before the drift check reports, so a drifted repository is still reported and still fails the step, and so does a failed upload. Nothing is uploaded from a `pull_request` run (the model is not approved yet, and a fork's pull request gets no identity token anyway): upload from a push to the default branch.
+- The upload happens before the drift check reports, so a drifted repository is still reported and still fails the step, and so does a failed upload. The bundle is uploaded only from a `push` run, and the step says so when it skips the upload. A `pull_request` run (the model is not approved yet, and a fork's pull request gets no identity token anyway), a `workflow_dispatch`, a `schedule`, a `workflow_run` and every other event upload nothing: trigger the workflow from a push to the default branch.
 - The `snapshot-id` output holds the id the control plane kept the bundle under.
 
 ## Inputs

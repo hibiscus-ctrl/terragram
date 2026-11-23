@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hibiscus-ctrl/terragram/schemas/diagram-bundle-v1.schema.json",
+  "title": "Diagram bundle upload (diagram.bundle/v1)",
+  "description": "The JSON document the GitHub Action sends to a control plane's ingest endpoint (gzip-compressed, at most 2 MB on the wire): the files of the evidence bundle it wrote to _diagram/, with the model file's path and the commit the workflow ran on. The entries are the bundle's own files (receipt.json, model.json, explanation.txt, receipt.json.sig and signing-key.pem when signed, and the generated files as plan/<name>); the receiver re-checks them (the receipt's schema, the content hash recomputed from the model and plan, the signatures) rather than trusting anything here.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "diagram.bundle/v1"
+    },
+    "model_path": {
+      "description": "The model file's path in the repository, with forward slashes, as the Action's `model` input names it (relative to the workspace).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600
+    },
+    "sha": {
+      "description": "The commit the workflow ran on, as the Action read it from GITHUB_SHA. A client's claim, left out when the environment does not hold a hexadecimal commit id.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,64}$"
+    },
+    "entries": {
+      "description": "The bundle's files. Names are unique and relative to the bundle.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "content": {
+            "description": "The file's text, byte for byte.",
+            "type": "string"
+          }
+        },
+        "required": ["name", "content"]
+      }
+    }
+  },
+  "required": ["schema", "model_path", "entries"]
+}
