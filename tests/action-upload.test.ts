@@ -68,6 +68,7 @@ function runAction(ws: string, inputs: Record<string, string>, extra: Record<str
     GITHUB_WORKSPACE: ws,
     GITHUB_OUTPUT: outFile,
     GITHUB_EVENT_NAME: "push",
+    GITHUB_EVENT_PATH: pushEvent("refs/heads/main"),
     ...extra,
   };
   for (const [name, value] of Object.entries(inputs)) env[`INPUT_${name.toUpperCase()}`] = value;
@@ -131,6 +132,13 @@ async function fakeControlPlane(plan: Plan = {}) {
 }
 
 type Plane = Awaited<ReturnType<typeof fakeControlPlane>>;
+
+/** The event payload the runner writes for a push of `ref` to a repository whose default branch is `defaultBranch`. */
+function pushEvent(ref: string, defaultBranch = "main"): string {
+  const path = join(scratch, `event-${counter++}.json`);
+  writeFileSync(path, JSON.stringify({ ref, repository: { default_branch: defaultBranch } }));
+  return path;
+}
 
 /** What the runner sets for a job with `id-token: write`, pointed at the fake. */
 const runnerEnv = (plane: Plane, extra: Record<string, string> = {}) => ({
@@ -407,6 +415,45 @@ describe("uploading the bundle", () => {
         assert.equal(result.outputs["snapshot-id"], undefined);
       }));
   }
+
+  it("uploads from a push to a default branch that is not called main", () =>
+    withPlane({}, async (plane) => {
+      const env = runnerEnv(plane, { GITHUB_EVENT_PATH: pushEvent("refs/heads/trunk", "trunk") });
+      const result = await runAction(workspace(), { "control-plane-url": plane.url }, env);
+      assert.equal(result.status, 0, result.stdout);
+      assert.equal(plane.count("/api/v1/ingest/diagram"), 1);
+    }));
+
+  const notDefault: [string, string][] = [
+    ["a push to a feature branch", "refs/heads/feature/x"],
+    ["a push to a branch whose name only starts like the default one", "refs/heads/main-2"],
+    ["a tag push", "refs/tags/v1.0.0"],
+    ["a tag named like the default branch", "refs/tags/main"],
+  ];
+  for (const [name, ref] of notDefault) {
+    it(`uploads nothing from ${name}, and says why`, () =>
+      withPlane({}, async (plane) => {
+        const env = runnerEnv(plane, { GITHUB_EVENT_PATH: pushEvent(ref) });
+        const result = await runAction(workspace(), { "control-plane-url": plane.url }, env);
+        assert.equal(result.status, 0, result.stdout);
+        assert.match(result.stdout, /::notice::the bundle was not uploaded: this push is to .*not the default branch/);
+        assert.equal(plane.seen.length, 0);
+        assert.equal(result.outputs["snapshot-id"], undefined);
+      }));
+  }
+
+  it("uploads nothing from a push whose event payload cannot be read, since the branch is unknown", () =>
+    withPlane({}, async (plane) => {
+      const unreadable = join(scratch, "not-json.json");
+      writeFileSync(unreadable, "{");
+      for (const path of [unreadable, join(scratch, "missing.json"), ""]) {
+        const env = runnerEnv(plane, { GITHUB_EVENT_PATH: path });
+        const result = await runAction(workspace(), { "control-plane-url": plane.url }, env);
+        assert.equal(result.status, 0, result.stdout);
+        assert.match(result.stdout, /::notice::the bundle was not uploaded: the push event does not say which branch/);
+      }
+      assert.equal(plane.seen.length, 0);
+    }));
 
   it("sends a document that validates against schemas/diagram-bundle-v1.schema.json", () =>
     withPlane({}, async (plane) => {

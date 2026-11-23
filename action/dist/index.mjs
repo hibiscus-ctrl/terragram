@@ -24154,6 +24154,27 @@ function replaceDirectory(root, dir, entries) {
   }
 }
 
+// src/push.ts
+import { readFileSync as readFileSync3 } from "node:fs";
+function readPushPayload(path) {
+  if (!path) return null;
+  try {
+    return JSON.parse(readFileSync3(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+function pushSkipReason(host) {
+  const payload = readPushPayload(host.env.GITHUB_EVENT_PATH);
+  const ref = payload?.ref;
+  const defaultBranch = payload?.repository?.default_branch;
+  if (typeof ref !== "string" || typeof defaultBranch !== "string" || defaultBranch === "") {
+    return "the bundle was not uploaded: the push event does not say which branch was pushed or which is the default branch.";
+  }
+  if (ref === `refs/heads/${defaultBranch}`) return null;
+  return `the bundle was not uploaded: this push is to ${JSON.stringify(ref)}, not the default branch (${JSON.stringify(defaultBranch)}). Upload from a push to the default branch.`;
+}
+
 // src/run.ts
 var BUNDLE_DIR = "_diagram";
 var UPLOAD_EVENT = "push";
@@ -24252,10 +24273,9 @@ async function execute(host, workflow) {
   }
   let uploadFailed = false;
   if (inputs.controlPlaneUrl) {
-    if (eventName !== UPLOAD_EVENT) {
-      workflow.notice(
-        eventName === "pull_request" ? "the bundle was not uploaded: a pull request's model is not approved yet. Upload from a push to the default branch." : `the bundle was not uploaded: it is uploaded only from a push, and this run was triggered by ${JSON.stringify(eventName)}. Upload from a push to the default branch.`
-      );
+    const skipped = eventName !== UPLOAD_EVENT ? eventName === "pull_request" ? "the bundle was not uploaded: a pull request's model is not approved yet. Upload from a push to the default branch." : `the bundle was not uploaded: it is uploaded only from a push, and this run was triggered by ${JSON.stringify(eventName)}. Upload from a push to the default branch.` : pushSkipReason(host);
+    if (skipped) {
+      workflow.notice(skipped);
     } else {
       try {
         const sent = await uploadBundle(
