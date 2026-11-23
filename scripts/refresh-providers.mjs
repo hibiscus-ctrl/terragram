@@ -6,7 +6,8 @@
  * Refresh the provider version constraints and the registry module pins the
  * Terraform emitter writes.
  *
- * Run it by hand ahead of a release — never at request time. Generated emission
+ * Run it by hand ahead of a release or from the scheduled workflow
+ * (.github/workflows/refresh-pins.yml) — never at request time. Generated emission
  * must not depend on a network call: a registry outage would change the plan a
  * reviewer sees, and the whole point of the emitter is that it is deterministic.
  *
@@ -19,10 +20,20 @@
  *
  * Providers pin `~> major.minor`; modules pin an EXACT version, because a module
  * call is code Terragram did not write and the evidence receipt records which.
+ *
+ * Every pin stays on the major version it is on now (for a 0.x module, the same minor
+ * version): a major release can rename or remove inputs, which is a change to the
+ * emitter, so it is made by hand. A file whose
+ * pins did not change is left alone (its refreshed date included), so a run with
+ * nothing new leaves the tree clean.
  */
 
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+
+import { MODULE_VERSIONS, MODULE_VERSIONS_REFRESHED } from "../packages/engine/src/module-versions.ts";
+import { PROVIDER_VERSIONS, PROVIDER_VERSIONS_REFRESHED } from "../packages/engine/src/provider-versions.ts";
+import { newestOnLine, renderModuleFile, renderProviderFile } from "./lib/pins.mjs";
 
 const REGISTRY = "https://registry.terraform.io/v1/providers";
 const MODULE_REGISTRY = "https://registry.terraform.io/v1/modules";
@@ -66,16 +77,21 @@ const MODULES = [
   { key: "aws/ec2-instance", source: "terraform-aws-modules/ec2-instance/aws" },
 ];
 
+/** The version in a pin such as `~> 6.64` or `5.18.0`. */
+const versionOf = (pin) => /\d+(\.\d+)*/.exec(pin)?.[0] ?? "";
+
 /**
- * `major` holds a provider on a major line. The Azure Verified Modules the emitter
- * calls pin `azurerm` to 4.x (`< 5.0` / `< 5.1` across the set), so the root
- * follows the newest 4.x rather than the registry's latest; the AWS modules
- * accept the current major. Drop the pin when the AVM set moves.
+ * A provider stays on the major line its pin is on (see the header). azurerm is held on
+ * 4.x on purpose, and has to stay there until the Azure Verified Modules the emitter
+ * calls accept 5.x: they constrain it to `< 5.0` / `< 5.1` across the set, so a root on
+ * 5.x would not initialise. The registry's latest azurerm is a major ahead of this, and
+ * moving to it is a decision about the AVM set, not a refresh. Moving the AWS provider
+ * to a new major is a by-hand change too (edit the pin, then run this).
  */
 const PROVIDERS = [
-  { cloud: "azure", name: "azurerm", source: "hashicorp/azurerm", major: 4 },
+  { cloud: "azure", name: "azurerm", source: "hashicorp/azurerm" },
   { cloud: "aws", name: "aws", source: "hashicorp/aws" },
-];
+].map((p) => ({ ...p, pin: versionOf(PROVIDER_VERSIONS[p.cloud].version) }));
 
 /** `5.5.0` -> `~> 5.5` — pin the major, allow the minor to float. */
 function constraintFor(version) {
@@ -92,108 +108,53 @@ async function registryJson(url) {
   return response.json();
 }
 
-async function latest(source, registry = REGISTRY) {
-  const body = await registryJson(`${registry}/${source}`);
-  if (typeof body.version !== "string") throw new Error(`${source}: no version in response`);
-  return body.version;
+async function latestProvider(source, pin) {
+  const body = await registryJson(`${REGISTRY}/${source}/versions`);
+  return newestOnLine(source, (body.versions ?? []).map((v) => v.version), pin);
 }
 
-/** Newest release on a major line — final releases only, so no `-beta`. */
-async function latestOnMajor(source, major) {
-  const body = await registryJson(`${REGISTRY}/${source}/versions`);
-  const versions = (body.versions ?? [])
-    .map((v) => v.version)
-    .filter((v) => {
-      const [ma, mi, pa] = v.split(".");
-      return Number(ma) === major && /^\d+$/.test(mi ?? "") && /^\d+$/.test(pa ?? "");
-    })
-    .sort((a, b) => {
-      const [, am, ap] = a.split(".").map(Number);
-      const [, bm, bp] = b.split(".").map(Number);
-      return am - bm || ap - bp;
-    });
-  const found = versions.at(-1);
-  if (!found) throw new Error(`${source}: no ${major}.x release on the registry`);
-  return found;
+async function latestModule(source, pin) {
+  const body = await registryJson(`${MODULE_REGISTRY}/${source}/versions`);
+  const versions = (body.modules ?? []).flatMap((m) => (m.versions ?? []).map((v) => v.version));
+  return newestOnLine(source, versions, pin);
+}
+
+/** Write `content(date)` unless it equals what is there with the date it already has. */
+async function writeIfChanged(target, current, content) {
+  const before = await readFile(target, "utf8");
+  if (content(current) === before) {
+    console.log(`unchanged ${target}`);
+    return;
+  }
+  await writeFile(target, content(today), "utf8");
+  console.log(`wrote ${target}`);
 }
 
 const resolved = [];
 for (const provider of PROVIDERS) {
-  const version = provider.major
-    ? await latestOnMajor(provider.source, provider.major)
-    : await latest(provider.source);
+  const version = await latestProvider(provider.source, provider.pin);
   resolved.push({ ...provider, version, constraint: constraintFor(version) });
   console.log(`${provider.source} -> ${version} (${constraintFor(version)})`);
 }
 
 const today = new Date().toISOString().slice(0, 10);
-const entries = resolved
-  .map(
-    (p) =>
-      `  ${p.cloud}: {\n    name: "${p.name}",\n    source: "${p.source}",\n    version: "${p.constraint}",\n  },`,
-  )
-  .join("\n");
-
-const file = `/**
- * Provider version constraints used by the Terraform emitter.
- *
- * GENERATED by \`npm run refresh:providers\` — do not edit by hand. Refreshed
- * ${today} against registry.terraform.io. The emitter reads this file so that
- * generated plans pin a current provider without the request path ever touching
- * the network.
- */
-
-export type ProviderPin = { name: string; source: string; version: string };
-
-export const PROVIDER_VERSIONS: Record<"azure" | "aws", ProviderPin> = {
-${entries}
-};
-
-/** When the pins above were last refreshed (ISO date). Data for hosts and tooling to read, not used by the engine itself. @public */
-export const PROVIDER_VERSIONS_REFRESHED = "${today}";
-`;
+const file = (date) => renderProviderFile(date, resolved);
 
 const target = fileURLToPath(
   new URL("../packages/engine/src/provider-versions.ts", import.meta.url),
 );
-await writeFile(target, file, "utf8");
-console.log(`wrote ${target}`);
+await writeIfChanged(target, PROVIDER_VERSIONS_REFRESHED, file);
 
 const modulePins = [];
 for (const mod of MODULES) {
-  const version = await latest(mod.source, MODULE_REGISTRY);
+  const version = await latestModule(mod.source, MODULE_VERSIONS[mod.key].version);
   modulePins.push({ ...mod, version });
   console.log(`${mod.source} -> ${version} (exact)`);
 }
 
-const moduleEntries = modulePins
-  .map((m) => `  "${m.key}": { source: "${m.source}", version: "${m.version}" },`)
-  .join("\n");
-
-const moduleFile = `/**
- * Registry module pins used by the Terraform emitter.
- *
- * GENERATED by \`npm run refresh:providers\` — do not edit by hand. Refreshed
- * ${today} against registry.terraform.io. Modules are pinned to an EXACT version,
- * unlike providers: a module call is code Terragram did not write, and the evidence
- * receipt records which code, so \`~>\` would make the receipt say less than it
- * should. The emitter reads this file so the request path never touches the network.
- */
-
-export type ModulePin = { source: string; version: string };
-
-export const MODULE_VERSIONS = {
-${moduleEntries}
-} as const satisfies Record<string, ModulePin>;
-
-export type ModuleKey = keyof typeof MODULE_VERSIONS;
-
-/** When the pins above were last refreshed (ISO date). Data for hosts and tooling to read, not used by the engine itself. @public */
-export const MODULE_VERSIONS_REFRESHED = "${today}";
-`;
+const moduleFile = (date) => renderModuleFile(date, modulePins);
 
 const moduleTarget = fileURLToPath(
   new URL("../packages/engine/src/module-versions.ts", import.meta.url),
 );
-await writeFile(moduleTarget, moduleFile, "utf8");
-console.log(`wrote ${moduleTarget}`);
+await writeIfChanged(moduleTarget, MODULE_VERSIONS_REFRESHED, moduleFile);

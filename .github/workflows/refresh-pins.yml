@@ -1,0 +1,172 @@
+name: Refresh pins
+
+# Keeps the provider constraints and registry module pins the emitter writes
+# (packages/engine/src/provider-versions.ts and module-versions.ts) current, so
+# generated Terraform stays on the latest provider without anyone remembering to run
+# `npm run refresh:providers`. Weekly, and on demand.
+#
+# What it moves: patch and minor releases (for a 0.x module, patch releases). A major
+# release can rename or remove inputs, which is a change to the emitter, so every pin
+# stays on the major it is on. azurerm is held on 4.x on purpose: the Azure Verified
+# Modules the emitter calls constrain it to < 5.0 / < 5.1, so a root on 5.x would not
+# initialise. Moving it is a decision about that module set, made by hand.
+#
+# Two jobs. `refresh` holds a read-only token and is the only one that installs or runs
+# repository code: it refreshes the pins, checks every module call against the module's
+# published interface (`npm run check:modules`), rebuilds the Action bundle, runs the
+# typecheck and the tests, and hands the result on as a patch. `propose` holds the write
+# token, installs nothing and runs none of the repository's code: it applies that patch
+# (only to the paths the refresh may touch) and opens or updates the pull request. A
+# refresh that needs a code change fails in `refresh` and opens nothing. When nothing
+# moved, `propose` is skipped.
+#
+# A pull request opened with the job's own token does not start the other workflows.
+# Close and reopen it (or push to its branch) to run them before merging; the repository
+# setting "Allow GitHub Actions to create and approve pull requests" must be on.
+
+on:
+  schedule:
+    # Mondays 06:20 UTC, offset from the top of the hour (Actions schedules queue
+    # hardest at :00).
+    - cron: "20 6 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  BRANCH: chore/refresh-pins
+
+jobs:
+  refresh:
+    name: Refresh provider and module pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.changed.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No npm cache: nothing another workflow could have written is run from here.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      # Nothing in the install needs a lifecycle script (esbuild and @swc/core take their
+      # binaries from platform packages), so no dependency script runs at all.
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Refresh the pins and check them against the registry
+        run: npm run refresh:providers
+
+      - name: Detect a change
+        id: changed
+        run: |
+          if git diff --quiet -- packages/engine/src; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "The pins are current."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat
+          fi
+
+      # The generated Terraform fixture and the Action bundle carry the pins too.
+      - name: Rebuild what carries the pins
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          npm run build:action
+          repo="$PWD"
+          fixture="$(mktemp -d)"
+          cp -R tests/fixtures/action/. "$fixture"
+          (
+            cd "$fixture"
+            export GITHUB_WORKSPACE="$fixture" GITHUB_OUTPUT="$fixture/output" INPUT_MODE=write
+            node "$repo/action/dist/index.mjs"
+          )
+          cp "$fixture/infra/main.tf" tests/fixtures/action/infra/main.tf
+          rm -rf "$fixture"
+
+      - name: Typecheck and test
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          npm run typecheck:all
+          npm test
+
+      - name: Save the change as a patch
+        if: steps.changed.outputs.changed == 'true'
+        run: git diff --binary -- packages/engine/src action/dist tests/fixtures/action > "$RUNNER_TEMP/pins.patch"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.changed.outputs.changed == 'true'
+        with:
+          name: pins-patch
+          path: ${{ runner.temp }}/pins.patch
+          if-no-files-found: error
+          retention-days: 1
+
+  propose:
+    name: Open or update the pull request
+    needs: refresh
+    if: needs.refresh.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # push the branch
+      pull-requests: write # open or update the pull request
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pins-patch
+          path: ${{ runner.temp }}/patch
+
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PATCH: ${{ runner.temp }}/patch/pins.patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          # A refresh only edits or adds regular files under its own paths. Apply the
+          # patch, then judge what git staged rather than the patch text: every staged
+          # entry must be a modified or added file with mode 100644 under those paths.
+          git apply --index "$PATCH"
+          bad=0
+          count=0
+          while IFS= read -r -d '' meta && IFS= read -r -d '' path; do
+            count=$((count + 1))
+            read -r _ new_mode _ _ status <<< "${meta#:}"
+            case "$status" in M | A) ;; *) bad=1 ;; esac
+            [ "$new_mode" = 100644 ] || bad=1
+            case "$path" in
+              *..*) bad=1 ;;
+              packages/engine/src/* | action/dist/* | tests/fixtures/action/*) ;;
+              *) bad=1 ;;
+            esac
+          done < <(git diff --cached --raw -z --no-renames)
+          if [ "$bad" -ne 0 ] || [ "$count" -eq 0 ]; then
+            echo "The patch does more than edit or add regular files under the refresh's own paths." >&2
+            exit 1
+          fi
+          git commit -m "chore(deps): refresh the provider and module pins"
+          # One standing branch: a run that finds an open pull request updates it.
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
+          if [ -z "$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[0].number')" ]; then
+            gh pr create --repo "$REPOSITORY" --head "$BRANCH" --base "$DEFAULT_BRANCH" \
+              --title "chore(deps): refresh the provider and module pins" \
+              --body "Moves the provider constraints and registry module pins the emitter writes to the newest patch and minor releases on the major each is on. Every module call was checked against the module's published interface, the Action bundle and its fixture were regenerated, and the typecheck and tests pass. Majors, and azurerm 5.x, are left for a by-hand change."
+          fi

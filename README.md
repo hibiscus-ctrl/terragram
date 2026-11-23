@@ -161,7 +161,7 @@ on the AGPL, and they are generated (`npm run schemas:gen`), not hand-written.
 | `npm run schemas:gen` / `schemas:check` | Write / verify `schemas/*.schema.json` |
 | `npm run validate:emit` | The generated-Terraform gate: `fmt`, `validate`, tflint, trivy and checkov over every brief and template, then Infraweaver's assess |
 | `npm run check:modules` | Check every pinned module call against its published interface |
-| `npm run refresh:providers` | Refresh the pinned provider and module versions the emitter writes |
+| `npm run refresh:providers` | Refresh the pinned provider and module versions the emitter writes (patch and minor releases on the major each is on; `refresh-pins.yml` runs it weekly and opens a pull request) |
 
 Biome handles linting only (its formatter is off): match the surrounding style by hand.
 
