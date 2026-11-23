@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 import { modelDocumentSchema } from "terragram-engine/model";
-import { evidenceReceiptSchema } from "terragram-engine/receipt-schema";
+import { evidenceReceiptSchema, legacyEvidenceReceiptSchema } from "terragram-engine/receipt-schema";
 
 /** Where the published schemas live, until they have a home of their own. */
 const ID_BASE = "https://github.com/hibiscus-ctrl/terragram/schemas";
@@ -44,11 +44,18 @@ const SCHEMAS: SchemaSpec[] = [
     schema: modelDocumentSchema,
   },
   {
+    file: "receipt.v3.schema.json",
+    title: "Diagram evidence receipt (diagram.receipt/v3)",
+    description:
+      "The receipt.json of an evidence bundle: the content hash over the approved model and plan, the detached signature and the key that checks it, and who produced what.",
+    schema: evidenceReceiptSchema,
+  },
+  {
     file: "receipt.v2.schema.json",
     title: "Diagram evidence receipt (diagram.receipt/v2)",
     description:
       "The receipt.json of an evidence bundle: the content hash over the approved model and plan, the detached signature and the key that checks it, and who produced what.",
-    schema: evidenceReceiptSchema,
+    schema: legacyEvidenceReceiptSchema,
   },
 ];
 

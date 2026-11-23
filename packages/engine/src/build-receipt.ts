@@ -11,7 +11,6 @@ import type { Signer } from "./ports.ts";
 import {
   contentHashFor,
   type EvidenceReceipt,
-  planText,
   RECEIPT_SCHEMA,
   receiptJson,
   type SbomEntry,
@@ -82,7 +81,8 @@ export async function buildEvidenceReceipt(
   const contentHash = await contentHashFor({
     model,
     cloud,
-    planText: planText(terraform.files, order),
+    files: terraform.files,
+    order,
   });
 
   const sbom: SbomEntry[] = [

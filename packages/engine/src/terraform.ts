@@ -13,6 +13,7 @@ import {
   renderDocument,
   stringValue,
 } from "./hcl.ts";
+import { compareText } from "./graph/normalize.ts";
 import { MODULE_VERSIONS } from "./module-versions.ts";
 import {
   AWS_US_EAST_1,
@@ -751,7 +752,7 @@ export function emitTerraform(
   const mainTf = `${header}\n\n${renderDocument([...scaffold, ...resourceBlocks, ...wireBlocks])}`;
 
   const variableBlocks = [...variables.values()]
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .sort((a, b) => compareText(a.name, b.name))
     .map((variable) =>
       block("variable", [variable.name], [
         { key: "type", value: variable.type },

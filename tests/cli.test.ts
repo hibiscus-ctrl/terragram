@@ -4,7 +4,7 @@
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign as signBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -325,10 +325,19 @@ describe("terragram verify", () => {
   });
 
   it("still checks a receipt that carries the codename schema id it was written under", async () => {
-    const { dir } = await bundleDir({ signed: false });
+    // A v2 receipt, as issued before v3, with its signature stripped for --allow-unsigned.
+    const dir = fresh("bundle-v2");
+    cpSync(join(import.meta.dirname, "fixtures", "receipt-v2"), dir, { recursive: true });
     const receipt = join(dir, "receipt.json");
+    const stripped = JSON.parse(readFileSync(receipt, "utf8")) as Record<string, unknown>;
+    stripped.signed = false;
+    stripped.signature = null;
+    stripped.publicKey = null;
+    writeFileSync(receipt, JSON.stringify(stripped, null, 2));
     const body = readFileSync(receipt, "utf8");
     assert.match(body, /"diagram\.receipt\/v2"/);
+    const current = await cli(["verify", dir, "--allow-unsigned"]);
+    assert.equal(current.code, 0, current.stdout);
     for (const oldId of ["terragram.receipt/v1", "terragram.receipt/v2"]) {
       writeFileSync(receipt, body.replace("diagram.receipt/v2", oldId));
       const result = await cli(["verify", dir, "--allow-unsigned"]);

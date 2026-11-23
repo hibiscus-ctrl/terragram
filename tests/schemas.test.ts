@@ -46,7 +46,8 @@ function validator(file: string) {
 }
 
 const validModel = validator("model.v1.schema.json");
-const validReceipt = validator("receipt.v2.schema.json");
+const validReceipt = validator("receipt.v3.schema.json");
+const validLegacyReceipt = validator("receipt.v2.schema.json");
 
 describe("schemas/model.v1.schema.json", () => {
   const WEB = composeFromPrompt("A web app with a Postgres database and Redis cache").model;
@@ -105,7 +106,7 @@ describe("schemas/model.v1.schema.json", () => {
   });
 });
 
-describe("schemas/receipt.v2.schema.json", () => {
+describe("schemas/receipt.v3.schema.json", () => {
   it("accepts the receipts the engine writes, signed or not", async () => {
     const { model } = composeFromPrompt("A web app with a Postgres database and Redis cache");
     const unsigned = await buildEvidenceReceipt(
@@ -150,7 +151,7 @@ describe("schemas/receipt.v2.schema.json", () => {
       { nodeVersion: "v24.0.0" },
     );
     const broken: Array<[string, unknown]> = [
-      ["a different schema id", { ...receipt, schema: "diagram.receipt/v3" }],
+      ["a different schema id", { ...receipt, schema: "diagram.receipt/v2" }],
       ["a malformed hash", { ...receipt, contentHash: "sha256:abc" }],
       ["an unknown tool", { ...receipt, tool: "pulumi" }],
       ["no provenance", { ...receipt, provenance: undefined }],
@@ -165,5 +166,17 @@ describe("schemas/receipt.v2.schema.json", () => {
 
   it("holds the type checks above", () => {
     assert.equal(receiptSchemaMatchesType && provenanceMatchesAttest, true);
+  });
+});
+
+describe("schemas/receipt.v2.schema.json", () => {
+  it("still accepts a receipt issued under diagram.receipt/v2, and refuses a v3 one", () => {
+    const issued = JSON.parse(
+      readFileSync(new URL("./fixtures/receipt-v2/receipt.json", import.meta.url), "utf8"),
+    ) as { schema: string };
+    assert.equal(issued.schema, "diagram.receipt/v2");
+    assert.equal(validLegacyReceipt(issued), true, JSON.stringify(validLegacyReceipt.errors));
+    assert.equal(validReceipt(issued), false);
+    assert.equal(validLegacyReceipt({ ...issued, schema: RECEIPT_SCHEMA }), false);
   });
 });

@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hibiscus-ctrl/terragram/schemas/receipt.v3.schema.json",
+  "title": "Diagram evidence receipt (diagram.receipt/v3)",
+  "description": "The receipt.json of an evidence bundle: the content hash over the approved model and plan, the detached signature and the key that checks it, and who produced what.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "diagram.receipt/v3"
+    },
+    "contentHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 over the UTF-8 bytes of one JSON document, as JSON.stringify writes it: [\"diagram.receipt/v3\", cloud, nodes, edges, plan]. A node is [id, category, kind, label, [[attribute key, value], ...], flagged]; an edge is [source, target, origin]; plan is [[file name, file content or null when missing], ...] in the order of the receipt's plan array. Nodes, edges and attributes are sorted by their JSON text in UTF-16 code-unit order, never a locale's, so the hash is the same on every machine, and every string is escaped, so two different models never serialise alike. Node and edge order, canvas positions and edge ids do not participate."
+    },
+    "signed": {
+      "type": "boolean"
+    },
+    "keyId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "signedAt": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "signature": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "publicKey": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "approver": {
+      "type": "string"
+    },
+    "approvedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cloud": {
+      "type": "string",
+      "enum": [
+        "azure",
+        "aws"
+      ]
+    },
+    "region": {
+      "type": "string"
+    },
+    "regionLabel": {
+      "type": "string"
+    },
+    "tool": {
+      "type": "string",
+      "enum": [
+        "terraform",
+        "opentofu"
+      ]
+    },
+    "engine": {
+      "type": "string",
+      "enum": [
+        "managed",
+        "deterministic"
+      ]
+    },
+    "resourceCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sbom": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ]
+      }
+    },
+    "omitted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "explanation": {
+      "type": "string"
+    },
+    "plan": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "node": {
+          "type": "string"
+        },
+        "scanners": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string"
+              },
+              "version": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "tool",
+              "version"
+            ]
+          }
+        }
+      },
+      "required": [
+        "model",
+        "node",
+        "scanners"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "contentHash",
+    "signed",
+    "keyId",
+    "signedAt",
+    "signature",
+    "publicKey",
+    "approver",
+    "approvedAt",
+    "cloud",
+    "region",
+    "regionLabel",
+    "tool",
+    "engine",
+    "resourceCount",
+    "sbom",
+    "omitted",
+    "explanation",
+    "plan",
+    "provenance"
+  ]
+}

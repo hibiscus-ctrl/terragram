@@ -1,0 +1,11 @@
+This design targets Azure in UK South. It has 4 components.
+
+Requests arrive from the public internet and pass through Front Door + WAF, App Service and Cache for Redis.
+
+Compute: App Service.
+
+Network: Front Door + WAF.
+
+Storage: Cache for Redis and PostgreSQL.
+
+Needs confirming before this becomes code: Cache for Redis — Cache SKU and size were not specified in the prompt. PostgreSQL — Compute tier is ambiguous — confirm sizing before generating.

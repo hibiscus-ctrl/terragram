@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { EngineKind } from "./engine.ts";
+import { compareText } from "./graph/normalize.ts";
 import type { Cloud, InfraModel } from "./model.ts";
 import type { TerraformFile, TerraformTool } from "./terraform.ts";
 
@@ -15,12 +16,19 @@ import type { TerraformFile, TerraformTool } from "./terraform.ts";
  * verifies and the code that signs can never disagree about what was hashed.
  */
 
-export const RECEIPT_SCHEMA = "diagram.receipt/v2" as const;
+export const RECEIPT_SCHEMA = "diagram.receipt/v3" as const;
 
-/** Schemas this build verifies. There has only ever been one way of hashing and
- *  signing a receipt, so a caller holding receipts written under other ids (an older
- *  schema name) may pass those ids to `verifyBundle` and they verify the same way. */
-export const VERIFIABLE_RECEIPT_SCHEMAS: readonly string[] = [RECEIPT_SCHEMA];
+/** The schema id receipts carried until the content hash was made locale- and
+ *  delimiter-safe. They are never written any more, but receipts already issued keep
+ *  verifying, by the algorithm they were signed under. */
+export const LEGACY_RECEIPT_SCHEMA = "diagram.receipt/v2" as const;
+
+/** Schemas this build verifies, each by the hash its id names: `diagram.receipt/v3`
+ *  by the canonical form below, `diagram.receipt/v2` by the original one. A caller
+ *  holding receipts written under other ids (an older schema name) may pass those ids
+ *  to `verifyBundle`, and they verify by the original hash, the only one that existed
+ *  before v3. Any other id is refused. */
+export const VERIFIABLE_RECEIPT_SCHEMAS: readonly string[] = [RECEIPT_SCHEMA, LEGACY_RECEIPT_SCHEMA];
 
 /** The detached signature's filename inside the bundle, and the key beside it.
  *  Named by `@infraweaver-io/attest`'s convention: the signature covers the
@@ -98,12 +106,50 @@ export function receiptJson(receipt: EvidenceReceipt): string {
 }
 
 /**
- * Stable, order-independent serialization of the model. Node ids, categories, kinds,
- * labels, attributes and edges all participate — change any of them and the hash
- * changes — while ordering and canvas positions do not, because moving a box does
- * not change what will be built.
+ * The canonical form the v3 content hash covers: one JSON document, written by
+ * `JSON.stringify`, which escapes every delimiter inside a string, so two different
+ * inputs can never serialise alike.
+ *
+ *     ["diagram.receipt/v3", cloud, nodes, edges, plan]
+ *
+ *     node = [id, category, kind, label, [[attribute key, value], ...], flagged]
+ *     edge = [source, target, origin]
+ *     plan = [[file name, content or null when the file is missing], ...]
+ *
+ * Nodes, edges and attributes are sorted by comparing their JSON text in UTF-16
+ * code-unit order (never a locale's), which is the same on every machine; plan files
+ * stay in the order the receipt records, and are hashed with their names so text cannot
+ * move from one file to the next unnoticed. Ordering and canvas positions of the model
+ * do not participate, because moving a box does not change what will be built; ids,
+ * categories, kinds, labels, attributes, review flags and edges all do. The string is
+ * encoded as UTF-8 and hashed with SHA-256.
  */
-function canonicalModel(model: InfraModel): string {
+function canonicalPayload(args: { model: InfraModel; cloud: Cloud; files: TerraformFile[]; order: string[] }): string {
+  const text = (row: unknown[]) => JSON.stringify(row);
+  const nodes = args.model.nodes
+    .map((n) => [
+      n.id,
+      n.category,
+      n.kind,
+      n.label,
+      Object.entries(n.attributes ?? {}).sort(([a, x], [b, y]) => compareText(a, b) || compareText(x, y)),
+      Boolean(n.flag),
+    ])
+    .sort((a, b) => compareText(text(a), text(b)));
+  const edges = args.model.edges
+    .map((e) => [e.source, e.target, e.origin])
+    .sort((a, b) => compareText(text(a), text(b)));
+  const plan = args.order.map((name) => [name, args.files.find((f) => f.name === name)?.content ?? null]);
+  return JSON.stringify([RECEIPT_SCHEMA, args.cloud, nodes, edges, plan]);
+}
+
+/**
+ * The serialization `diagram.receipt/v2` receipts were signed over, kept exactly so
+ * they still verify. It sorts with the process locale and joins fields with unescaped
+ * `:`, `,`, `=`, `|` and `#`, so it can disagree between machines and let different
+ * models serialise alike; it is read here and never written.
+ */
+function legacyCanonicalModel(model: InfraModel): string {
   const nodes = [...model.nodes]
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((n) => {
@@ -123,17 +169,8 @@ function canonicalModel(model: InfraModel): string {
   return `${nodes}#${edges}`;
 }
 
-/** The exact bytes the content hash covers. */
-function receiptPayload(args: {
-  model: InfraModel;
-  cloud: Cloud;
-  planText: string;
-}): string {
-  return `${canonicalModel(args.model)}::${args.cloud}::${args.planText}`;
-}
-
 /** Plan files concatenated in the order the receipt records. */
-export function planText(files: TerraformFile[], order: string[]): string {
+function planText(files: TerraformFile[], order: string[]): string {
   return order
     .map((name) => files.find((f) => f.name === name)?.content ?? "")
     .join("\n");
@@ -146,12 +183,21 @@ async function sha256Hex(input: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export async function contentHashFor(args: {
-  model: InfraModel;
-  cloud: Cloud;
-  planText: string;
-}): Promise<string> {
-  return `sha256:${await sha256Hex(receiptPayload(args))}`;
+/**
+ * The content hash of a model and its plan under a receipt schema: the canonical form
+ * above for `diagram.receipt/v3` (the default), the original serialization for any other
+ * id the verifier accepts. `files` are the plan files and `order` the names, in the
+ * order the receipt records them.
+ */
+export async function contentHashFor(
+  args: { model: InfraModel; cloud: Cloud; files: TerraformFile[]; order: string[] },
+  schema: string = RECEIPT_SCHEMA,
+): Promise<string> {
+  const payload =
+    schema === RECEIPT_SCHEMA
+      ? canonicalPayload(args)
+      : `${legacyCanonicalModel(args.model)}::${args.cloud}::${planText(args.files, args.order)}`;
+  return `sha256:${await sha256Hex(payload)}`;
 }
 
 /* ------------------------------------------------------------------ bundle -- */

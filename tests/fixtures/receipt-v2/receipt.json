@@ -1,0 +1,67 @@
+{
+  "schema": "diagram.receipt/v2",
+  "contentHash": "sha256:cba5f03ada18ec274944df7a000ab5bcc11ce1b9c9f8d2c4d4f4142a7f50a7d2",
+  "signed": true,
+  "keyId": "fixture-key",
+  "signedAt": "2026-09-11T00:00:00Z",
+  "signature": "M8mfP3QDqkkpMCTecqFEjV12OjGq+y20kAsjN/rYEnEV154FxQfebJUAVI41j2zXuMl2g4JPZfUUwI4vxl4SCg==",
+  "publicKey": "MCowBQYDK2VwAyEAT0RlsxpwW/6SgO1eVB2qiTDzTwkMgZWbjPI5Elbtjm0=",
+  "approver": "alice",
+  "approvedAt": "2026-09-11T00:00:00Z",
+  "cloud": "azure",
+  "region": "uksouth",
+  "regionLabel": "UK South",
+  "tool": "terraform",
+  "engine": "deterministic",
+  "resourceCount": 4,
+  "sbom": [
+    {
+      "name": "diagram-engine",
+      "version": "0.1.0"
+    },
+    {
+      "name": "azurerm",
+      "version": "~> 4.81"
+    },
+    {
+      "name": "Azure/avm-res-network-virtualnetwork/azurerm",
+      "version": "0.22.2"
+    },
+    {
+      "name": "Azure/avm-res-network-privatednszone/azurerm",
+      "version": "0.5.0"
+    },
+    {
+      "name": "Azure/avm-res-cdn-profile/azurerm",
+      "version": "0.1.9"
+    },
+    {
+      "name": "Azure/avm-res-web-serverfarm/azurerm",
+      "version": "2.0.8"
+    },
+    {
+      "name": "Azure/avm-res-web-site/azurerm",
+      "version": "0.22.0"
+    },
+    {
+      "name": "Azure/avm-res-cache-redis/azurerm",
+      "version": "0.4.0"
+    },
+    {
+      "name": "Azure/avm-res-dbforpostgresql-flexibleserver/azurerm",
+      "version": "0.2.3"
+    }
+  ],
+  "omitted": [],
+  "explanation": "This design targets Azure in UK South. It has 4 components.\n\nRequests arrive from the public internet and pass through Front Door + WAF, App Service and Cache for Redis.\n\nCompute: App Service.\n\nNetwork: Front Door + WAF.\n\nStorage: Cache for Redis and PostgreSQL.\n\nNeeds confirming before this becomes code: Cache for Redis — Cache SKU and size were not specified in the prompt. PostgreSQL — Compute tier is ambiguous — confirm sizing before generating.",
+  "plan": [
+    "main.tf",
+    "variables.tf",
+    "outputs.tf"
+  ],
+  "provenance": {
+    "model": null,
+    "node": "v24.22.3",
+    "scanners": []
+  }
+}

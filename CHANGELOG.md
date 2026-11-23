@@ -39,6 +39,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   comment marker and heading. `terragram verify` still accepts receipts that
   carry the `terragram.receipt/v1` and `terragram.receipt/v2` ids. The
   repository, packages and `terragram` command keep their names.
+- Receipts are written as `diagram.receipt/v3`, whose content hash no longer depends on the machine or on how fields
+  are joined: nodes, edges and attributes are sorted in code-unit order (not by the process locale, which could make
+  two machines hash the same model differently) and the model and plan are serialised as one JSON document, so two
+  different models cannot hash alike, and plan text cannot move between files. `verifyBundle` and `terragram verify`
+  still verify `diagram.receipt/v2` receipts, and the older `terragram.receipt` ids, by the hash they were signed under;
+  the receipt's schema id picks the hash, and an unknown id is refused. `schemas/receipt.v3.schema.json` is new and
+  describes the hash; `receipt.v2.schema.json` is unchanged. The preview id and the variable order in generated
+  Terraform also sort in code-unit order (no change to any generated file).
+- `contentHashFor` takes the plan files and their order (and optionally the schema id) instead of the joined plan
+  text, and `planText` is no longer exported.
 
 ### Removed
 

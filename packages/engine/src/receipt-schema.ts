@@ -4,17 +4,19 @@
 import { z } from "zod";
 
 import { CLOUDS } from "./model.ts";
-import { RECEIPT_SCHEMA } from "./receipt.ts";
+import { LEGACY_RECEIPT_SCHEMA, RECEIPT_SCHEMA } from "./receipt.ts";
 
 /**
  * The evidence receipt as a schema: the contract `receipt.json` keeps, written so a
- * reader who has never seen `receipt.ts` can validate one. `schemas/receipt.v2.schema.json`
+ * reader who has never seen `receipt.ts` can validate one. `schemas/receipt.v3.schema.json`
  * is generated from this (`npm run schemas:gen`), and a test holds it two-way
  * assignable to the `EvidenceReceipt` type, so neither can change without the other.
+ * `schemas/receipt.v2.schema.json` stays published for the receipts already issued under
+ * `diagram.receipt/v2`: the same document, whose content hash is the original one.
  *
- * Reading is not what the verifier does with it: `verifyBundle` accepts v1 receipts
- * too and judges the hash and signature itself. This describes a receipt this build
- * writes.
+ * Reading is not what the verifier does with it: `verifyBundle` accepts v2 and older
+ * receipts too and judges the hash and signature itself. This describes a receipt this
+ * build writes.
  */
 
 const hexHash = z.string().regex(/^sha256:[0-9a-f]{64}$/, "sha256: followed by 64 hex digits");
@@ -23,10 +25,17 @@ const isoDateTime = z
   .refine((value) => !Number.isNaN(Date.parse(value)), "an ISO 8601 date-time")
   .meta({ format: "date-time" });
 
-export const evidenceReceiptSchema = z.object({
-  schema: z.literal(RECEIPT_SCHEMA),
-  /** SHA-256 over the canonical model, the cloud and the plan files, in `plan` order. */
-  contentHash: hexHash,
+/** The v3 content hash, as the published schema words it. The form itself is defined
+ *  (and commented) beside the code that computes it, `canonicalPayload` in `receipt.ts`. */
+const CONTENT_HASH_V3 =
+  'SHA-256 over the UTF-8 bytes of one JSON document, as JSON.stringify writes it: ["diagram.receipt/v3", cloud, nodes, edges, plan]. ' +
+  "A node is [id, category, kind, label, [[attribute key, value], ...], flagged]; an edge is [source, target, origin]; " +
+  "plan is [[file name, file content or null when missing], ...] in the order of the receipt's plan array. " +
+  "Nodes, edges and attributes are sorted by their JSON text in UTF-16 code-unit order, never a locale's, so the hash " +
+  "is the same on every machine, and every string is escaped, so two different models never serialise alike. " +
+  "Node and edge order, canvas positions and edge ids do not participate.";
+
+const receiptBody = {
   /** Whether `signature` is present. A receipt never claims a signature it lacks. */
   signed: z.boolean(),
   keyId: z.string().nullable(),
@@ -56,4 +65,18 @@ export const evidenceReceiptSchema = z.object({
     node: z.string(),
     scanners: z.array(z.object({ tool: z.string(), version: z.string().nullable() })),
   }),
+};
+
+/** A receipt this build writes (`diagram.receipt/v3`). */
+export const evidenceReceiptSchema = z.object({
+  schema: z.literal(RECEIPT_SCHEMA),
+  contentHash: hexHash.meta({ description: CONTENT_HASH_V3 }),
+  ...receiptBody,
+});
+
+/** A receipt as issued under `diagram.receipt/v2`, whose content hash is the original. */
+export const legacyEvidenceReceiptSchema = z.object({
+  schema: z.literal(LEGACY_RECEIPT_SCHEMA),
+  contentHash: hexHash,
+  ...receiptBody,
 });

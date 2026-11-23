@@ -11,6 +11,11 @@ var __export = (target, all) => {
 // src/run.ts
 import { relative as relative4, sep as sep2 } from "node:path";
 
+// ../packages/engine/src/graph/normalize.ts
+function compareText(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 // ../node_modules/zod/v4/classic/external.js
 var external_exports = {};
 __export(external_exports, {
@@ -22655,7 +22660,7 @@ function assessFeasibility(model, cloud) {
 }
 
 // ../packages/engine/src/receipt.ts
-var RECEIPT_SCHEMA = "diagram.receipt/v2";
+var RECEIPT_SCHEMA = "diagram.receipt/v3";
 var RECEIPT_FILE = "receipt.json";
 var RECEIPT_SIGNATURE_FILE = "receipt.json.sig";
 var SIGNING_KEY_FILE = "signing-key.pem";
@@ -22663,16 +22668,27 @@ function receiptJson(receipt) {
   return `${JSON.stringify(receipt, null, 2)}
 `;
 }
-function canonicalModel(model) {
+function canonicalPayload(args) {
+  const text = (row) => JSON.stringify(row);
+  const nodes = args.model.nodes.map((n) => [
+    n.id,
+    n.category,
+    n.kind,
+    n.label,
+    Object.entries(n.attributes ?? {}).sort(([a, x], [b, y]) => compareText(a, b) || compareText(x, y)),
+    Boolean(n.flag)
+  ]).sort((a, b) => compareText(text(a), text(b)));
+  const edges = args.model.edges.map((e) => [e.source, e.target, e.origin]).sort((a, b) => compareText(text(a), text(b)));
+  const plan = args.order.map((name) => [name, args.files.find((f) => f.name === name)?.content ?? null]);
+  return JSON.stringify([RECEIPT_SCHEMA, args.cloud, nodes, edges, plan]);
+}
+function legacyCanonicalModel(model) {
   const nodes = [...model.nodes].sort((a, b) => a.id.localeCompare(b.id)).map((n) => {
     const attrs = n.attributes ? Object.entries(n.attributes).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join(",") : "";
     return `${n.id}:${n.category}:${n.kind}:${n.label}:${attrs}:${n.flag ? "flagged" : "clear"}`;
   }).join("|");
   const edges = [...model.edges].map((e) => `${e.source}>${e.target}:${e.origin}`).sort().join("|");
   return `${nodes}#${edges}`;
-}
-function receiptPayload(args) {
-  return `${canonicalModel(args.model)}::${args.cloud}::${args.planText}`;
 }
 function planText(files, order) {
   return order.map((name) => files.find((f) => f.name === name)?.content ?? "").join("\n");
@@ -22682,8 +22698,9 @@ async function sha256Hex(input3) {
   const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-async function contentHashFor(args) {
-  return `sha256:${await sha256Hex(receiptPayload(args))}`;
+async function contentHashFor(args, schema = RECEIPT_SCHEMA) {
+  const payload = schema === RECEIPT_SCHEMA ? canonicalPayload(args) : `${legacyCanonicalModel(args.model)}::${args.cloud}::${planText(args.files, args.order)}`;
+  return `sha256:${await sha256Hex(payload)}`;
 }
 function buildBundle(receipt, model, files, attestation) {
   return [
@@ -23204,7 +23221,7 @@ function emitTerraform(model, cloud, tool = "terraform") {
   const mainTf = `${header}
 
 ${renderDocument([...scaffold, ...resourceBlocks, ...wireBlocks])}`;
-  const variableBlocks = [...variables.values()].sort((a, b) => a.name.localeCompare(b.name)).map(
+  const variableBlocks = [...variables.values()].sort((a, b) => compareText(a.name, b.name)).map(
     (variable) => block("variable", [variable.name], [
       { key: "type", value: variable.type },
       { key: "description", value: variable.description ? quote(variable.description) : void 0 },
@@ -23253,7 +23270,8 @@ async function buildEvidenceReceipt(model, cloud, engine, approver, nowIso, opti
   const contentHash = await contentHashFor({
     model,
     cloud,
-    planText: planText(terraform.files, order)
+    files: terraform.files,
+    order
   });
   const sbom = [
     { name: ENGINE_NAME, version: ENGINE_VERSION },
