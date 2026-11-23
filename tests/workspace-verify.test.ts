@@ -155,6 +155,35 @@ describe("evidence bundle", () => {
     assert.match(report.error ?? "", /model\.json is not valid JSON/);
   });
 
+  it("returns a failure report, not a rejection, for a receipt without a usable plan, cloud or hash", async () => {
+    const { bundle } = await signedBundle();
+    const broken = (field: string, value: unknown) =>
+      bundle.map((entry) => {
+        if (entry.name !== "receipt.json") return entry;
+        const receipt = JSON.parse(entry.content) as Record<string, unknown>;
+        if (value === undefined) delete receipt[field];
+        else receipt[field] = value;
+        return { ...entry, content: JSON.stringify(receipt) };
+      });
+    const cases: [string, unknown][] = [
+      ["plan", undefined],
+      ["plan", "main.tf"],
+      ["plan", [1, 2]],
+      ["cloud", undefined],
+      ["contentHash", 7],
+      ["publicKey", 7],
+      ["signature", { value: "x" }],
+    ];
+    for (const [field, value] of cases) {
+      for (const options of [{ acceptBundledKey: true }, { trustedKeys: ["MCowBQYDK2VwAyEA"] }]) {
+        const report = await verifyBundle(broken(field, value), options);
+        assert.equal(report.ok, false, field);
+        assert.equal(report.receipt, null, field);
+        assert.match(report.error ?? "", new RegExp(`no usable ${field}`), field);
+      }
+    }
+  });
+
   it("reports the hash as not-checked when given the receipt alone", async () => {
     const { bundle } = await signedBundle();
     const receiptOnly = bundle.filter((e) => e.name === "receipt.json");
