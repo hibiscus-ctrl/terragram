@@ -141,7 +141,9 @@ export async function verify(argv: string[], io: Io): Promise<number> {
 
   const receiptPath = isDirectory(io, target) ? join(target, "receipt.json") : target;
   const entries = bundleEntries(io, receiptPath);
-  const report = await verifyBundle(entries, { alsoAccept: LEGACY_RECEIPT_SCHEMAS });
+  // The CLI judges the signature itself, against a key from outside the bundle (below), and reads
+  // only the hash and the receipt from this report, so it opts out of the engine's key handling.
+  const report = await verifyBundle(entries, { alsoAccept: LEGACY_RECEIPT_SCHEMAS, acceptBundledKey: true });
   if (report.error || !report.receipt) throw new CommandError(report.error ?? "receipt.json could not be read");
   const receipt = report.receipt;
   const receiptBytes = entries[0]?.content ?? "";
