@@ -88,9 +88,16 @@ function ambiguousEntry(entries: readonly BundleEntry[]): string | null {
   return null;
 }
 
+/** The first field a verifiable receipt must carry that this one lacks or holds in the wrong shape. */
+function malformedField(receipt: Partial<Record<keyof EvidenceReceipt, unknown>>): string | null {
+  if (typeof receipt.cloud !== "string") return "cloud";
+  if (typeof receipt.contentHash !== "string") return "contentHash";
+  if (!Array.isArray(receipt.plan) || !receipt.plan.every((name) => typeof name === "string")) return "plan";
+  return null;
+}
+
 /** A plan file the receipt does not record, which the content hash would not cover. */
-function unrecordedPlanFile(entries: readonly BundleEntry[], recorded: unknown): string | null {
-  if (!Array.isArray(recorded)) return null;
+function unrecordedPlanFile(entries: readonly BundleEntry[], recorded: readonly string[]): string | null {
   const extra = entries.find((e) => e.name.startsWith("plan/") && !recorded.includes(e.name.slice("plan/".length)));
   return extra ? `The bundle's plan file ${extra.name} is not one the receipt records.` : null;
 }
@@ -139,6 +146,8 @@ export async function verifyBundle(entries: BundleEntry[], options: VerifyOption
   if (!VERIFIABLE_RECEIPT_SCHEMAS.includes(schema) && !(options.alsoAccept ?? []).includes(schema)) {
     return failure(`Unrecognised receipt schema: ${String(receipt?.schema ?? "missing")}.`);
   }
+  const malformed = malformedField(receipt);
+  if (malformed) return failure(`receipt.json has no usable ${malformed}.`);
   const unrecorded = unrecordedPlanFile(entries, receipt.plan);
   if (unrecorded) return failure(unrecorded);
 
