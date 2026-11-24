@@ -4,6 +4,8 @@ This repository holds the TypeScript engine that does it, a command line over th
 Action that keeps a repository's Terraform in line with a model file.
 
 > Licensed under [AGPL-3.0-only](./LICENSE). The JSON Schemas under [`schemas/`](schemas/) are Apache-2.0.
+>
+> A commercial licence is also available for organisations that cannot use Terragram under the AGPL, for example to embed it in a closed-source product or to run a modified version as a service without publishing the changes. Contact hello@infraweaver.io.
 
 ## What is here
 
