@@ -113,14 +113,29 @@ jobs:
               const commits = await github.paginate(github.rest.pulls.listCommits, { owner, repo, pull_number: number, per_page: 100 });
               const users = new Map();
               const unknown = new Set();
+              const exempt = (login) => bots.has(login) || holders.has(login);
+              // The opener is the one identity GitHub verifies, so they sign
+              // unless they are exempt themselves.
+              if (!exempt(pr.user.login)) {
+                users.set(pr.user.login, pr.user.id);
+              }
+              // A commit's author can be set to anyone's address, so a commit
+              // claiming an exempt account is only exempt when that account
+              // opened the pull request or GitHub verified the commit's signature.
               for (const c of commits) {
                 if (c.author && c.author.login) {
-                  if (!bots.has(c.author.login) && !holders.has(c.author.login)) {
+                  const vouched = pr.user.login === c.author.login || (c.commit.verification && c.commit.verification.verified);
+                  if (!(exempt(c.author.login) && vouched)) {
                     users.set(c.author.login, c.author.id);
                   }
                 } else {
                   unknown.add(quoted(c.commit.author ? c.commit.author.name : c.sha));
                 }
+              }
+              // The commits API stops at 250; fail closed rather than judge a
+              // pull request on the commits it happened to return.
+              if (commits.length !== pr.commits) {
+                unknown.add(`${pr.commits - commits.length} commits that could not be listed`);
               }
               return { head: pr.head.sha, users, unknown };
             }
