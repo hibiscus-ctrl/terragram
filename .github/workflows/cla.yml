@@ -124,7 +124,12 @@ jobs:
               // opened the pull request or GitHub verified the commit's signature.
               for (const c of commits) {
                 if (c.author && c.author.login) {
-                  const vouched = pr.user.login === c.author.login || (c.commit.verification && c.commit.verification.verified);
+                  // A maintainer who opened the pull request vouches for commits by the
+                  // other maintainer accounts, which are the same owner.
+                  const vouched =
+                    pr.user.login === c.author.login ||
+                    (holders.has(pr.user.login) && holders.has(c.author.login)) ||
+                    (c.commit.verification && c.commit.verification.verified);
                   if (!(exempt(c.author.login) && vouched)) {
                     users.set(c.author.login, c.author.id);
                   }
