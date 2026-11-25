@@ -1,0 +1,257 @@
+{
+  "schema": "infraharvest/graph/v1",
+  "run_id": "5c1e9a02-7d34-4b8e-9f10-2a6b8c4d0e12",
+  "generated_at": "2026-11-25T09:00:00Z",
+  "tool": {
+    "name": "infraharvest",
+    "version": "0.5.0"
+  },
+  "cloud": "aws",
+  "nodes": [
+    {
+      "kind": "resource",
+      "type": "aws_ecs_service",
+      "id": "3b6743cc9f902b0200abf53a1319f055bf190980edb26692cb2ccc1f2ca4bdda",
+      "address": "434b2b422f0bb829004c11f92702d1d10c4138a6dde9c4fc7d09f1fdb8b062ad",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "98e1a2b0d6e51997f20a58d8fc84f778b2802762986bfc0b2d4e08eea9342fb8"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_db_instance",
+      "id": "ff957e520f8ec14aa3c2ffd5bc40fe29d2a4e3bd87a282d201eb77f719b9e7ce",
+      "address": "b6f5a63e1c59192f7cbb25c3554656334fde59e6570ec49d106585ce3f003012",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "98e1a2b0d6e51997f20a58d8fc84f778b2802762986bfc0b2d4e08eea9342fb8"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group",
+      "id": "d16091bd1278852470a2d64bcc3541c4fb015ad785f83393a5b79a159f13e5f1",
+      "address": "c323e3a8a2cb98b99036eb1155130e120c1061c1d8b603a4a7dabd9063ee84e0",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "98e1a2b0d6e51997f20a58d8fc84f778b2802762986bfc0b2d4e08eea9342fb8"
+    },
+    {
+      "kind": "module",
+      "source": "terraform-aws-modules/vpc/aws",
+      "version": "5.13.0",
+      "module_address": "917bacdf3f1d9b536140e4e5bdc2f7dd522d5d1bdd85ade9b8957b0aa8bbfeb7",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "98e1a2b0d6e51997f20a58d8fc84f778b2802762986bfc0b2d4e08eea9342fb8"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_vpc",
+      "id": "e23ef3230f7de9198172e1a513ec8a2c21fd9c44af8877f1f3359d3c9e7dcd3c",
+      "address": "978f1e835f3954fcc8b1c1d9c027e8a5d3254a3b2bb438c8ad679bfc7849dbb9",
+      "parent": 3,
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "98e1a2b0d6e51997f20a58d8fc84f778b2802762986bfc0b2d4e08eea9342fb8"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "9dda66f85eda9cae3286802986f3430fa1c497abbc42d37b0632450a863bd408",
+      "address": "1dbbbc32cc27b9d61cbe8e3f54ac2c072859da5c81257904440572bab8b98920",
+      "parent": 3,
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "98e1a2b0d6e51997f20a58d8fc84f778b2802762986bfc0b2d4e08eea9342fb8"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role",
+      "id": "1f1a01a35cb666d5beac5ee88e230a76e7fbc2cd090e9a681657319345a1a951",
+      "address": "470dd6e37d0f582c2994b35f40e0ff93102b00e5a87af0ca3315e706f17c9e04",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "98e1a2b0d6e51997f20a58d8fc84f778b2802762986bfc0b2d4e08eea9342fb8"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role_policy_attachment",
+      "id": "4988b33bbb93e38f3a38333f15812f6e99a6bb531065d9d6fbfb04e5237f2053",
+      "address": "1d6726146a701468e38aefb5cf38fb65405589546153dea6ba93bb064b1d8ded",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "98e1a2b0d6e51997f20a58d8fc84f778b2802762986bfc0b2d4e08eea9342fb8"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_ecs_service",
+      "id": "8b664b21661bd9aa220033071949c04f1c343feac7ffbb5d6beb671b088b9c99",
+      "address": "434b2b422f0bb829004c11f92702d1d10c4138a6dde9c4fc7d09f1fdb8b062ad",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "b2bc1013ef957e7f3c22d841c1db5d18a699a106fcd70a8be192445b5f63eef4"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_db_instance",
+      "id": "c4db1da75d7b310d69920c5734d3eb123fc5dd4e910dc1225f03649f7cf58ae8",
+      "address": "b6f5a63e1c59192f7cbb25c3554656334fde59e6570ec49d106585ce3f003012",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "b2bc1013ef957e7f3c22d841c1db5d18a699a106fcd70a8be192445b5f63eef4"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group",
+      "id": "fad12c85388750a0abd8babe7e07eabc2a3c72cadd163a98e9d2d192b7360158",
+      "address": "c323e3a8a2cb98b99036eb1155130e120c1061c1d8b603a4a7dabd9063ee84e0",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "b2bc1013ef957e7f3c22d841c1db5d18a699a106fcd70a8be192445b5f63eef4"
+    },
+    {
+      "kind": "module",
+      "source": "terraform-aws-modules/vpc/aws",
+      "version": "5.13.0",
+      "module_address": "917bacdf3f1d9b536140e4e5bdc2f7dd522d5d1bdd85ade9b8957b0aa8bbfeb7",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "b2bc1013ef957e7f3c22d841c1db5d18a699a106fcd70a8be192445b5f63eef4"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_vpc",
+      "id": "36309bd55aceaca246853cc5a30fa67c243c0d7300939fa4e7a0c0dc0a8786ac",
+      "address": "978f1e835f3954fcc8b1c1d9c027e8a5d3254a3b2bb438c8ad679bfc7849dbb9",
+      "parent": 11,
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "b2bc1013ef957e7f3c22d841c1db5d18a699a106fcd70a8be192445b5f63eef4"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "70e9f3b694491ce1bed8fee9ee19bbe80957f2c498d2a7178ee17d51ae6e6ba3",
+      "address": "1dbbbc32cc27b9d61cbe8e3f54ac2c072859da5c81257904440572bab8b98920",
+      "parent": 11,
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "b2bc1013ef957e7f3c22d841c1db5d18a699a106fcd70a8be192445b5f63eef4"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role",
+      "id": "f9959f00d9cc70abc998d731a02764d37d80855840146ea9efc69ad9076e95a4",
+      "address": "470dd6e37d0f582c2994b35f40e0ff93102b00e5a87af0ca3315e706f17c9e04",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "b2bc1013ef957e7f3c22d841c1db5d18a699a106fcd70a8be192445b5f63eef4"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role_policy_attachment",
+      "id": "f5bc48ee376bdd05d3c0c218a4d4254b0bbd797703d6714893f59dcc4b9f9a21",
+      "address": "1d6726146a701468e38aefb5cf38fb65405589546153dea6ba93bb064b1d8ded",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "b2bc1013ef957e7f3c22d841c1db5d18a699a106fcd70a8be192445b5f63eef4"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_ecr_repository",
+      "id": "797f1072f14a380184a4cbe0d8f311ced1c77a04b0d9ab5c9255422005b5cfa8",
+      "address": "5701bb0b0e748e468827a74b584614fe5338742fd0bcd491e692747347fcbb6e",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "b2bc1013ef957e7f3c22d841c1db5d18a699a106fcd70a8be192445b5f63eef4"
+    }
+  ],
+  "edges": [
+    {
+      "from": 0,
+      "to": 2
+    },
+    {
+      "from": 0,
+      "to": 5
+    },
+    {
+      "from": 0,
+      "to": 1
+    },
+    {
+      "from": 2,
+      "to": 4
+    },
+    {
+      "from": 1,
+      "to": 5
+    },
+    {
+      "from": 0,
+      "to": 6
+    },
+    {
+      "from": 6,
+      "to": 7
+    },
+    {
+      "from": 0,
+      "to": 16
+    },
+    {
+      "from": 8,
+      "to": 10
+    },
+    {
+      "from": 8,
+      "to": 13
+    },
+    {
+      "from": 8,
+      "to": 9
+    },
+    {
+      "from": 10,
+      "to": 12
+    },
+    {
+      "from": 9,
+      "to": 13
+    },
+    {
+      "from": 8,
+      "to": 14
+    },
+    {
+      "from": 14,
+      "to": 15
+    },
+    {
+      "from": 8,
+      "to": 16
+    }
+  ],
+  "redaction": {
+    "ids_hashed": true,
+    "hash_alg": "hmac-sha256",
+    "addresses": "hashed"
+  }
+}

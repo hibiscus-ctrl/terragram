@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `terragram graph` places every card, box and arrow by one fixed order: scope, environment name,
+  module call, then the resource's Terraform address (then its root), so the same estate gives the same
+  picture whatever order the document lists it in. Where the graph hashes or drops its addresses, the
+  order falls back to type and ID as before. The ids in the Mermaid and the JSON view of an estate with
+  several accounts are numbered differently; the drawing is the same.
+
 ## [0.2.0] - 2026-11-23
 
 ### Added

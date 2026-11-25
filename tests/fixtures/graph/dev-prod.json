@@ -1,0 +1,257 @@
+{
+  "schema": "infraharvest/graph/v1",
+  "run_id": "5c1e9a02-7d34-4b8e-9f10-2a6b8c4d0e11",
+  "generated_at": "2026-11-25T09:00:00Z",
+  "tool": {
+    "name": "infraharvest",
+    "version": "0.5.0"
+  },
+  "cloud": "aws",
+  "nodes": [
+    {
+      "kind": "resource",
+      "type": "aws_ecs_service",
+      "id": "svc-prod",
+      "address": "aws_ecs_service.app",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "aws/123456789012/prod"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_db_instance",
+      "id": "db-prod",
+      "address": "aws_db_instance.main",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "aws/123456789012/prod"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group",
+      "id": "sg-prod",
+      "address": "aws_security_group.app",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "aws/123456789012/prod"
+    },
+    {
+      "kind": "module",
+      "source": "terraform-aws-modules/vpc/aws",
+      "version": "5.13.0",
+      "module_address": "module.network",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "aws/123456789012/prod"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_vpc",
+      "id": "vpc-prod",
+      "address": "module.network.aws_vpc.this",
+      "parent": 3,
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "aws/123456789012/prod"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-prod",
+      "address": "module.network.aws_subnet.private",
+      "parent": 3,
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "aws/123456789012/prod"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role",
+      "id": "app-role-prod",
+      "address": "aws_iam_role.app",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "aws/123456789012/prod"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role_policy_attachment",
+      "id": "app-role-prod/arn:aws:iam::aws:policy/ReadOnlyAccess",
+      "address": "aws_iam_role_policy_attachment.app",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "prod",
+      "root": "aws/123456789012/prod"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_ecs_service",
+      "id": "svc-dev",
+      "address": "aws_ecs_service.app",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "aws/123456789012/dev"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_db_instance",
+      "id": "db-dev",
+      "address": "aws_db_instance.main",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "aws/123456789012/dev"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group",
+      "id": "sg-dev",
+      "address": "aws_security_group.app",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "aws/123456789012/dev"
+    },
+    {
+      "kind": "module",
+      "source": "terraform-aws-modules/vpc/aws",
+      "version": "5.13.0",
+      "module_address": "module.network",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "aws/123456789012/dev"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_vpc",
+      "id": "vpc-dev",
+      "address": "module.network.aws_vpc.this",
+      "parent": 11,
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "aws/123456789012/dev"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-dev",
+      "address": "module.network.aws_subnet.private",
+      "parent": 11,
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "aws/123456789012/dev"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role",
+      "id": "app-role-dev",
+      "address": "aws_iam_role.app",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "aws/123456789012/dev"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role_policy_attachment",
+      "id": "app-role-dev/arn:aws:iam::aws:policy/ReadOnlyAccess",
+      "address": "aws_iam_role_policy_attachment.app",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "aws/123456789012/dev"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_ecr_repository",
+      "id": "app-images",
+      "address": "aws_ecr_repository.app",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "environment": "dev",
+      "root": "aws/123456789012/dev"
+    }
+  ],
+  "edges": [
+    {
+      "from": 0,
+      "to": 2
+    },
+    {
+      "from": 0,
+      "to": 5
+    },
+    {
+      "from": 0,
+      "to": 1
+    },
+    {
+      "from": 2,
+      "to": 4
+    },
+    {
+      "from": 1,
+      "to": 5
+    },
+    {
+      "from": 0,
+      "to": 6
+    },
+    {
+      "from": 6,
+      "to": 7
+    },
+    {
+      "from": 0,
+      "to": 16
+    },
+    {
+      "from": 8,
+      "to": 10
+    },
+    {
+      "from": 8,
+      "to": 13
+    },
+    {
+      "from": 8,
+      "to": 9
+    },
+    {
+      "from": 10,
+      "to": 12
+    },
+    {
+      "from": 9,
+      "to": 13
+    },
+    {
+      "from": 8,
+      "to": 14
+    },
+    {
+      "from": 14,
+      "to": 15
+    },
+    {
+      "from": 8,
+      "to": 16
+    }
+  ],
+  "redaction": {
+    "ids_hashed": false,
+    "hash_alg": "hmac-sha256",
+    "addresses": "plain"
+  }
+}

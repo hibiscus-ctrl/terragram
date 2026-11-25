@@ -131,6 +131,10 @@ the CLI, so its output is a contract.
   dagre as a compound graph, boxes drawn around members (`graph/layout.ts`).
 - **Deterministic by construction.** Every order is by key with `compareText` (never `localeCompare`; the receipt hash, the preview id and the variable order included),
   ids are assigned after sorting, coordinates are rounded, nothing reads the clock or the environment.
+  The one order of a picture (`byPlace` in `graph/project.ts`) is scope, environment name, module path
+  (the module call's address), resource address, root, then the key; an address or root counts only when
+  the graph keeps it plain, so a hashed or dropped one falls back to the key. Groups, node ids and edges
+  all follow it: never sort a part of the picture by anything else.
   `tests/graph.test.ts` shuffles the input and requires identical bytes; keep that when adding output.
 - **Goldens** are in `tests/fixtures/graph/golden/`; `UPDATE_GOLDEN=1 npm test` rewrites them, then read
   the diff. The vendored schema is copied unchanged from infraharvest (commit in its README); to

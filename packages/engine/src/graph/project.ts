@@ -17,7 +17,15 @@ import type { GraphDocument } from "./schema.ts";
  * graph names the environment of its roots), then module call, then the resources. A
  * resource of a module call is inside it; a module call that other resources refer to, or
  * that changed, has a card of its own inside its box, because a line has to end somewhere.
- * A node with no environment sits directly in its scope.
+ * A node with no environment sits directly in its scope: that level is skipped for it, not
+ * given a box of its own, so a graph that names no environment has no environment boxes.
+ *
+ * Everything is placed by one order: scope, then environment name, then module path (the
+ * module call's address), then the resource's Terraform address, then its root, then its key
+ * (account, type and ID). The address and the root count only when the graph keeps them as they
+ * are (`redaction.addresses` `plain`); where it hashed or dropped them, or never had them, the
+ * key alone decides, as it always did. The ids `g0`, `n0` and the order of the groups, nodes and
+ * edges follow it, so the same estate is the same picture whatever order the document lists it in.
  */
 
 export type GraphStatus = "unchanged" | "added" | "removed" | "changed" | "context";
@@ -229,6 +237,21 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
 
   const touched = new Set(shownEdges.flatMap((e) => [e.from, e.to]));
   const accountOf = (key: string) => entries.get(key)?.node.account ?? "";
+  const environmentOf = (key: string) => entries.get(key)?.node.environment;
+  /** The address of the module call a node is in, or of the call itself. */
+  const modulePathOf = (key: string) => {
+    const node = entries.get(key)?.node;
+    const call = node?.kind === "module" ? node : node?.container === undefined ? undefined : entries.get(node.container)?.node;
+    return call?.placeAddress ?? "";
+  };
+  /** The one order of the picture: scope, environment, module path, address, root, key. */
+  const byPlace = (a: string, b: string) =>
+    compareText(accountOf(a), accountOf(b)) ||
+    compareText(environmentOf(a) ?? "", environmentOf(b) ?? "") ||
+    compareText(modulePathOf(a), modulePathOf(b)) ||
+    compareText(entries.get(a)?.node.placeAddress ?? "", entries.get(b)?.node.placeAddress ?? "") ||
+    compareText(entries.get(a)?.node.placeRoot ?? "", entries.get(b)?.node.placeRoot ?? "") ||
+    compareText(a, b);
 
   // A module call is a box; it gets a card only if a line ends at it or it changed.
   const moduleKeys = [...shown.keys()].filter((key) => shown.get(key)?.node.kind === "module").sort(compareText);
@@ -239,12 +262,11 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
     return container !== undefined && entries.has(container) ? container : undefined;
   };
   const usedModules = new Set([...cardKeys, ...resourceKeys.map(containerOf).filter((c): c is string => c !== undefined)]);
-  const boxModules = [...entries.keys()].filter((key) => usedModules.has(key) && entries.get(key)?.node.kind === "module").sort(compareText);
+  const boxModules = [...entries.keys()].filter((key) => usedModules.has(key) && entries.get(key)?.node.kind === "module").sort(byPlace);
 
   const accounts = [...new Set([...resourceKeys, ...boxModules].map(accountOf))].sort(compareText);
   // An environment box sits in a scope, around the module boxes and the resources of that root
   // that are not in a module box. Where a graph names no environment there are none.
-  const environmentOf = (key: string) => entries.get(key)?.node.environment;
   const inEnvironment = [...boxModules, ...resourceKeys.filter((key) => containerOf(key) === undefined)];
   const environments = [...new Set(inEnvironment.flatMap((key) => {
     const environment = environmentOf(key);
@@ -295,7 +317,8 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
     });
   });
 
-  const viewKeys = [...new Set([...resourceKeys, ...cardKeys])].sort(compareText);
+  const viewKeys = [...new Set([...resourceKeys, ...cardKeys])].sort(byPlace);
+  const nodeIndex = new Map(viewKeys.map((key, i) => [key, i]));
   const nodeId = new Map(viewKeys.map((key, i) => [key, `n${i}`]));
   const nodes: ViewNode[] = [];
   for (const key of viewKeys) {
@@ -323,9 +346,9 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
     .flatMap((e) => {
       const from = nodeId.get(e.from);
       const to = nodeId.get(e.to);
-      return from !== undefined && to !== undefined ? [{ from, to, status: e.status, sort: `${e.from} ${e.to}` }] : [];
+      return from !== undefined && to !== undefined ? [{ from, to, status: e.status, at: [nodeIndex.get(e.from) ?? 0, nodeIndex.get(e.to) ?? 0] as const }] : [];
     })
-    .sort((a, b) => compareText(a.sort, b.sort))
+    .sort((a, b) => a.at[0] - b.at[0] || a.at[1] - b.at[1])
     .map(({ from, to, status }) => ({ from, to, status }));
 
   const hiddenCounts = new Map<string, number>();

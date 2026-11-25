@@ -1,0 +1,41 @@
+---
+title: "dev and prod"
+---
+flowchart TB
+  subgraph g0["AWS account 123456789012"]
+    subgraph g1["environment dev"]
+      subgraph g3["module terraform-aws-modules/vpc/aws 5.13.0"]
+        n5["aws_subnet<br/>subnet-dev"]
+        n6["aws_vpc<br/>vpc-dev"]
+      end
+      n0["aws_db_instance<br/>db-dev"]
+      n1["aws_ecr_repository<br/>app-images"]
+      n2["aws_ecs_service<br/>svc-dev"]
+      n3["aws_iam_role<br/>app-role-dev"]
+      n4["aws_security_group<br/>sg-dev"]
+    end
+    subgraph g2["environment prod"]
+      subgraph g4["module terraform-aws-modules/vpc/aws 5.13.0"]
+        n11["aws_subnet<br/>subnet-prod"]
+        n12["aws_vpc<br/>vpc-prod"]
+      end
+      n7["aws_db_instance<br/>db-prod"]
+      n8["aws_ecs_service<br/>svc-prod"]
+      n9["aws_iam_role<br/>app-role-prod"]
+      n10["aws_security_group<br/>sg-prod"]
+    end
+  end
+  n0 --> n5
+  n2 --> n0
+  n2 --> n1
+  n2 --> n3
+  n2 --> n4
+  n2 --> n5
+  n4 --> n6
+  n7 --> n11
+  n8 --> n1
+  n8 --> n7
+  n8 --> n9
+  n8 --> n10
+  n8 --> n11
+  n10 --> n12

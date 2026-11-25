@@ -11,7 +11,7 @@ import type { GraphView } from "./project.ts";
  * compound graph (so a scope's and a module call's members stay together, and the lines
  * between them are routed around the boxes), and each box is then drawn around its
  * members with room for its label. dagre keeps what it lays out in the order it is given,
- * and the view is in key order, so the same view gives the same layout; every number is
+ * and the view is in the order of its places (scope, environment, module path, address, key), so the same view gives the same layout; every number is
  * rounded so that no float arithmetic reaches the output.
  */
 

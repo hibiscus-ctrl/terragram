@@ -49,6 +49,8 @@ const smallBase = load("small-base");
 const medium = load("medium");
 const environments = load("environments");
 const environmentsBase = load("environments-base");
+const devProd = load("dev-prod");
+const hashedDevProd = load("hashed");
 
 function golden(name: string, actual: string): void {
   const path = fixture(`golden/${name}`);
@@ -286,6 +288,165 @@ describe("environments", () => {
     assert.equal(diffGraphs(environments, environments).nodes.changed.length, 0);
     const rehashed = { ...environments, nodes: environments.nodes.map((n) => (n.address ? { ...n, address: `h-${n.address}` } : n)) };
     assert.equal(diffGraphs(environments, rehashed).nodes.changed.length, 0);
+  });
+});
+
+/** The document without the nodes `drop` names, the edges that ended at them gone and the indexes remapped. */
+function without(doc: GraphDocument, drop: (node: GraphDocument["nodes"][number]) => boolean): GraphDocument {
+  const keep = doc.nodes.map((n, i) => (drop(n) ? -1 : i)).filter((i) => i >= 0);
+  const at = new Map(keep.map((old, i) => [old, i]));
+  const nodes = keep.map((old) => {
+    const node = structuredClone(doc.nodes[old] as GraphDocument["nodes"][number]);
+    if (node.parent !== undefined) node.parent = at.get(node.parent) as number;
+    return node;
+  });
+  const edges = doc.edges.flatMap((e) => (at.has(e.from) && at.has(e.to) ? [{ from: at.get(e.from) as number, to: at.get(e.to) as number }] : []));
+  return { ...doc, nodes, edges };
+}
+
+/** What `infraharvest export --drop-addresses` leaves of a document: no addresses and no roots. */
+function dropAddresses(doc: GraphDocument): GraphDocument {
+  return {
+    ...doc,
+    nodes: doc.nodes.map(({ address: _address, module_address: _module, root: _root, ...rest }) => rest),
+    redaction: { ...doc.redaction, addresses: "dropped" },
+  };
+}
+
+describe("placement", () => {
+  const groupsOf = (v: GraphView, kind: ViewGroup["kind"]) => v.groups.filter((g) => g.kind === kind);
+  const byLabel = (v: GraphView, label: string) => v.groups.find((g) => g.label === label);
+  /** `type label` of the cards in a box, in the order they are drawn. */
+  const cardsIn = (v: GraphView, group: ViewGroup | undefined) => v.nodes.filter((n) => n.group === group?.id).map((n) => `${n.type} ${n.label}`);
+
+  it("nests one scope, then dev and prod by name, then each environment's module call", () => {
+    const v = view(devProd);
+    const [scope] = scopes(v);
+    assert.deepEqual(scopes(v).map((g) => g.label), ["AWS account 123456789012"]);
+    assert.deepEqual(groupsOf(v, "environment").map((g) => g.label), ["environment dev", "environment prod"], "by name, though the document lists prod first");
+    assert.deepEqual(groupsOf(v, "environment").map((g) => g.parent), [scope?.id, scope?.id]);
+    assert.deepEqual(groupsOf(v, "module").map((g) => g.parent), groupsOf(v, "environment").map((g) => g.id));
+    assert.ok(v.nodes.every((n) => n.group !== ""));
+  });
+
+  it("places a card among its neighbours by module path, then Terraform address", () => {
+    const v = view(devProd);
+    // The resources of no module call first, by address, then the module call's own: never by type or ID alone.
+    assert.deepEqual(cardsIn(v, byLabel(v, "environment dev")), [
+      "aws_db_instance db-dev",
+      "aws_ecr_repository app-images",
+      "aws_ecs_service svc-dev",
+      "aws_iam_role app-role-dev",
+      "aws_security_group sg-dev",
+    ]);
+    assert.deepEqual(cardsIn(v, groupsOf(v, "module")[1]), ["aws_subnet subnet-prod", "aws_vpc vpc-prod"], "the module call has a card only when a line ends at it");
+    // The ids follow the order: dev's cards are numbered before prod's.
+    assert.deepEqual(v.nodes.map((n) => n.id), v.nodes.map((_, i) => `n${i}`));
+    assert.ok(v.nodes.findIndex((n) => n.label === "db-dev") < v.nodes.findIndex((n) => n.label === "db-prod"));
+  });
+
+  it("orders by address when the graph keeps addresses, and by key when it does not", () => {
+    const ordered = (doc: GraphDocument) => view(doc).nodes.map((n) => n.label);
+    const pair = (addresses: "plain" | "hashed"): GraphDocument => ({
+      ...small,
+      redaction: { ...small.redaction, addresses },
+      nodes: [
+        { kind: "resource", type: "aws_instance", id: "i-aaa", account: "123456789012", environment: "prod", address: "aws_instance.zebra" },
+        { kind: "resource", type: "aws_instance", id: "i-zzz", account: "123456789012", environment: "prod", address: "aws_instance.apple" },
+      ],
+      edges: [],
+    });
+    assert.deepEqual(ordered(pair("plain")), ["i-zzz", "i-aaa"], "apple before zebra, though its ID sorts after");
+    // A hashed address says nothing about order and a dropped one is gone: the key (type, then ID) decides, as it did before addresses.
+    assert.deepEqual(ordered(pair("hashed")), ["i-aaa", "i-zzz"]);
+    assert.deepEqual(ordered(dropAddresses(pair("plain"))), ["i-aaa", "i-zzz"]);
+    const bare = pair("plain");
+    bare.nodes = bare.nodes.map(({ address: _address, ...rest }) => rest);
+    assert.deepEqual(ordered(bare), ["i-aaa", "i-zzz"], "a graph that predates addresses");
+  });
+
+  it("tells the same address in two roots apart by the roots' order", () => {
+    const doc = structuredClone(devProd);
+    const web = doc.nodes.find((n) => n.id === "svc-prod");
+    assert.ok(web);
+    // Listed in the order that is neither the roots' nor the IDs'.
+    doc.nodes.push({ ...web, id: "svc-a", root: "aws/123456789012/prod-b" }, { ...web, id: "svc-b", root: "aws/123456789012/prod-a" });
+    const labels = view(doc).nodes.filter((n) => n.type === "aws_ecs_service" && n.environment === "prod").map((n) => n.label);
+    assert.deepEqual(labels, ["svc-prod", "svc-b", "svc-a"], "roots: .../prod, .../prod-a, .../prod-b");
+  });
+
+  it("puts what names no environment directly in its scope, with no group of its own", () => {
+    const mixed = structuredClone(devProd);
+    const loose = mixed.nodes.find((n) => n.id === "app-images");
+    assert.ok(loose);
+    delete loose.environment;
+    delete loose.root;
+    const v = view(mixed);
+    assert.deepEqual(groupsOf(v, "environment").map((g) => g.label), ["environment dev", "environment prod"]);
+    assert.equal(v.nodes.find((n) => n.label === "app-images")?.group, scopes(v)[0]?.id);
+    assert.doesNotMatch(renderGraphSvg(v), /unassigned/i);
+    assert.doesNotMatch(renderGraphMermaid(v), /unassigned/i);
+  });
+
+  it("keeps a reference that crosses environments, as a routed line and as an arrow", () => {
+    const v = view(devProd);
+    const ecr = v.nodes.find((n) => n.label === "app-images");
+    const prodService = v.nodes.find((n) => n.label === "svc-prod");
+    const devService = v.nodes.find((n) => n.label === "svc-dev");
+    assert.ok(ecr && prodService && devService);
+    assert.notEqual(prodService.group, ecr.group, "the two sit in different environments");
+    assert.ok(v.edges.some((e) => e.from === prodService.id && e.to === ecr.id));
+    assert.ok(v.edges.some((e) => e.from === devService.id && e.to === ecr.id));
+    assert.match(renderGraphMermaid(v), new RegExp(`^  ${prodService.id} --> ${ecr.id}$`, "m"));
+    const layout = layoutGraph(v);
+    for (const [i, edge] of v.edges.entries()) assert.ok((layout.edges[i] ?? []).length >= 2, `${edge.from} -> ${edge.to} is routed`);
+    const svg = renderGraphSvg(v);
+    assert.equal(svg.split('marker-end="url(#tg-arrow-').length - 1, v.edges.length);
+  });
+
+  it("hides glue, and joins the line through it, as it does without environments", () => {
+    const v = view(devProd);
+    assert.equal(v.hidden.count, 2);
+    assert.deepEqual(v.hidden.types, [{ type: "aws_iam_role_policy_attachment", count: 2 }]);
+    assert.ok(v.nodes.every((n) => n.type !== "aws_iam_role_policy_attachment"));
+  });
+
+  it("renders a hashed or dropped graph, grouped by environment, in the same bytes from any order", () => {
+    for (const doc of [hashedDevProd, dropAddresses(devProd), dropAddresses(hashedDevProd)]) {
+      const v = view(doc);
+      assert.deepEqual(groupsOf(v, "environment").map((g) => g.label), ["environment dev", "environment prod"]);
+      assert.equal(v.nodes.length, 13);
+      const svg = renderGraphSvg(v);
+      const mermaid = renderGraphMermaid(v);
+      for (const seed of [1, 2, 3]) {
+        assert.equal(renderGraphSvg(view(shuffled(doc, seed))), svg);
+        assert.equal(renderGraphMermaid(view(shuffled(doc, seed))), mermaid);
+      }
+    }
+    assert.match(view(hashedDevProd).nodes[0]?.label ?? "", /^[0-9a-f]{8}$/);
+  });
+
+  it("gives the same picture from any order of nodes and edges, with and without a base", () => {
+    const base = without(devProd, (n) => n.id === "db-prod");
+    const full = [renderGraphSvg(view(devProd)), renderGraphMermaid(view(devProd)), JSON.stringify(view(devProd))];
+    const delta = [renderGraphSvg(view(devProd, { base, delta: true })), renderGraphMermaid(view(devProd, { base, delta: true }))];
+    for (const seed of [1, 2, 3, 4, 5, 6, 7]) {
+      const other = shuffled(devProd, seed);
+      assert.notDeepEqual(other.nodes, devProd.nodes, "the shuffle should move something");
+      assert.deepEqual([renderGraphSvg(view(other)), renderGraphMermaid(view(other)), JSON.stringify(view(other))], full, `seed ${seed}`);
+      const again = view(other, { base: shuffled(base, seed + 10), delta: true });
+      assert.deepEqual([renderGraphSvg(again), renderGraphMermaid(again)], delta, `delta, seed ${seed}`);
+    }
+  });
+
+  it("shows only what changed in a delta, with the boxes it sits in", () => {
+    const base = without(devProd, (n) => n.id === "db-prod");
+    const v = view(devProd, { base, delta: true });
+    assert.equal(v.mode, "delta");
+    // The added database, and what it refers to or is referred by, one reference away.
+    assert.deepEqual(v.nodes.map((n) => `${n.status} ${n.label}`).sort(), ["added db-prod", "context subnet-prod", "context svc-prod"]);
+    assert.deepEqual(v.groups.map((g) => g.label), ["AWS account 123456789012", "environment prod", "module terraform-aws-modules/vpc/aws"]);
+    assert.equal(v.groups.find((g) => g.kind === "environment")?.parent, v.groups[0]?.id);
   });
 });
 
@@ -827,6 +988,39 @@ describe("goldens", () => {
     golden("environments.mmd", renderGraphMermaid(view(environments, { findings })));
     golden("environments-diff.svg", `${renderGraphSvg(view(environments, { base: environmentsBase }))}\n`);
     golden("environments-diff.mmd", renderGraphMermaid(view(environments, { base: environmentsBase })));
+  });
+
+  it("draws two environments of one account, in full and as a delta", () => {
+    const base = without(devProd, (n) => n.id === "db-prod");
+    golden("dev-prod.svg", `${renderGraphSvg(view(devProd, { title: "dev and prod" }))}\n`);
+    golden("dev-prod.mmd", renderGraphMermaid(view(devProd, { title: "dev and prod" })));
+    golden("dev-prod-delta.svg", `${renderGraphSvg(view(devProd, { base, delta: true }))}\n`);
+    golden("dev-prod-delta.mmd", renderGraphMermaid(view(devProd, { base, delta: true })));
+  });
+
+  it("draws the same estate with its IDs and addresses hashed, and with its addresses dropped", () => {
+    golden("hashed.svg", `${renderGraphSvg(view(hashedDevProd))}\n`);
+    golden("hashed.mmd", renderGraphMermaid(view(hashedDevProd)));
+    golden("dropped.svg", `${renderGraphSvg(view(dropAddresses(devProd)))}\n`);
+    golden("dropped.mmd", renderGraphMermaid(view(dropAddresses(devProd))));
+  });
+
+  it("draws every one of those goldens, and the medium one, from a shuffled document in the same bytes", () => {
+    const base = without(devProd, (n) => n.id === "db-prod");
+    const cases: [string, GraphDocument, ProjectOptions, GraphDocument?][] = [
+      ["dev-prod", devProd, { title: "dev and prod" }],
+      ["dev-prod-delta", devProd, { delta: true }, base],
+      ["hashed", hashedDevProd, {}],
+      ["dropped", dropAddresses(devProd), {}],
+      ["medium", medium, {}],
+    ];
+    for (const [name, doc, options, baseDoc] of cases) {
+      for (const seed of [11, 12]) {
+        const v = view(shuffled(doc, seed), { ...options, ...(baseDoc && { base: shuffled(baseDoc, seed) }) });
+        assert.equal(`${renderGraphSvg(v)}\n`, readFileSync(fixture(`golden/${name}.svg`), "utf8"), `${name}.svg, seed ${seed}`);
+        assert.equal(renderGraphMermaid(v), readFileSync(fixture(`golden/${name}.mmd`), "utf8"), `${name}.mmd, seed ${seed}`);
+      }
+    }
   });
 
   it("draws the medium estate with findings over it", () => {

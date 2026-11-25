@@ -1,0 +1,38 @@
+flowchart TB
+  subgraph g0["AWS account 123456789012"]
+    subgraph g1["environment dev"]
+      subgraph g3["module terraform-aws-modules/vpc/aws 5.13.0"]
+        n5["aws_subnet<br/>70e9f3b6"]
+        n6["aws_vpc<br/>36309bd5"]
+      end
+      n0["aws_db_instance<br/>c4db1da7"]
+      n1["aws_ecr_repository<br/>797f1072"]
+      n2["aws_ecs_service<br/>8b664b21"]
+      n3["aws_iam_role<br/>f9959f00"]
+      n4["aws_security_group<br/>fad12c85"]
+    end
+    subgraph g2["environment prod"]
+      subgraph g4["module terraform-aws-modules/vpc/aws 5.13.0"]
+        n11["aws_subnet<br/>9dda66f8"]
+        n12["aws_vpc<br/>e23ef323"]
+      end
+      n7["aws_db_instance<br/>ff957e52"]
+      n8["aws_ecs_service<br/>3b6743cc"]
+      n9["aws_iam_role<br/>1f1a01a3"]
+      n10["aws_security_group<br/>d16091bd"]
+    end
+  end
+  n0 --> n5
+  n2 --> n0
+  n2 --> n1
+  n2 --> n3
+  n2 --> n4
+  n2 --> n5
+  n4 --> n6
+  n7 --> n11
+  n8 --> n1
+  n8 --> n7
+  n8 --> n9
+  n8 --> n10
+  n8 --> n11
+  n10 --> n12
