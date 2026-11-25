@@ -121,12 +121,39 @@ terragram graph graph.json --findings ocsf-findings.json       # lay findings ov
 
 An account (or subscription, or project) is a box, an environment is a box inside it when the graph
 names the environment of its roots, a module call is a box inside that, and an arrow runs from a
-resource to what it refers to. A graph that names no environment has no environment boxes. **Glue is hidden**: attachments and associations
+resource to what it refers to. **Glue is hidden**: attachments and associations
 (`*_attachment`, `*_association`), `aws_iam_role_policy` and its kin, Google IAM bindings,
 `random_*`, `time_*`, `null_resource`, `terraform_data`; a line that went through one still joins
 the two ends, and the footer counts what was hidden. The rule is `DEFAULT_GLUE`, which
 `projectGraph` takes a replacement for (`glue: false` hides nothing; the CLI has `--show-glue`,
 `--hide` and `--keep`).
+
+**Layout.** The picture is laid out from a single fixed order, so the same estate always gives the same
+bytes (SVG, Mermaid and the JSON view alike), however the document lists its nodes and edges:
+
+1. the scope (by account, subscription or project ID),
+2. then the environment (by name),
+3. then the module call (by its address, `module.<name>`),
+4. then the resource (by its Terraform address),
+5. then the root it was generated in, and last the resource's type and ID.
+
+A resource in no module call has no module path, so it comes before the ones in a module call. Environments are boxes inside a scope, side by side; a
+reference between two environments (or two scopes) is drawn as a line across the boxes in the SVG and as
+an arrow between the two cards in Mermaid, so it stays readable whichever environments it joins.
+
+When the graph is missing a field the layout still works:
+
+- **No environment.** A graph that names no environment has no environment boxes (that level is skipped). In
+  a graph where only some roots name one, a node with none sits directly in its scope, beside the
+  environment boxes; there is no "unassigned" box.
+- **No address.** The address is used only when the graph keeps addresses as they are
+  (`redaction.addresses: plain`). A hashed address says nothing about order, and a dropped one (or a graph
+  from before addresses) has none, so the order falls back to the key (account, type, ID), as it did
+  before addresses. The same goes for roots.
+- **Hashed IDs.** `--hash-ids` and `--drop-addresses` documents render the same way; a hashed ID is shown by
+  its first eight characters.
+- **Delta view.** With `--delta` only the changed cards and the cards one reference away are drawn, with
+  the scope, environment and module boxes they sit in and no others, in the same order as the full picture.
 
 Findings are placed by what `graph/v1` can name: a resource by its `type` and `id`, or by its Terraform
 address when the graph keeps addresses (`redaction.addresses: plain`; a module call by `module.<name>`), a scope

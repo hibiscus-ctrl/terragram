@@ -35,6 +35,10 @@ export type NormalNode = {
   moduleAddress?: string;
   /** The root the node was generated in, as the graph kept it (plain, or hashed): the same address in two roots of one environment is two nodes. */
   root?: string;
+  /** What places the node among its neighbours: its Terraform address (a module call's `module.<name>`), when the graph keeps addresses as they are. A hashed address says nothing about order, so it is not here. */
+  placeAddress?: string;
+  /** The root, likewise, when the graph keeps its roots as they are. */
+  placeRoot?: string;
   source?: string;
   version?: string;
   /** The key of the module call the resource is in. */
@@ -54,6 +58,8 @@ export type NormalGraph = {
 };
 
 const resourceKey = (n: { account: string; type?: string | undefined; id?: string | undefined }) => `r|${n.account}|${n.type}|${n.id}`;
+
+const placeAddressOf = (n: GraphDocument["nodes"][number]) => (n.kind === "module" ? n.module_address : n.address);
 
 export function normalizeGraph(doc: GraphDocument, glue: Readonly<GlueRule> | false): NormalGraph {
   const isGlue = glueMatcher(glue);
@@ -107,11 +113,13 @@ export function normalizeGraph(doc: GraphDocument, glue: Readonly<GlueRule> | fa
       });
   }
 
+  const plain = doc.redaction.addresses === "plain";
   const all = new Map<string, NormalNode>();
   doc.nodes.forEach((n, i) => {
     const key = keyOfIndex.get(i);
     if (key === undefined) return;
     const container = n.parent === undefined ? undefined : keyOfIndex.get(n.parent);
+    const address = placeAddressOf(n);
     all.set(key, {
       key,
       kind: n.kind,
@@ -123,6 +131,8 @@ export function normalizeGraph(doc: GraphDocument, glue: Readonly<GlueRule> | fa
       ...(n.address !== undefined && { address: n.address }),
       ...(n.module_address !== undefined && { moduleAddress: n.module_address }),
       ...(n.root !== undefined && { root: n.root }),
+      ...(plain && address !== undefined && { placeAddress: address }),
+      ...(plain && n.root !== undefined && { placeRoot: n.root }),
       ...(n.source !== undefined && { source: n.source }),
       ...(n.version !== undefined && { version: n.version }),
       ...(container !== undefined && { container }),

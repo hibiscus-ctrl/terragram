@@ -1,0 +1,18 @@
+flowchart TB
+  subgraph g0["AWS account 123456789012"]
+    subgraph g1["environment prod"]
+      subgraph g2["module terraform-aws-modules/vpc/aws 5.13.0"]
+        n2["aws_subnet<br/>subnet-prod"]
+      end
+      n0["+ aws_db_instance<br/>db-prod"]
+      n1["aws_ecs_service<br/>svc-prod"]
+    end
+  end
+  n0 ==> n2
+  n1 ==> n0
+  linkStyle 0 stroke:#15803d,stroke-width:2px
+  linkStyle 1 stroke:#15803d,stroke-width:2px
+  classDef added fill:#f0fdf4,stroke:#15803d,color:#14532d
+  class n0 added
+  classDef context fill:#ffffff,stroke:#a8a090,color:#665e4f,opacity:0.6
+  class n1,n2 context

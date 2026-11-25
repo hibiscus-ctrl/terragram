@@ -78,12 +78,6 @@
 <text x="1600" y="460" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#665e4f" letter-spacing="0.3">module call</text>
 <text x="1600" y="482" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">terraform-aws-modul…</text>
 </g>
-<g><title>module call terraform-aws-modules/vpc/aws</title>
-<rect x="3730" y="436" width="172" height="62" rx="9" fill="#ffffff" stroke="#665e4f" stroke-width="1.5"/>
-<rect x="3730" y="446" width="4" height="42" rx="2" fill="#665e4f"/>
-<text x="3744" y="460" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#665e4f" letter-spacing="0.3">module call</text>
-<text x="3744" y="482" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">terraform-aws-modul…</text>
-</g>
 <g><title>aws_db_instance db-main, region eu-west-1</title>
 <rect x="718" y="96" width="172" height="62" rx="9" fill="#ffffff" stroke="#be185d" stroke-width="1.5"/>
 <rect x="718" y="106" width="4" height="42" rx="2" fill="#be185d"/>
@@ -227,6 +221,12 @@
 <rect x="2790" y="616" width="4" height="42" rx="2" fill="#2563eb"/>
 <text x="2804" y="630" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">aws_vpc</text>
 <text x="2804" y="652" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">vpc-0a1b2c3d</text>
+</g>
+<g><title>module call terraform-aws-modules/vpc/aws</title>
+<rect x="3730" y="436" width="172" height="62" rx="9" fill="#ffffff" stroke="#665e4f" stroke-width="1.5"/>
+<rect x="3730" y="446" width="4" height="42" rx="2" fill="#665e4f"/>
+<text x="3744" y="460" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#665e4f" letter-spacing="0.3">module call</text>
+<text x="3744" y="482" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">terraform-aws-modul…</text>
 </g>
 <g><title>aws_cloudwatch_log_group ingest, region us-east-1</title>
 <rect x="4502" y="96" width="172" height="62" rx="9" fill="#ffffff" stroke="#665e4f" stroke-width="1.5"/>
