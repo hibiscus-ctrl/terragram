@@ -52,9 +52,11 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
 - **Typed edges** (`iam.ts`, read by `parse.ts`). An edge may carry `access`: `runs-as` (a workload to the role or identity in
   its `role`, `task_role_arn`, `iam_instance_profile` or `identity_ids`), `read`/`write`/`admin` (an identity to a drawn resource its
   policy or role assignment names, by the strongest action or role there) or `unscoped` (to the conceptual `any-resource` node:
-  a wildcard, `NotResource`, a policy the text does not show, an Azure role over a subscription or group). The policy is
-  read as text, never evaluated, and never kept: the model gets edges, not statements. Deny statements and managed policies
-  other than `AdministratorAccess` are not read. A new reader that needs the policy's words in the model is a schema decision, not a tweak.
+  a wildcard anywhere in a resource, `NotResource`, a policy the text does not show, a managed policy that is not defined in the file, an Azure
+  role over anything but one drawn resource). The policy is read as text, never evaluated, and never kept: the model gets edges, not
+  statements. Understating access is the dangerous direction, so whatever the reader is not certain of (an attribute it cannot read, a
+  template that is not one drawn reference, an action with a character it cannot match, nesting past 64 levels) is `unscoped`, never dropped.
+  Deny statements are not read. A new reader that needs the policy's words in the model is a schema decision, not a tweak.
   Renderers take the wording and colour from `EDGE_ACCESS_META` (`model.ts`); an untyped edge must still draw exactly as before.
 - **Azure SKU check** (`azure-sku.ts`, data in `azure-sku-data.ts`). `generate` and the Action run `checkAzureSkus` over the
   emitted files and report its findings as warnings (CLI notes, the Action's report). It parses the HCL, reads the SKU argument of

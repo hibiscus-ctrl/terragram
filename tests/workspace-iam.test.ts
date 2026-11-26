@@ -125,12 +125,12 @@ resource "aws_iam_role_policy_attachment" "admin" {
     assert.deepEqual(typed(admin.model).slice(1), [`entra-id -> ${ANY_RESOURCE_ID}: unscoped`]);
   });
 
-  it("skips Deny statements, resources outside the picture and a named ARN with a wildcard path", () => {
+  it("skips Deny statements and resources outside the picture", () => {
     const { model } = read(
       withPolicy(`jsonencode({
     Statement = [
       { Effect = "Deny", Action = "s3:*", Resource = "*" },
-      { Effect = "Allow", Action = "s3:GetObject", Resource = "arn:aws:s3:::someone-elses-bucket/*" },
+      { Effect = "Allow", Action = "s3:GetObject", Resource = "arn:aws:s3:::someone-elses-bucket" },
       { Effect = "Allow", Action = "logs:PutLogEvents", Resource = aws_cloudwatch_log_group.elsewhere.arn },
       { Effect = "Allow", Action = "ssm:GetParameter", Resource = data.aws_ssm_parameter.p.arn },
     ]
@@ -150,7 +150,7 @@ resource "aws_iam_role_policy_attachment" "admin" {
     assert.equal(level(`"dynamodb:BatchGetItem"`), "read");
     assert.equal(level(`"sqs:ReceiveMessage"`), "read");
     assert.equal(level(`"s3:PutObject"`), "write");
-    assert.equal(level(`"s3:*Object"`), "write");
+    assert.equal(level(`"s3:*Object"`), "admin");
     assert.equal(level(`["s3:GetObject", "s3:PutObject"]`), "write");
     assert.equal(level(`"s3:PutBucketPolicy"`), "admin");
     assert.equal(level(`"iam:CreateRole"`), "admin");
@@ -464,5 +464,332 @@ describe("drawing typed edges", () => {
   it("is part of the model document", () => {
     assert.equal(infraModelSchema.parse(model).edges[1]?.access, "unscoped");
     assert.throws(() => infraModelSchema.parse({ ...model, edges: [{ id: "a", source: "fn", target: "role", access: "root" }] }));
+  });
+});
+
+/* ------------------------------------------------------------ hostile input -- */
+
+describe("what the reader is not sure of is unscoped, never dropped", () => {
+  const ANY = `entra-id -> ${ANY_RESOURCE_ID}: unscoped`;
+  const withPolicy = (policy: string) => `${AWS_BASE}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = ${policy}
+}
+`;
+  const grants = (tf: string) => typed(read(tf).model).slice(1);
+  const oneStatement = (action: string, resource: string) =>
+    withPolicy(`jsonencode({ Statement = [{ Effect = "Allow", Action = ${action}, Resource = ${resource} }] })`);
+
+  it("keeps a policy document attribute it cannot read, rather than dropping the statement", () => {
+    // the unclosed list swallows the rest of its block, so the role policy comes first
+    const unterminated = `${AWS_BASE}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = data.aws_iam_policy_document.d.json
+}
+
+data "aws_iam_policy_document" "d" {
+  statement {
+    effect = "Allow"
+    resources = ["*"]
+    actions = [ local.x # it's a "
+  }
+}
+`;
+    assert.deepEqual(grants(unterminated), [ANY]);
+
+    const badResources = `${AWS_BASE}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = data.aws_iam_policy_document.d.json
+}
+
+data "aws_iam_policy_document" "d" {
+  statement {
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = [ aws_s3_bucket.data.arn # "
+  }
+}
+`;
+    assert.deepEqual(grants(badResources), [ANY]);
+
+    const trailing = `${AWS_BASE}
+data "aws_iam_policy_document" "d" {
+  statement {
+    effect    = "Allow"
+    actions   = ["s3:GetObject"] == var.x ? ["s3:*"] : []
+    resources = [aws_s3_bucket.data.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = data.aws_iam_policy_document.d.json
+}
+`;
+    assert.ok(grants(trailing).every((g) => !g.endsWith(": read")), "an operator after a list is not a read-only list");
+  });
+
+  it("treats a statement with no Action or no Resource as unknown", () => {
+    assert.deepEqual(grants(withPolicy(`jsonencode({ Statement = [{ Effect = "Allow", Resource = "*" }] })`)), [ANY]);
+    assert.deepEqual(grants(withPolicy(`jsonencode({ Statement = [{ Effect = "Allow", Action = "s3:GetObject" }] })`)), [ANY]);
+  });
+
+  it("reads action names without regard to case, and any wildcard that is not a read pattern as admin", () => {
+    const level = (action: string) => {
+      const found = grants(oneStatement(action, "aws_s3_bucket.data.arn")).find((g) => g.includes("object-storage"));
+      return found?.split(": ")[1] ?? grants(oneStatement(action, "aws_s3_bucket.data.arn"))[0]?.split(": ")[1];
+    };
+    assert.equal(level(`"S3:PUTBUCKETPOLICY"`), "admin");
+    assert.equal(level(`"s3:putbucketpolicy"`), "admin");
+    assert.equal(level(`"s3:getobject"`), "read");
+    assert.equal(level(`"S3:LISTBUCKET"`), "read");
+    assert.equal(level(`"s3:*Bucket*"`), "admin");
+    assert.equal(level(`"sts:Assume*"`), "admin");
+    assert.equal(level(`"iam*:Put*"`), "admin");
+    assert.equal(level(`"*:PutObject"`), "admin");
+    assert.equal(level(`"s3:Put*"`), "admin");
+    assert.equal(level(`"s3:G*"`), "admin");
+    assert.equal(level(`"s3:Get*"`), "read");
+    assert.equal(level(`"s3:Get*Policy"`), "read");
+    assert.equal(level(`"*:Get*"`), "read");
+    assert.equal(level(`"s3:PutObject"`), "write");
+    assert.equal(level(`"s3:Get*"`), "read");
+  });
+
+  it("types an action with a character it cannot match, or more than service:name, as unscoped", () => {
+    for (const action of [`"s3:Get?bject"`, `"s3:Get Object"`, `"s3:Get\\u0041"`, `"s3:GetObject:x"`, `"s3:"`, `"GetObject"`, `"s3:Get\${var.x}"`, `"s3:Get%{ if true }x%{ endif }"`]) {
+      const found = grants(oneStatement(action, "aws_s3_bucket.data.arn"));
+      assert.deepEqual(found, ["entra-id -> object-storage: unscoped"], action);
+    }
+  });
+
+  it("types a resource string with a wildcard anywhere, an escape or an unresolved template as unscoped", () => {
+    for (const resource of [
+      `"arn:aws:iam::123456789012:role/*"`,
+      `"arn:aws:s3:::prod-*"`,
+      `"arn:aws:s3:::prod-?"`,
+      `"arn:aws:iam::*:role/x"`,
+      `"arn:aws:s3:::bucket/*"`,
+      `"arn:aws:s3:::\\u002a"`,
+      `"arn:aws:s3:::b\\*"`,
+      `"\${aws_s3_bucket.data.arn}*"`,
+      `"*\${aws_s3_bucket.data.arn}"`,
+      `"\${var.prefix}/*"`,
+      `"arn:aws:s3:::\${var.bucket}"`,
+      `"\${aws_unknown.thing.arn}/x"`,
+      `"\${data.aws_caller_identity.me.account_id}"`,
+      `"\${local.arn}"`,
+      `"%{ if true }arn:aws:s3:::b%{ endif }"`,
+      `"$\${aws_s3_bucket.data.arn}"`,
+      `"\${aws_s3_bucket.data.arn"`,
+    ]) {
+      assert.ok(grants(oneStatement(`"s3:GetObject"`, resource)).includes(ANY), resource);
+    }
+    // the path under a drawn resource stays scoped
+    assert.deepEqual(grants(oneStatement(`"s3:GetObject"`, `"\${aws_s3_bucket.data.arn}/*"`)), ["entra-id -> object-storage: read"]);
+    assert.deepEqual(grants(oneStatement(`"s3:GetObject"`, `"\${aws_s3_bucket.data.arn}/a/b-*.txt"`)), ["entra-id -> object-storage: read"]);
+  });
+
+  it("types a local, a variable, a module output and a function that does not resolve as unscoped", () => {
+    for (const resource of ["local.arn", "var.arn", "module.nope.arn", "module.nope.outputs[0]", "format(\"%s/*\", aws_s3_bucket.data.arn)", "aws_s3_bucket.data.arn[*]", "each.value", "(aws_s3_bucket.data.arn)", "var.x ? aws_s3_bucket.data.arn : \"*\""]) {
+      assert.ok(grants(oneStatement(`"s3:GetObject"`, resource)).includes(ANY), resource);
+    }
+    assert.ok(grants(oneStatement(`"s3:GetObject"`, `[local.a, aws_s3_bucket.data.arn]`)).includes("entra-id -> object-storage: read"));
+  });
+
+  it("types a managed policy it cannot see as unscoped, and reads only a local one", () => {
+    const attach = (arn: string) => `${AWS_BASE}
+resource "aws_iam_role_policy_attachment" "a" {
+  role       = aws_iam_role.fn.name
+  policy_arn = ${arn}
+}
+`;
+    for (const arn of [
+      `"arn:aws:iam::aws:policy/AdministratorAccess"`,
+      `"arn:aws:iam::aws:policy/PowerUserAccess"`,
+      `"arn:aws:iam::aws:policy/IAMFullAccess"`,
+      `"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"`,
+      `"arn:aws:iam::\${data.aws_caller_identity.me.account_id}:policy/x"`,
+      "var.policy_arn",
+      "data.aws_iam_policy.p.arn",
+      "aws_iam_policy.not_in_this_file.arn",
+    ]) {
+      assert.deepEqual(grants(attach(arn)), [ANY], arn);
+    }
+    const onRole = `${AWS_BASE.replace('name = "fn"', 'name = "fn"\n  managed_policy_arns = ["arn:aws:iam::aws:policy/IAMFullAccess", aws_iam_policy.q.arn]')}
+resource "aws_iam_policy" "q" {
+  name   = "q"
+  policy = jsonencode({ Statement = [{ Effect = "Allow", Action = "sqs:SendMessage", Resource = aws_sqs_queue.jobs.arn }] })
+}
+`;
+    assert.deepEqual(grants(onRole), [ANY, "entra-id -> queue: write"]);
+  });
+
+  it("marks a block consumed only once it drew an edge", () => {
+    const { untranslated } = read(withPolicy(`jsonencode({ Statement = [{ Effect = "Allow", Action = "s3:GetObject", Resource = aws_elsewhere.thing.arn }] })`));
+    assert.deepEqual(untranslated, ["aws_iam_role_policy.fn"]);
+    const drawn = read(withPolicy(`jsonencode({ Statement = [{ Effect = "Allow", Action = "s3:GetObject", Resource = aws_s3_bucket.data.arn }] })`));
+    assert.deepEqual(drawn.untranslated, []);
+    const doc = read(`${AWS_BASE}
+data "aws_iam_policy_document" "d" {
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = [aws_elsewhere.thing.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = data.aws_iam_policy_document.d.json
+}
+`);
+    assert.ok(doc.untranslated.includes("aws_iam_role_policy.fn"));
+    assert.ok(doc.model.nodes.some((n) => n.label === "data d"), "a document that drew nothing stays on the picture");
+  });
+
+  it("falls back to unscoped when the reader itself throws, instead of crashing parse", () => {
+    const blocks = parseHcl(`
+resource "aws_iam_role_policy" "p" {
+  role   = aws_iam_role.r.id
+  policy = jsonencode({ Statement = [{ Effect = "Allow", Action = "s3:GetObject", Resource = aws_s3_bucket.b.arn }] })
+}
+`);
+    const owner = (address: string) => {
+      if (address === "aws_iam_role.r") return "role";
+      throw new RangeError("boom");
+    };
+    assert.deepEqual(readIam(blocks, owner, "aws").edges, [{ source: "role", target: ANY_RESOURCE_ID, access: "unscoped" }]);
+  });
+});
+
+describe("Azure scopes that are not one drawn resource are unscoped", () => {
+  const assign = (scope: string) => `
+resource "azurerm_storage_account" "data" {
+  name = "data"
+}
+
+resource "azurerm_user_assigned_identity" "app" {
+  name = "app"
+}
+
+resource "azurerm_role_assignment" "a" {
+  scope                = ${scope}
+  role_definition_name = "Reader"
+  principal_id         = azurerm_user_assigned_identity.app.principal_id
+}
+`;
+  const grants = (scope: string) => typed(read(assign(scope)).model);
+
+  it("reads only the id of one drawn resource", () => {
+    assert.deepEqual(grants("azurerm_storage_account.data.id"), ["entra-id -> object-storage: read"]);
+    assert.deepEqual(grants(`"\${azurerm_storage_account.data.id}"`), ["entra-id -> object-storage: read"]);
+    assert.deepEqual(grants(`"\${azurerm_storage_account.data.id}/blobServices/default"`), ["entra-id -> object-storage: read"]);
+  });
+
+  it("types everything else as unscoped", () => {
+    for (const scope of [
+      "module.x.id",
+      "module.x.storage_id",
+      `"/"`,
+      `"/providers/Microsoft.Management/managementGroups/root"`,
+      `"/subscriptions/00000000-0000-0000-0000-000000000000"`,
+      `"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg"`,
+      `"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/other"`,
+      `"\${azurerm_storage_account.data.id}/../.."`,
+      `"\${azurerm_storage_account.data.id}\${var.sub}"`,
+      "azurerm_resource_group.main.id",
+      "azurerm_storage_account.data.name",
+      "azurerm_storage_account.nowhere.id",
+      "local.scope",
+      "var.scope",
+      "data.azurerm_subscription.current.id",
+      `var.flag ? azurerm_storage_account.data.id : "/"`,
+      "azurerm_storage_account.data[*].id",
+    ]) {
+      assert.deepEqual(grants(scope), [`entra-id -> ${ANY_RESOURCE_ID}: unscoped`], scope);
+    }
+  });
+
+  it("does not read a role name with a template in it", () => {
+    const model = read(assign("azurerm_storage_account.data.id").replace('"Reader"', '"${var.x} Reader"')).model;
+    assert.deepEqual(typed(model), ["entra-id -> object-storage: unscoped"]);
+  });
+});
+
+describe("hostile policy text is bounded", () => {
+  const withPolicy = (policy: string) => `resource "aws_s3_bucket" "data" {
+  bucket = "x"
+}
+
+resource "aws_iam_role" "fn" {
+  name = "fn"
+}
+
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = ${policy}
+}
+`;
+  const ANY = `entra-id -> ${ANY_RESOURCE_ID}: unscoped`;
+  const timed = <T>(run: () => T, limitMs: number): T => {
+    const start = performance.now();
+    const result = run();
+    const took = performance.now() - start;
+    assert.ok(took < limitMs, `took ${Math.round(took)} ms, limit ${limitMs} ms`);
+    return result;
+  };
+
+  it("reads a long heredoc in linear time and still finds its terminator", () => {
+    const hostile = `<<EOT\n${"\n".repeat(80_000)}x\nEOT`;
+    assert.equal(timed(() => readIam(parseHcl(withPolicy(hostile)), () => "role", "aws").edges.length, 2000), 1);
+
+    const spaces = `<<EOT\n${" \n".repeat(40_000)}`;
+    timed(() => readIam(parseHcl(withPolicy(spaces)), () => "role", "aws"), 2000);
+
+    const real = `<<-EOT
+    {"Statement": [{ "Effect": "Allow", "Action": "s3:GetObject", "Resource": "${"$"}{aws_s3_bucket.data.arn}" }]}
+    EOT`;
+    assert.deepEqual(typed(read(withPolicy(real)).model).slice(0), ["entra-id -> object-storage: read"]);
+    const early = `<<EOT
+    {"Statement": [{ "Effect": "Allow", "Action": "s3:GetObject", "Resource": "*" }]}
+    EOT
+    more
+    EOT`;
+    assert.deepEqual(typed(read(withPolicy(early)).model), [ANY]);
+  });
+
+  it("gives up on deep nesting as unscoped instead of overflowing the stack", () => {
+    const depth = 200_000;
+    const cases = {
+      string: `"${"${\"".repeat(depth)}"`,
+      braces: `"${"${".repeat(depth)}"`,
+      list: `jsonencode(${"[".repeat(depth)}${"]".repeat(depth)})`,
+      object: `jsonencode(${"{ a = ".repeat(depth)}1${" }".repeat(depth)})`,
+      json: `<<EOT\n{"Statement": ${"[".repeat(depth)}${"]".repeat(depth)}}\nEOT`,
+      jsonString: `"{\\"Statement\\": ${"[".repeat(depth)}${"]".repeat(depth)}}"`,
+    };
+    for (const [name, policy] of Object.entries(cases)) {
+      const blocks = parseHcl(withPolicy(policy));
+      const edges = timed(() => readIam(blocks, (a) => (a === "aws_iam_role.fn" ? "entra-id" : undefined), "aws").edges, 3000);
+      assert.deepEqual(edges, [{ source: "entra-id", target: ANY_RESOURCE_ID, access: "unscoped" }], name);
+    }
+  });
+
+  it("types a policy nested just inside the cap as readable and one just past it as unscoped", () => {
+    const nest = (n: number) => `{ "Statement": [{ "Effect": "Allow", "Action": "s3:GetObject", "Resource": "${"$"}{aws_s3_bucket.data.arn}", "Condition": ${"[".repeat(n)}${"]".repeat(n)} }] }`;
+    const model = (n: number) => typed(read(withPolicy(`<<EOT\n${nest(n)}\nEOT`)).model);
+    assert.deepEqual(model(10), ["entra-id -> object-storage: read"]);
+    assert.deepEqual(model(200), [ANY]);
+  });
+
+  it("does not crash terragram parse on a pile of hostile policies", () => {
+    const junk = ["\"", "${", "[[[", "}}}", "<<", "jsonencode(", "\\", "%{", "\"${\"${"].join("");
+    for (let i = 0; i < junk.length; i++) {
+      const policy = junk.slice(i);
+      assert.doesNotThrow(() => parseTerraform(withPolicy(policy)), policy);
+    }
   });
 });

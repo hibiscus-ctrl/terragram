@@ -53,25 +53,30 @@ type Val =
 
 class Unreadable extends Error {}
 
-function skipString(s: string, start: number): number {
+/** How deep strings, braces and JSON may nest before the reader gives up (and the grant becomes unscoped). */
+const MAX_DEPTH = 64;
+
+function skipString(s: string, start: number, depth = 0): number {
+  if (depth > MAX_DEPTH) throw new Unreadable();
   let i = start + 1;
   while (i < s.length) {
     const c = s[i];
     if (c === "\\") i += 2;
     else if (c === '"') return i + 1;
-    else if (c === "$" && s[i + 1] === "{") i = skipBraces(s, i + 1);
+    else if (c === "$" && s[i + 1] === "{") i = skipBraces(s, i + 1, depth + 1);
     else i++;
   }
   throw new Unreadable();
 }
 
-function skipBraces(s: string, start: number): number {
+function skipBraces(s: string, start: number, nesting = 0): number {
+  if (nesting > MAX_DEPTH) throw new Unreadable();
   let depth = 0;
   let i = start;
   while (i < s.length) {
     const c = s[i];
     if (c === '"') {
-      i = skipString(s, i);
+      i = skipString(s, i, nesting + 1);
       continue;
     }
     if (c === "{") depth++;
@@ -118,8 +123,10 @@ function readExpression(s: string, start: number): [Val, number] {
   return [{ t: "expr", text, refs: extractReferences(text) }, i];
 }
 
+const KEY_RE = /[A-Za-z0-9_.-]+/y;
+
 function readValue(s: string, from: number, depth: number): [Val, number] {
-  if (depth > 12) throw new Unreadable();
+  if (depth > MAX_DEPTH) throw new Unreadable();
   const i = skipTrivia(s, from);
   const c = s[i];
   if (c === "{") {
@@ -135,7 +142,8 @@ function readValue(s: string, from: number, depth: number): [Val, number] {
         key = s.slice(j + 1, end - 1);
         j = end;
       } else {
-        const m = /^[A-Za-z0-9_.-]+/.exec(s.slice(j));
+        KEY_RE.lastIndex = j;
+        const m = KEY_RE.exec(s);
         if (!m) throw new Unreadable();
         key = m[0];
         j += key.length;
@@ -170,7 +178,9 @@ function readValue(s: string, from: number, depth: number): [Val, number] {
 
 function readVal(text: string): Val | null {
   try {
-    return readValue(text, 0, 0)[0];
+    const [value, end] = readValue(text, 0, 0);
+    // Anything after the value (an operator, a second expression) means it was not read in full.
+    return skipTrivia(text, end) === text.length ? value : null;
   } catch (error) {
     if (error instanceof Unreadable) return null;
     throw error;
@@ -192,7 +202,7 @@ function callArgument(expr: string, name: string): string | null {
         continue;
       }
       if (c === "(") depth++;
-      else if (c === ")" && --depth === 0) return expr.slice(begin, i);
+      else if (c === ")" && --depth === 0) return expr.slice(i + 1).trim() === "" ? expr.slice(begin, i) : null;
       i++;
     }
   } catch (error) {
@@ -226,19 +236,20 @@ function jsonToVal(text: string): Val | null {
   } catch {
     return null;
   }
-  const convert = (v: unknown): Val | null => {
+  const convert = (v: unknown, depth: number): Val | null => {
+    if (depth > MAX_DEPTH) return null;
     if (typeof v === "string") {
       const restored = v.replace(/\uE000(\d+)\uE001/g, (_, n: string) => holes[Number(n)] ?? "");
       return { t: "str", text: restored, interpolated: holes.length > 0 && restored.includes("${"), refs: extractReferences(JSON.stringify(restored)) };
     }
     if (Array.isArray(v)) {
-      const converted = v.map(convert);
+      const converted = v.map((item) => convert(item, depth + 1));
       return converted.every((x) => x !== null) ? { t: "list", items: converted as Val[] } : null;
     }
     if (v !== null && typeof v === "object") {
       const entries: Array<{ key: string; value: Val }> = [];
       for (const [key, inner] of Object.entries(v)) {
-        const value = convert(inner);
+        const value = convert(inner, depth + 1);
         if (!value) return null;
         entries.push({ key, value });
       }
@@ -246,13 +257,28 @@ function jsonToVal(text: string): Val | null {
     }
     return { t: "expr", text: String(v), refs: [] };
   };
-  return convert(parsed);
+  return convert(parsed, 0);
 }
 
 /** The text of a heredoc expression, or null when the expression is not one. */
 function heredocBody(expr: string): string | null {
-  const m = /^<<-?\s*([A-Za-z_][A-Za-z0-9_]*)[^\n]*\n([\s\S]*?)\n\s*\1\s*$/.exec(expr.trim());
-  return m ? (m[2] ?? null) : null;
+  const text = expr.trim();
+  const head = /^<<-?\s*([A-Za-z_][A-Za-z0-9_]*)[^\n]*\n/.exec(text);
+  const tag = head?.[1];
+  if (!head || !tag) return null;
+  // One pass over the lines: the first line that is only the tag ends the body, and nothing but space may follow it.
+  let lineStart = head[0].length;
+  while (lineStart <= text.length) {
+    const newline = text.indexOf("\n", lineStart);
+    const lineEnd = newline === -1 ? text.length : newline;
+    if (text.slice(lineStart, lineEnd).trim() === tag) {
+      if (text.slice(lineEnd).trim() !== "") return null;
+      return text.slice(head[0].length, Math.max(head[0].length, lineStart - 1));
+    }
+    if (newline === -1) return null;
+    lineStart = newline + 1;
+  }
+  return null;
 }
 
 /* ---------------------------------------------------------------- policies -- */
@@ -266,41 +292,49 @@ type Statement = {
 
 const norm = (key: string) => key.toLowerCase().replace(/_/g, "");
 
+/** A value that could not be read: it never matches a pattern, so it ends up unscoped. */
+const UNREADABLE: Val = { t: "expr", text: "", refs: [] };
+
 function listOf(v: Val | undefined): Val[] {
   if (!v) return [];
   return v.t === "list" ? v.items : [v];
 }
 
-function entry(obj: Val, ...names: string[]): Val | undefined {
-  if (obj.t !== "obj") return undefined;
-  return obj.entries.find((e) => names.includes(norm(e.key)))?.value;
+/** Every entry whose key is one of `names`: a repeated key is read as all of its values, never just the first. */
+function valuesOf(obj: Val, ...names: string[]): Val[] {
+  if (obj.t !== "obj") return [];
+  return obj.entries.filter((e) => names.includes(norm(e.key))).map((e) => e.value);
 }
 
-function isDeny(effect: Val | undefined): boolean {
-  return effect?.t === "str" && effect.text.toLowerCase() === "deny";
+/** Only a statement whose every Effect is a plain "Deny" is skipped. */
+function isDeny(effects: Val[]): boolean {
+  return effects.length > 0 && effects.every((e) => e.t === "str" && e.text.toLowerCase() === "deny");
 }
 
 /** The Allow statements of a policy document value, or null when it cannot be read. */
 function statementsOfDocument(doc: Val): Statement[] | null {
-  const list = entry(doc, "statement");
-  if (!list) return null;
+  const lists = valuesOf(doc, "statement");
+  if (lists.length === 0) return null;
   const out: Statement[] = [];
-  for (const st of listOf(list)) {
+  for (const st of lists.flatMap(listOf)) {
     if (st.t !== "obj") return null;
-    if (isDeny(entry(st, "effect"))) continue;
+    if (isDeny(valuesOf(st, "effect"))) continue;
     out.push(statementOf(st));
   }
   return out;
 }
 
 function statementOf(st: Val): Statement {
-  const notActions = entry(st, "notaction", "notactions");
-  const notResources = entry(st, "notresource", "notresources");
+  const actions = valuesOf(st, "action", "actions");
+  const notActions = valuesOf(st, "notaction", "notactions");
+  const resources = valuesOf(st, "resource", "resources");
+  const notResources = valuesOf(st, "notresource", "notresources");
+  // A statement with no Action or no Resource key is not "grants nothing": it is unknown.
   return {
-    actions: listOf(entry(st, "action", "actions") ?? notActions),
-    notActions: notActions !== undefined,
-    resources: listOf(entry(st, "resource", "resources") ?? notResources),
-    notResources: notResources !== undefined,
+    actions: actions.length + notActions.length > 0 ? [...actions, ...notActions].flatMap(listOf) : [UNREADABLE],
+    notActions: notActions.length > 0,
+    resources: resources.length + notResources.length > 0 ? [...resources, ...notResources].flatMap(listOf) : [UNREADABLE],
+    notResources: notResources.length > 0,
   };
 }
 
@@ -316,56 +350,107 @@ function statementsOfDataBlock(doc: HclBlock): Statement[] | null {
   const out: Statement[] = [];
   for (const b of doc.blocks) {
     if (b.type !== "statement") continue;
-    const obj: Val = {
-      t: "obj",
-      entries: b.attributes.flatMap((a) => {
-        const value = readVal(a.value);
-        return value ? [{ key: a.key, value }] : [];
-      }),
-    };
-    if (isDeny(entry(obj, "effect"))) continue;
+    // An attribute that cannot be read is kept as unreadable, not dropped: a dropped one reads as "grants nothing".
+    const obj: Val = { t: "obj", entries: b.attributes.map((a) => ({ key: a.key, value: readVal(a.value) ?? UNREADABLE })) };
+    if (isDeny(valuesOf(obj, "effect"))) continue;
     out.push(statementOf(obj));
   }
   return out;
 }
 
-const READ_VERB = /^(Get|List|Describe|Head|BatchGet|Query|Scan|Select|Lookup|View|Search|Read|Receive|Decrypt|Verify)(?![a-z])/;
-const PERMISSION_NAME = /(Policy|Acl|Grant|Permission|PassRole|AssumeRole)/;
+const READ_VERBS = ["get", "list", "describe", "head", "batchget", "query", "scan", "select", "lookup", "view", "search", "read", "receive", "decrypt", "verify"];
+const PERMISSION_NAME = /(policy|acl|grant|permission|passrole|assumerole)/;
+const ACTION_CHARS = /^[A-Za-z0-9*:-]+$/;
 
-/** The level one action grants, from its name alone. Null when the action is not a plain string. */
+const startsWithReadVerb = (name: string) => READ_VERBS.some((verb) => name.startsWith(verb));
+
+/**
+ * The level one action grants, from its name alone. Null when the action is not a plain
+ * string this reader can be sure of. IAM matches action names without regard to case, and a
+ * wildcard stands for names that cannot be seen, so only a wildcard that begins with a read
+ * verb (`Get*`, `List*`) is read; every other wildcard may include a permission change.
+ */
 function actionLevel(action: Val): "read" | "write" | "admin" | null {
-  if (action.t !== "str" || action.interpolated) return null;
-  const text = action.text.trim();
+  if (action.t !== "str" || !ACTION_CHARS.test(action.text)) return null;
+  const text = action.text.toLowerCase();
   if (text === "*") return "admin";
-  const [service = "", name = ""] = text.split(":");
-  if (name === "") return null;
-  if (name === "*") return "admin";
-  const prefix = name.includes("*") ? name.slice(0, name.indexOf("*")) : name;
-  const reads = READ_VERB.test(prefix);
-  if (service.toLowerCase() === "iam" || service.toLowerCase() === "organizations") return reads ? "read" : "admin";
+  const parts = text.split(":");
+  const [service = "", name = ""] = parts;
+  if (parts.length !== 2 || service === "" || name === "") return null;
+  if (text.includes("*")) {
+    const star = name.indexOf("*");
+    return startsWithReadVerb(star === -1 ? name : name.slice(0, star)) ? "read" : "admin";
+  }
+  const reads = startsWithReadVerb(name);
+  if (service === "iam" || service === "organizations") return reads ? "read" : "admin";
   if (reads) return "read";
   return PERMISSION_NAME.test(name) ? "admin" : "write";
 }
 
-/** A literal that names everything: `*`, or an ARN whose resource part is `*` or a wildcard service. */
-function isBroad(literal: string): boolean {
-  const text = literal.trim();
-  if (text === "*") return true;
-  if (!text.startsWith("arn:")) return false;
-  const parts = text.split(":");
-  if (parts[2] === "*") return true;
-  const resource = parts.slice(5).join(":");
-  return resource === "*" || resource.startsWith("*");
+/* ------------------------------------------------------------- references -- */
+
+/** An address with attributes after it: `aws_s3_bucket.data.arn`, `module.api.arn`, `aws_s3_bucket.data[0].arn`. */
+const SIMPLE_REFERENCE = /^([a-z][a-z0-9_]*)\.([A-Za-z_][\w-]*)(?:\[(?:\d+|each\.key|count\.index)\])?(?:\.[A-Za-z_][\w-]*)+$/;
+
+type Resolved = { kind: "node"; id: string } | { kind: "outside" } | { kind: "unknown" };
+
+/**
+ * What one reference expression points at: a drawn node, a resource the picture leaves out
+ * (a grant to a thing that is not drawn adds nothing), or something this reader cannot pin
+ * down (a variable, a local, a module output, a function call), which has to be unscoped.
+ */
+function resolveReference(text: string, owner: (address: string) => string | undefined): Resolved {
+  const m = SIMPLE_REFERENCE.exec(text.trim());
+  const head = m?.[1];
+  const name = m?.[2];
+  if (!head || !name) return { kind: "unknown" };
+  if (head === "data") return { kind: "outside" };
+  const id = owner(`${head}.${name}`);
+  if (id) return { kind: "node", id };
+  return head === "module" || NOT_A_RESOURCE.has(head) ? { kind: "unknown" } : { kind: "outside" };
+}
+
+const NOT_A_RESOURCE = new Set(["var", "local", "each", "count", "path", "terraform", "self"]);
+
+/** `` stands for a template that resolved to a drawn node. */
+const HOLE = "";
+
+/**
+ * Reads a string resource. Every `${...}` has to be one reference to a drawn node; a
+ * wildcard may only follow one, as the path under it (`${bucket.arn}/*`). Anything else
+ * that contains `*` or `?`, an escape or a `%{` directive could name more than it shows.
+ * Returns true when the string reaches beyond what can be drawn.
+ */
+function stringReach(text: string, owner: (address: string) => string | undefined, add: (id: string) => void): boolean {
+  if (/[\\]|%\{|\$\$/.test(text)) return true;
+  let masked = "";
+  for (let i = 0; i < text.length; ) {
+    if (text[i] === "$" && text[i + 1] === "{") {
+      let end: number;
+      try {
+        end = skipBraces(text, i + 1);
+      } catch {
+        return true;
+      }
+      const target = resolveReference(text.slice(i + 2, end - 1), owner);
+      if (target.kind !== "node") return true;
+      add(target.id);
+      masked += HOLE;
+      i = end;
+      continue;
+    }
+    masked += text[i] ?? "";
+    i++;
+  }
+  const wildcard = masked.search(/[*?]/);
+  if (wildcard === -1) return false;
+  const path = masked.search(new RegExp(`${HOLE}[/:]`));
+  return path === -1 || wildcard < path + 2;
 }
 
 type Reach = { targets: string[]; broad: boolean };
 
-/**
- * Which drawn resources a Resource value points at, and whether it also reaches beyond
- * them. A reference to something that is not drawn is a scoped grant to a thing the
- * picture leaves out, so it adds nothing; a value with no reference and nothing literal
- * to read is unknown, and counts as broad.
- */
+/** Which drawn resources a Resource value points at, and whether it also reaches beyond them. */
 function reachOf(values: Val[], owner: (address: string) => string | undefined): Reach {
   const reach: Reach = { targets: [], broad: false };
   const add = (id: string | undefined) => {
@@ -376,19 +461,17 @@ function reachOf(values: Val[], owner: (address: string) => string | undefined):
       const inner = reachOf(v.items, owner);
       for (const t of inner.targets) add(t);
       reach.broad ||= inner.broad;
-      continue;
-    }
-    if (v.t === "obj") {
+    } else if (v.t === "obj") {
       reach.broad = true;
-      continue;
-    }
-    for (const ref of v.refs) add(owner(ref));
-    if (v.t === "str") {
-      const bare = v.text.replace(/\$\{[^}]*\}/g, "");
-      if (v.refs.length === 0 && v.interpolated && bare === "") reach.broad = true;
-      else if (isBroad(v.text.replace(/\$\{[^}]*\}/g, "x"))) reach.broad = true;
-    } else if (v.refs.length === 0 && !/\bdata\.[a-z0-9_]+\.[A-Za-z_]/.test(v.text)) {
-      reach.broad = true;
+    } else if (v.t === "str") {
+      if (stringReach(v.text, owner, add)) reach.broad = true;
+    } else {
+      const target = resolveReference(v.text, owner);
+      if (target.kind === "node") add(target.id);
+      else if (target.kind === "unknown") {
+        reach.broad = true;
+        for (const ref of v.refs) add(owner(ref));
+      }
     }
   }
   return reach;
@@ -423,8 +506,6 @@ function edgesOfStatements(
 
 /* -------------------------------------------------------------------- AWS -- */
 
-const ADMIN_POLICY = /policy\/AdministratorAccess\b/;
-
 function readAws(blocks: HclBlock[], owner: (address: string) => string | undefined, out: IamReading): void {
   const policies = new Map<string, HclBlock>();
   const documents = new Map<string, HclBlock>();
@@ -442,15 +523,15 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     return found;
   };
 
-  /** The statements of a policy expression, or null when it is not text this reader can see. */
-  const statementsOf = (expr: string | undefined): Statement[] | null => {
+  /** The statements of a policy expression, and the document blocks they came from; null when it is not text this reader can see. */
+  const statementsOf = (expr: string | undefined, via: HclBlock[]): Statement[] | null => {
     const text = expr?.trim();
     if (!text) return null;
     const ref = /^data\.(aws_iam_policy_document)\.([A-Za-z_][\w-]*)\.json$/.exec(text);
     if (ref) {
       const doc = documents.get(`${ref[1]}.${ref[2]}`);
       if (!doc) return null;
-      out.consumed.add(doc);
+      via.push(doc);
       return statementsOfDataBlock(doc);
     }
     let json: Val | null = null;
@@ -470,41 +551,86 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     return json ? statementsOfDocument(json) : null;
   };
 
-  const grant = (source: string, expr: string | undefined) => {
-    out.edges.push(...edgesOfStatements(source, statementsOf(expr), owner));
+  /** Fails closed: a policy that cannot be read, or that makes the reader throw, is an unscoped grant. */
+  const guarded = (source: string, read: () => IamEdge[]): IamEdge[] => {
+    try {
+      return read();
+    } catch {
+      return [{ source, target: ANY_RESOURCE_ID, access: "unscoped" }];
+    }
   };
 
-  const attach = (source: string, expr: string | undefined) => {
-    if (!expr) return;
-    for (const address of extractReferences(expr)) {
-      const policy = policies.get(address);
-      if (!policy) continue;
-      out.consumed.add(policy);
-      grant(source, attributeOf(policy, "policy"));
+  /** The grant of one policy expression. `holders` are the blocks that are consumed once it has drawn an edge. */
+  const grant = (source: string, expr: string | undefined, holders: HclBlock[]): number => {
+    const via: HclBlock[] = [];
+    const edges = guarded(source, () => edgesOfStatements(source, statementsOf(expr, via), owner));
+    out.edges.push(...edges);
+    if (edges.length > 0) for (const b of [...holders, ...via]) out.consumed.add(b);
+    return edges.length;
+  };
+
+  /**
+   * A managed policy attached to `source`. Only a policy defined in this file is read; an
+   * ARN, a data source, a variable or anything else is a policy this reader cannot see
+   * (AdministratorAccess, PowerUserAccess, IAMFullAccess and the rest), so it is unscoped.
+   */
+  const attach = (source: string, expr: string | undefined, holder: HclBlock | null): void => {
+    const unscoped = () => {
+      out.edges.push({ source, target: ANY_RESOURCE_ID, access: "unscoped" });
+      if (holder) out.consumed.add(holder);
+    };
+    if (expr === undefined) {
+      if (holder) unscoped();
+      return;
     }
-    if (ADMIN_POLICY.test(expr)) out.edges.push({ source, target: ANY_RESOURCE_ID, access: "unscoped" });
+    let items: Val[];
+    try {
+      const read = readVal(expr);
+      items = read === null ? [UNREADABLE] : listOf(read);
+    } catch {
+      items = [UNREADABLE];
+    }
+    for (const item of items) {
+      const policy = item.t === "list" || item.t === "obj" ? undefined : policies.get(policyAddress(item));
+      if (!policy) {
+        unscoped();
+        continue;
+      }
+      grant(source, attributeOf(policy, "policy"), [policy, ...(holder ? [holder] : [])]);
+    }
   };
 
   for (const b of blocks) {
     if (b.type !== "resource") continue;
     const [type, name] = b.labels;
     if (type === "aws_iam_role_policy") {
-      const sources = principalsOf(attributeOf(b, "role"));
-      if (sources.length > 0) out.consumed.add(b);
-      for (const source of sources) grant(source, attributeOf(b, "policy"));
+      for (const source of principalsOf(attributeOf(b, "role"))) grant(source, attributeOf(b, "policy"), [b]);
     } else if (type === "aws_iam_role_policy_attachment" || type === "aws_iam_policy_attachment") {
-      const sources = principalsOf(attributeOf(b, type === "aws_iam_policy_attachment" ? "roles" : "role"));
-      if (sources.length > 0) out.consumed.add(b);
-      for (const source of sources) attach(source, attributeOf(b, "policy_arn"));
+      for (const source of principalsOf(attributeOf(b, type === "aws_iam_policy_attachment" ? "roles" : "role"))) {
+        attach(source, attributeOf(b, "policy_arn"), b);
+      }
     } else if (type === "aws_iam_role" && name) {
       const source = owner(`aws_iam_role.${name}`);
       if (!source) continue;
-      for (const inline of b.blocks) if (inline.type === "inline_policy") grant(source, attributeOf(inline, "policy"));
-      attach(source, attributeOf(b, "managed_policy_arns"));
+      for (const inline of b.blocks) if (inline.type === "inline_policy") grant(source, attributeOf(inline, "policy"), []);
+      attach(source, attributeOf(b, "managed_policy_arns"), null);
     } else if (type === "aws_iam_instance_profile" && principalsOf(attributeOf(b, "role")).length > 0) {
       out.consumed.add(b);
     }
   }
+}
+
+/** The address of the local policy an ARN expression names (`aws_iam_policy.x.arn` or its template), or "" for anything else. */
+function policyAddress(item: Val): string {
+  if (item.t === "list" || item.t === "obj") return "";
+  let text = item.text;
+  if (item.t === "str") {
+    const template = /^\$\{([^{}"]*)\}$/.exec(text);
+    if (!template) return "";
+    text = template[1] ?? "";
+  }
+  const m = /^(aws_iam_policy)\.([A-Za-z_][\w-]*)(?:\[(?:\d+|each\.key|count\.index)\])?\.(?:arn|id)$/.exec(text.trim());
+  return m ? `${m[1]}.${m[2]}` : "";
 }
 
 /* ------------------------------------------------------------------ Azure -- */
@@ -512,6 +638,7 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
 /** The level a built-in Azure role grants, from its name. Null for a role that is not recognised. */
 function azureRoleLevel(name: string): "read" | "write" | "admin" | null {
   const role = name.trim();
+  if (/[\\$%]/.test(role)) return null;
   if (/^(owner|user access administrator|role based access control administrator)$/i.test(role)) return "admin";
   if (/(\badministrator\b|\bdata owner\b|\bowner\b)/i.test(role)) return "admin";
   if (/(reader|viewer|receiver|secrets user)$/i.test(role)) return "read";
@@ -519,12 +646,30 @@ function azureRoleLevel(name: string): "read" | "write" | "admin" | null {
   return null;
 }
 
-/** Whether a scope expression covers a whole resource group, subscription or management group. */
-function isWideScope(expr: string): boolean {
-  if (/azurerm_(resource_group|subscription|management_group)|data\.azurerm_(subscription|client_config)/.test(expr)) return true;
-  const literal = stringValue(expr.trim());
-  if (literal === undefined) return false;
-  return /^\/subscriptions\/[^/]+(\/resourceGroups\/[^/]+)?\/?$/i.test(literal) || /^\/providers\/Microsoft\.Management\//i.test(literal);
+/** Scopes that cover more than one resource, whatever they are called. */
+const WIDE_SCOPE_TYPES = new Set(["azurerm_resource_group", "azurerm_subscription", "azurerm_management_group"]);
+
+const AZURE_RESOURCE_ID = /^(azurerm_[a-z0-9_]+)\.([A-Za-z_][\w-]*)(?:\[(?:\d+|each\.key|count\.index)\])?\.id$/;
+
+/**
+ * The drawn node a role assignment's scope is exactly: the `.id` of one resource (or that id
+ * with a literal sub-path under it). A subscription, a resource group, a module output, a
+ * literal id, a variable or anything computed is not one drawn resource, so it is undefined.
+ */
+function azureScopeTarget(scope: string, owner: (address: string) => string | undefined): string | undefined {
+  let text = scope.trim();
+  let tail = "";
+  if (text.startsWith('"')) {
+    const inner = stringValue(text) ?? "";
+    const m = /^\$\{([^{}"]*)\}((?:\/[A-Za-z0-9._-]+)*)$/.exec(inner);
+    if (!m || (m[2] ?? "").split("/").includes("..")) return undefined;
+    text = m[1] ?? "";
+    tail = m[2] ?? "";
+  }
+  const m = AZURE_RESOURCE_ID.exec(text.trim());
+  const type = m?.[1];
+  if (!m || !type || WIDE_SCOPE_TYPES.has(type) || tail.includes("//")) return undefined;
+  return owner(`${type}.${m[2]}`);
 }
 
 function readAzure(blocks: HclBlock[], owner: (address: string) => string | undefined, out: IamReading): void {
@@ -536,21 +681,21 @@ function readAzure(blocks: HclBlock[], owner: (address: string) => string | unde
       if (source) break;
     }
     if (!source) continue;
-    out.consumed.add(b);
 
-    const roleName = stringValue(attributeOf(b, "role_definition_name"));
-    const level: EdgeAccess = (roleName === undefined ? null : azureRoleLevel(roleName)) ?? "unscoped";
-
-    const scope = attributeOf(b, "scope") ?? "";
-    const targets: string[] = [];
-    for (const address of extractReferences(scope)) {
-      const id = owner(address);
-      if (id && id !== source && !targets.includes(id)) targets.push(id);
+    const unscoped: IamEdge = { source, target: ANY_RESOURCE_ID, access: "unscoped" };
+    let edge: IamEdge | null;
+    try {
+      const roleName = stringValue(attributeOf(b, "role_definition_name"));
+      const level: EdgeAccess = (roleName === undefined ? null : azureRoleLevel(roleName)) ?? "unscoped";
+      const target = azureScopeTarget(attributeOf(b, "scope") ?? "", owner);
+      edge = target === undefined ? unscoped : target === source ? null : { source, target, access: level };
+    } catch {
+      edge = unscoped;
     }
-    for (const target of targets) out.edges.push({ source, target, access: level });
-    const unknown =
-      extractReferences(scope).length === 0 && stringValue(scope.trim()) === undefined && !/\bdata\.[a-z0-9_]+\.[A-Za-z_]/.test(scope);
-    if (isWideScope(scope) || unknown) out.edges.push({ source, target: ANY_RESOURCE_ID, access: "unscoped" });
+    if (edge) {
+      out.edges.push(edge);
+      out.consumed.add(b);
+    }
   }
 }
 
