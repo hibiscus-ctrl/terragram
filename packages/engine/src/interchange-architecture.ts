@@ -98,7 +98,9 @@ export function parseArchitecture(source: string): ArchitectureResult {
 
   for (let index = 0; index < lines.length; index++) {
     const number = index + 1;
-    const line = (lines[index] ?? "").replace(/%%.*$/, "").trim().replace(/;$/, "");
+    const raw = lines[index] ?? "";
+    const comment = raw.indexOf("%%");
+    const line = (comment === -1 ? raw : raw.slice(0, comment)).trim().replace(/;$/, "");
     if (!line) continue;
     if (inAccBlock) {
       if (line === "}") inAccBlock = false;
