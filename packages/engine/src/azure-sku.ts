@@ -170,10 +170,20 @@ function skuOf(block: HclBlock, binding: Binding): string | undefined {
   return head !== undefined && tail !== undefined ? `${head}_${tail}` : undefined;
 }
 
+/**
+ * The data's SKU patterns, compiled from literals: the data names a pattern by its
+ * source text and only the ones listed here are used, so no pattern is built at run
+ * time. A test checks every pattern in the data has an entry.
+ */
+export const SKU_PATTERNS: Readonly<Record<string, RegExp>> = {
+  "^(?:B|GP|MO)_Standard_[A-Za-z0-9_]+$": /^(?:B|GP|MO)_Standard_[A-Za-z0-9_]+$/i,
+};
+
 function isKnown(rule: SkuRuleData, sku: string): boolean {
   const lower = sku.toLowerCase();
   if (rule.valid.some((v) => v.toLowerCase() === lower)) return true;
-  return rule.pattern !== undefined && new RegExp(rule.pattern, "i").test(sku);
+  if (rule.pattern === undefined || !Object.hasOwn(SKU_PATTERNS, rule.pattern)) return false;
+  return SKU_PATTERNS[rule.pattern]?.test(sku) ?? false;
 }
 
 /** The data's own spelling of a SKU, so the availability lookup is exact. */

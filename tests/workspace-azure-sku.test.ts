@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { checkAzureSkus, SKU_RULE_IDS } from "terragram-engine/azure-sku";
+import { checkAzureSkus, SKU_PATTERNS, SKU_RULE_IDS } from "terragram-engine/azure-sku";
 import { AZURE_SKU_DATA } from "terragram-engine/azure-sku-data";
 import { composeFromPrompt } from "terragram-engine/engine";
 import { CLOUDS } from "terragram-engine/model";
@@ -245,6 +245,7 @@ module "plan" {
       const rule = AZURE_SKU_DATA.rules[id];
       assert.ok(rule, `${id} is in the data`);
       assert.ok(rule.valid.length > 0 || rule.pattern !== undefined, `${id} has a way to tell a valid SKU`);
+      if (rule.pattern !== undefined) assert.ok(Object.hasOwn(SKU_PATTERNS, rule.pattern), `${id}: pattern ${rule.pattern} has a compiled literal`);
     }
     assert.deepEqual(Object.keys(AZURE_SKU_DATA.rules).sort(), [...SKU_RULE_IDS].sort());
     assert.match(AZURE_SKU_DATA.refreshed, /^\d{4}-\d{2}-\d{2}$/);

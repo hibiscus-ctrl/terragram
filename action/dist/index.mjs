@@ -574,10 +574,14 @@ function skuOf(block2, binding) {
   const tail = stringValue(attributeOf(block2, second));
   return head !== void 0 && tail !== void 0 ? `${head}_${tail}` : void 0;
 }
+var SKU_PATTERNS = {
+  "^(?:B|GP|MO)_Standard_[A-Za-z0-9_]+$": /^(?:B|GP|MO)_Standard_[A-Za-z0-9_]+$/i
+};
 function isKnown(rule, sku) {
   const lower = sku.toLowerCase();
   if (rule.valid.some((v) => v.toLowerCase() === lower)) return true;
-  return rule.pattern !== void 0 && new RegExp(rule.pattern, "i").test(sku);
+  if (rule.pattern === void 0 || !Object.hasOwn(SKU_PATTERNS, rule.pattern)) return false;
+  return SKU_PATTERNS[rule.pattern]?.test(sku) ?? false;
 }
 function canonical(rule, sku) {
   const lower = sku.toLowerCase();
