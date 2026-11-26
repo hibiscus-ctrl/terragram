@@ -21,6 +21,9 @@ export type GraphBox = {
   kind?: string | null;
   /** The importer's reason for being unsure, raised as a review flag. */
   flagReason?: string | null;
+  /** Never match the label to a kind: the box stays a flagged generic component. For a
+   *  box whose own metadata (an unknown icon) says the label alone is not enough. */
+  generic?: boolean;
 };
 
 export type GraphLink = { from: string; to: string };
@@ -48,8 +51,11 @@ export function buildGraphModel(boxes: GraphBox[], links: GraphLink[]): BuiltGra
       continue;
     }
 
-    const kind =
-      box.kind && MODEL_KIND_IDS.includes(box.kind) ? box.kind : matchKinds(`${label} ${box.ref}`)[0];
+    const kind = box.generic
+      ? undefined
+      : box.kind && MODEL_KIND_IDS.includes(box.kind)
+        ? box.kind
+        : matchKinds(`${label} ${box.ref}`)[0];
     if (kind) {
       const def = kindDefinition(kind);
       const id = uniqueNodeId(kind, taken);
@@ -74,7 +80,9 @@ export function buildGraphModel(boxes: GraphBox[], links: GraphLink[]): BuiltGra
       kind: "external",
       label: label.slice(0, 160),
       flag: {
-        reason: `"${label}" does not match a component that can be generated. Pick a kind for it, or leave it as documentation.`,
+        reason:
+          (box.generic ? box.flagReason?.slice(0, 400) : undefined) ??
+          `"${label}" does not match a component that can be generated. Pick a kind for it, or leave it as documentation.`,
       },
     });
     untranslated.push(label);

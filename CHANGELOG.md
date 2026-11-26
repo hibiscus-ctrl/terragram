@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `terragram graph --format drawio` (and `renderGraphDrawio` in `terragram-engine/graph`) writes the estate as an
   uncompressed draw.io file that opens in diagrams.net: scopes, environments and module calls as containers, resources
   as cards inside them, references as connectors, laid out where the SVG puts them.
+- `terragram generate --mermaid` reads Mermaid `architecture-beta` diagrams as well as flowcharts: services (matched by
+  title; the `internet` icon is the outside world), nested groups (kept as members, reported), junctions (edges
+  joined through them) and edges with sides and arrows. An icon outside Mermaid's built-ins makes a flagged generic
+  component with a warning rather than a guess. Malformed input is refused with the line number.
 
 ### Changed
 
