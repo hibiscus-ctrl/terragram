@@ -1,4 +1,4 @@
-# Terragram**Terragram** turns a plain-English brief, a Mermaid flowchart or an architecture diagram into reviewed
+# Terragram**Terragram** turns a plain-English brief, a Mermaid flowchart or `architecture-beta` diagram, or an architecture picture into reviewed
 Terraform or OpenTofu, and reads Terraform back into a diagram, through one auditable internal model.
 This repository holds the TypeScript engine that does it, a command line over that engine, and a GitHub
 Action that keeps a repository's Terraform in line with a model file.
@@ -79,7 +79,7 @@ node packages/cli/dist/terragram.mjs --help
 
 ```bash
 terragram generate --prompt "A web app with a Postgres database" --cloud aws -o out/   # Terraform + model.json
-terragram generate --mermaid diagram.mmd --tofu -o out/                               # from a Mermaid flowchart
+terragram generate --mermaid diagram.mmd --tofu -o out/                               # from a Mermaid flowchart or architecture-beta diagram
 terragram parse infra/ -o model.json                                                  # Terraform -> model
 terragram render model.json -o diagram.svg
 terragram explain model.json                                                          # plain-English description
@@ -96,6 +96,28 @@ prints `UNSIGNED`, which is not a pass.
 
 Exit status is 0 on success, 1 when a command fails (including a receipt that does not verify) and 2
 for bad arguments; `--json` prints a machine-readable result where it helps.
+
+## Mermaid architecture diagrams
+
+`terragram generate --mermaid <file>` reads a flowchart or an `architecture-beta` diagram, chosen by the
+file's first line. Both go through the same registry: a service's label is matched to a resource kind
+as a flowchart box's is, every edge becomes a connection you own, and a service that matches nothing
+stays on the diagram as a flagged generic component. Nothing is guessed and nothing is fetched.
+
+| Syntax | What Terragram does |
+| --- | --- |
+| `service id(icon)[Title]` | A component. The title decides the kind; the icon never does. |
+| Icon `internet` | The model's internet node. |
+| Icons `cloud`, `database`, `disk`, `server` | Shape only, so the title decides. No warning. |
+| Any other icon (`logos:aws-lambda`, `aws:ec2`) | A flagged generic component, not matched by its title, with a warning. Terragram has no icon-to-resource map to trust, so it does not invent one. |
+| `group id(icon)[Title] (in parent)` | Read for nesting, then dropped with a warning: the model has no groups. Its services are kept. |
+| `junction id (in parent)` | Not a component. Every edge into it is joined to every edge out of it. A junction with edges on one side only joins nothing and warns. |
+| `a:R -- L:b`, `-->`, `<--` | An edge from the left operand to the right one (`<--` reverses it). `<-->` keeps one edge, left to right, and warns. The sides `L`/`R`/`T`/`B` are validated but only steer Mermaid's drawing. `a{group}` is accepted for a service in a group. |
+| `title`, `accTitle`, `accDescr`, `%%` comments | Ignored. |
+
+A line it cannot read, an unknown or later-declared id, a group named as an edge end, a duplicate id or
+a diagram with no services is an error that names the line (exit status 1), not a partial import.
+Warnings print to stderr as `warning: …` and are in the `notes` of `--json`.
 
 ## GitHub Action
 

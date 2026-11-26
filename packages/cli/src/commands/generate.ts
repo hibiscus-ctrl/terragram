@@ -14,12 +14,12 @@ import { DEFAULT_CLOUD, modelDocument, parseCloud } from "../model-file.ts";
 
 const GENERATE_HELP = `Usage: terragram generate (--prompt <text> | --mermaid <file>) -o <dir> [options]
 
-Turn a brief or a Mermaid flowchart into Terraform. Writes main.tf, variables.tf,
+Turn a brief, a Mermaid flowchart or a Mermaid architecture-beta diagram into Terraform. Writes main.tf, variables.tf,
 outputs.tf (and anything a component adds beside them) plus model.json to <dir>.
 
 Options:
   --prompt <text>     describe the infrastructure in plain English
-  --mermaid <file>    read a Mermaid flowchart instead
+  --mermaid <file>    read a Mermaid flowchart or architecture-beta diagram instead
   --cloud aws|azure   target cloud (default: the one the brief names, else azure)
   --tofu              emit for OpenTofu rather than Terraform
   -o, --output <dir>  directory to write to (required)
@@ -63,6 +63,7 @@ export async function generate(argv: string[], io: Io): Promise<number> {
     if (!read.ok) throw new CommandError(read.error);
     model = read.model;
     notes.push(...read.untranslated.map((item) => `not translated: ${item}`));
+    notes.push(...read.warnings.map((warning) => `warning: ${warning}`));
   }
   if (resourceNodes(model).length === 0) {
     throw new CommandError("nothing to build: no components were recognised in the input");

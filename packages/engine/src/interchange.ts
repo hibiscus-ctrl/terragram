@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { buildGraphModel, type GraphBox, type GraphLink } from "./graph-build.ts";
+import { looksLikeArchitecture, parseArchitecture } from "./interchange-architecture.ts";
 import type { InfraModel } from "./model.ts";
 
 /**
- * Mermaid flowchart → model.
+ * Mermaid flowchart or `architecture-beta` diagram → model.
+ *
+ * `parseMermaid` picks the reader from the header. The architecture reader is in
+ * `interchange-architecture.ts`; the rest of this comment is about the flowchart.
  *
  * A flowchart is the diagram format platform teams actually keep in their repos,
  * and it is text, so it can be read without a rendering engine or inference. Each
@@ -21,7 +25,7 @@ import type { InfraModel } from "./model.ts";
  */
 
 export type InterchangeResult =
-  | { ok: true; model: InfraModel; untranslated: string[] }
+  | { ok: true; model: InfraModel; untranslated: string[]; warnings: string[] }
   | { ok: false; error: string };
 
 const HEADER = /^(flowchart|graph)\b/i;
@@ -39,8 +43,9 @@ const ARROW = /\s*(?:<?-{2,3}>?|<?={2,3}>?|<?-\.+->?|-\.-)\s*(?:\|[^|]*\|\s*)?/;
 /** `A -- label --> B` and `A == label ==> B`, which put the label between the strokes. */
 const INLINE_LABEL = /\s*(?:--|==)\s*[^-=>]+?\s*(?:-->|==>|---|===)\s*/;
 
-/** Whether pasted text is a flowchart rather than Terraform or prose. */
+/** Whether pasted text is a flowchart or architecture diagram rather than Terraform or prose. */
 export function looksLikeMermaid(source: string): boolean {
+  if (looksLikeArchitecture(source)) return true;
   const first = source
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -64,10 +69,12 @@ function operands(statement: string): string[] {
 }
 
 export function parseMermaid(source: string): InterchangeResult {
+  if (looksLikeArchitecture(source)) return parseArchitecture(source);
   if (!looksLikeMermaid(source)) {
     return {
       ok: false,
-      error: "This does not look like a Mermaid flowchart. It should start with `flowchart` or `graph`.",
+      error:
+        "This does not look like a Mermaid flowchart or architecture diagram. It should start with `flowchart`, `graph` or `architecture-beta`.",
     };
   }
 
@@ -114,5 +121,5 @@ export function parseMermaid(source: string): InterchangeResult {
 
   // A bare id like `db` is matched too — it is often the most telling word.
   const boxes: GraphBox[] = order.map((ref) => ({ ref, label: labels.get(ref) || ref }));
-  return { ok: true, ...buildGraphModel(boxes, links) };
+  return { ok: true, ...buildGraphModel(boxes, links), warnings: [] };
 }

@@ -139,6 +139,37 @@ describe("terragram generate matches the engine's emit path", () => {
     for (const f of emitTerraform(read.model, "aws").files) assert.equal(written[f.name], f.content);
   });
 
+  it("reads a Mermaid architecture-beta diagram and prints what it could not keep as warnings", async () => {
+    const dir = fresh("arch");
+    const file = join(dir, "architecture.mmd");
+    const source = `architecture-beta
+  group api(cloud)[API]
+  service web(server)[Web app] in api
+  service db(database)[Postgres database] in api
+  service fn(logos:aws-lambda)[Worker] in api
+  web:R --> L:db
+  web:B --> T:fn
+`;
+    writeFileSync(file, source);
+    const out = join(dir, "out");
+    const result = await cli(["generate", "--mermaid", file, "--cloud", "aws", "-o", out]);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stderr, /warning: group "API" is not kept/);
+    assert.match(result.stderr, /warning: service "fn": icon "logos:aws-lambda" is not a built-in icon/);
+    assert.match(result.stderr, /not translated: Worker/);
+    const read = parseMermaid(source);
+    assert.ok(read.ok);
+    const written = readTree(out);
+    for (const f of emitTerraform(read.model, "aws").files) assert.equal(written[f.name], f.content);
+
+    const bad = await cli(["generate", "--mermaid", file.replace("architecture", "missing"), "-o", out]);
+    assert.notEqual(bad.code, 0);
+    writeFileSync(file, "architecture-beta\n  service a(server)[A]\n  a:R -- L:b\n");
+    const refused = await cli(["generate", "--mermaid", file, "-o", join(dir, "none")]);
+    assert.equal(refused.code, 1);
+    assert.match(refused.stderr, /Line 3: the edge uses "b"/);
+  });
+
   it(
     "writes Terraform that terraform fmt leaves alone",
     { skip: !terraformInstalled && "terraform is not installed" },
