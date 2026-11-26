@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `terragram graph --format drawio` (and `renderGraphDrawio` in `terragram-engine/graph`) writes the estate as an
+  uncompressed draw.io file that opens in diagrams.net: scopes, environments and module calls as containers, resources
+  as cards inside them, references as connectors, laid out where the SVG puts them.
+
 ### Changed
 
 - `terragram graph` places every card, box and arrow by one fixed order: scope, environment name,

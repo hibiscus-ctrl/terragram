@@ -1,0 +1,21 @@
+<mxfile>
+  <diagram id="diagram-graph" name="Infrastructure graph">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="h0" value="Resources +1 -0 ~0, references +2 -0" style="text;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=10;fontStyle=0;fontColor=#665e4f;strokeColor=none;fillColor=none;" vertex="1" parent="1"><mxGeometry x="24" y="20" width="312" height="18" as="geometry"/></mxCell>
+        <mxCell id="g0" value="AWS account 123456789012" style="rounded=1;arcSize=6;whiteSpace=wrap;container=1;collapsible=0;recursiveResize=0;align=left;verticalAlign=top;spacingLeft=12;spacingTop=2;fontSize=11;fontStyle=1;fontColor=#665e4f;fillColor=#f6f3ec;strokeColor=#cfc7b4;" vertex="1" parent="1"><mxGeometry x="24" y="48" width="256" height="480" as="geometry"/></mxCell>
+        <mxCell id="g1" value="environment prod" style="rounded=1;arcSize=6;whiteSpace=wrap;container=1;collapsible=0;recursiveResize=0;align=left;verticalAlign=top;spacingLeft=12;spacingTop=2;fontSize=11;fontStyle=1;fontColor=#665e4f;fillColor=#f1ede2;strokeColor=#c9bfa6;dashed=1;dashPattern=2 3;" vertex="1" parent="g0"><mxGeometry x="14" y="36" width="228" height="430" as="geometry"/></mxCell>
+        <mxCell id="g2" value="module terraform-aws-modules/vpc/aws 5.13.0" style="rounded=1;arcSize=6;whiteSpace=wrap;container=1;collapsible=0;recursiveResize=0;align=left;verticalAlign=top;spacingLeft=12;spacingTop=2;fontSize=11;fontStyle=1;fontColor=#665e4f;fillColor=#efe9da;strokeColor=#c4baa0;dashed=1;dashPattern=6 4;" vertex="1" parent="g1"><mxGeometry x="14" y="304" width="200" height="112" as="geometry"/></mxCell>
+        <mxCell id="n2" value="aws_subnet&#10;subnet-prod" style="rounded=1;arcSize=12;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;fontStyle=1;fontColor=#211d16;fillColor=#ffffff;strokeColor=#2563eb;strokeWidth=1.5;opacity=55;" vertex="1" parent="g2"><mxGeometry x="14" y="36" width="172" height="62" as="geometry"/></mxCell>
+        <mxCell id="n0" value="+ aws_db_instance&#10;db-prod" style="rounded=1;arcSize=12;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;fontStyle=1;fontColor=#211d16;fillColor=#f0fdf4;strokeColor=#15803d;strokeWidth=1.5;" vertex="1" parent="g1"><mxGeometry x="28" y="170" width="172" height="62" as="geometry"/></mxCell>
+        <mxCell id="n1" value="aws_ecs_service&#10;svc-prod" style="rounded=1;arcSize=12;whiteSpace=wrap;align=left;verticalAlign=middle;spacingLeft=12;fontSize=11;fontStyle=1;fontColor=#211d16;fillColor=#ffffff;strokeColor=#047857;strokeWidth=1.5;opacity=55;" vertex="1" parent="g1"><mxGeometry x="28" y="36" width="172" height="62" as="geometry"/></mxCell>
+        <mxCell id="e0" value="" style="curved=1;endArrow=block;endFill=1;strokeColor=#15803d;strokeWidth=2;" edge="1" source="n0" target="n2" parent="1"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="152" y="352"/><mxPoint x="152" y="388"/></Array></mxGeometry></mxCell>
+        <mxCell id="e1" value="" style="curved=1;endArrow=block;endFill=1;strokeColor=#15803d;strokeWidth=2;" edge="1" source="n1" target="n0" parent="1"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="152" y="218"/></Array></mxGeometry></mxCell>
+        <mxCell id="f0" value="Delta view: what changed, and the resources one reference away from it." style="text;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=10;fontStyle=0;fontColor=#665e4f;strokeColor=none;fillColor=none;" vertex="1" parent="1"><mxGeometry x="24" y="556" width="312" height="18" as="geometry"/></mxCell>
+        <mxCell id="f1" value="2 glue resources hidden: aws_iam_role_policy_attachment x2." style="text;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=10;fontStyle=0;fontColor=#665e4f;strokeColor=none;fillColor=none;" vertex="1" parent="1"><mxGeometry x="24" y="572" width="312" height="18" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

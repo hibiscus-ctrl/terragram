@@ -24,6 +24,7 @@ import {
   parseFindings,
   parseGraphDocument,
   projectGraph,
+  renderGraphDrawio,
   renderGraphMermaid,
   renderGraphSvg,
   SEVERITIES,
@@ -963,16 +964,19 @@ describe("goldens", () => {
   it("draws the small estate", () => {
     golden("small.svg", `${renderGraphSvg(view(small, { title: "web tier" }))}\n`);
     golden("small.mmd", renderGraphMermaid(view(small, { title: "web tier" })));
+    golden("small.drawio", renderGraphDrawio(view(small, { title: "web tier" })));
   });
 
   it("draws the medium estate", () => {
     golden("medium.svg", `${renderGraphSvg(view(medium))}\n`);
     golden("medium.mmd", renderGraphMermaid(view(medium)));
+    golden("medium.drawio", renderGraphDrawio(view(medium)));
   });
 
   it("draws what changed between two small estates, in full and as a delta", () => {
     golden("small-diff.svg", `${renderGraphSvg(view(small, { base: smallBase }))}\n`);
     golden("small-diff.mmd", renderGraphMermaid(view(small, { base: smallBase })));
+    golden("small-diff.drawio", renderGraphDrawio(view(small, { base: smallBase })));
     golden("small-delta.svg", `${renderGraphSvg(view(small, { base: smallBase, delta: true }))}\n`);
     golden("small-delta.mmd", renderGraphMermaid(view(small, { base: smallBase, delta: true })));
   });
@@ -986,6 +990,7 @@ describe("goldens", () => {
     ];
     golden("environments.svg", `${renderGraphSvg(view(environments, { findings }))}\n`);
     golden("environments.mmd", renderGraphMermaid(view(environments, { findings })));
+    golden("environments.drawio", renderGraphDrawio(view(environments, { findings })));
     golden("environments-diff.svg", `${renderGraphSvg(view(environments, { base: environmentsBase }))}\n`);
     golden("environments-diff.mmd", renderGraphMermaid(view(environments, { base: environmentsBase })));
   });
@@ -994,15 +999,19 @@ describe("goldens", () => {
     const base = without(devProd, (n) => n.id === "db-prod");
     golden("dev-prod.svg", `${renderGraphSvg(view(devProd, { title: "dev and prod" }))}\n`);
     golden("dev-prod.mmd", renderGraphMermaid(view(devProd, { title: "dev and prod" })));
+    golden("dev-prod.drawio", renderGraphDrawio(view(devProd, { title: "dev and prod" })));
     golden("dev-prod-delta.svg", `${renderGraphSvg(view(devProd, { base, delta: true }))}\n`);
     golden("dev-prod-delta.mmd", renderGraphMermaid(view(devProd, { base, delta: true })));
+    golden("dev-prod-delta.drawio", renderGraphDrawio(view(devProd, { base, delta: true })));
   });
 
   it("draws the same estate with its IDs and addresses hashed, and with its addresses dropped", () => {
     golden("hashed.svg", `${renderGraphSvg(view(hashedDevProd))}\n`);
     golden("hashed.mmd", renderGraphMermaid(view(hashedDevProd)));
+    golden("hashed.drawio", renderGraphDrawio(view(hashedDevProd)));
     golden("dropped.svg", `${renderGraphSvg(view(dropAddresses(devProd)))}\n`);
     golden("dropped.mmd", renderGraphMermaid(view(dropAddresses(devProd))));
+    golden("dropped.drawio", renderGraphDrawio(view(dropAddresses(devProd))));
   });
 
   it("draws every one of those goldens, and the medium one, from a shuffled document in the same bytes", () => {
@@ -1019,6 +1028,7 @@ describe("goldens", () => {
         const v = view(shuffled(doc, seed), { ...options, ...(baseDoc && { base: shuffled(baseDoc, seed) }) });
         assert.equal(`${renderGraphSvg(v)}\n`, readFileSync(fixture(`golden/${name}.svg`), "utf8"), `${name}.svg, seed ${seed}`);
         assert.equal(renderGraphMermaid(v), readFileSync(fixture(`golden/${name}.mmd`), "utf8"), `${name}.mmd, seed ${seed}`);
+        assert.equal(renderGraphDrawio(v), readFileSync(fixture(`golden/${name}.drawio`), "utf8"), `${name}.drawio, seed ${seed}`);
       }
     }
   });

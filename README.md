@@ -113,7 +113,8 @@ for pull request comments and for the platform's web app: the same document give
 whatever order it lists its nodes in.
 
 ```bash
-terragram graph graph.json -o estate.svg                       # SVG (default); --format mermaid | json
+terragram graph graph.json -o estate.svg                       # SVG (default); --format drawio | mermaid | json
+terragram graph graph.json -f drawio -o estate.drawio          # a file diagrams.net opens and edits
 terragram graph graph.json --base main/graph.json              # mark what was added, removed, changed
 terragram graph graph.json --base main/graph.json --delta      # only the changes and one reference of context
 terragram graph graph.json --findings ocsf-findings.json       # lay findings over it
@@ -171,8 +172,16 @@ their roots as they are (`redaction.addresses` `plain`). A root move is not show
 dropped, or when either side predates roots: two hash keys cannot be compared, and a graph without roots
 has nothing to compare.
 
+**draw.io.** `--format drawio` writes an uncompressed `.drawio` file (`mxfile` XML) that opens in diagrams.net and
+the desktop app. A scope, environment or module call is a container, a resource is a card inside it, and a
+reference is a connector that keeps the route the SVG draws; positions are the SVG's, so the two pictures match.
+Status marks (`+`, `-`, `~`) and finding counts are in the card text, and the footer notes are text boxes.
+Every label is plain text, never HTML, and the file carries only what the picture shows. Ids are `g<n>`, `n<n>`
+and `e<n>` in the order of the picture, so the same estate gives the same bytes. The SVG's legend and
+finding markers become words in the text; a removed card is struck through and dashed.
+
 In code, import `terragram-engine/graph`: `parseGraphDocument`, `projectGraph(doc, options)` (a view
-model), `renderGraphSvg(view)`, `renderGraphMermaid(view)` and `diffGraphs(base, head)`.
+model), `renderGraphSvg(view)`, `renderGraphDrawio(view)`, `renderGraphMermaid(view)` and `diffGraphs(base, head)`.
 
 ## Schemas
 

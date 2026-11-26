@@ -15,11 +15,11 @@ import type { EdgeStatus, GraphCategory, GraphStatus, GraphView, ViewGroup, View
  */
 
 const FONT = "'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
-const INK = "#211d16";
-const MUTED = "#665e4f";
+export const INK = "#211d16";
+export const MUTED = "#665e4f";
 const PAPER = "#faf8f4";
 
-const CATEGORY_COLOUR: Record<GraphCategory, string> = {
+export const CATEGORY_COLOUR: Record<GraphCategory, string> = {
   network: CATEGORY_META.network.color,
   compute: CATEGORY_META.compute.color,
   storage: CATEGORY_META.storage.color,
@@ -36,7 +36,7 @@ const SEVERITY_COLOUR: Record<Severity, string> = {
   info: "#475569",
 };
 
-const STATUS_STYLE: Record<GraphStatus, { stroke?: string; fill: string; dash?: string; mark?: string }> = {
+export const STATUS_STYLE: Record<GraphStatus, { stroke?: string; fill: string; dash?: string; mark?: string }> = {
   unchanged: { fill: "#ffffff" },
   context: { fill: "#ffffff" },
   added: { stroke: "#15803d", fill: "#f0fdf4", mark: "+" },
@@ -45,13 +45,13 @@ const STATUS_STYLE: Record<GraphStatus, { stroke?: string; fill: string; dash?: 
 };
 
 /** Stroke, fill and dash of a box that did not change: each level of the nesting a shade darker. */
-const GROUP_STYLE: Record<ViewGroup["kind"], readonly [string, string, string]> = {
+export const GROUP_STYLE: Record<ViewGroup["kind"], readonly [string, string, string]> = {
   scope: ["#cfc7b4", "#f6f3ec", ""],
   environment: ["#c9bfa6", "#f1ede2", "2 3"],
   module: ["#c4baa0", "#efe9da", "6 4"],
 };
 
-const EDGE_STYLE: Record<EdgeStatus, { stroke: string; width: number; dash?: string }> = {
+export const EDGE_STYLE: Record<EdgeStatus, { stroke: string; width: number; dash?: string }> = {
   unchanged: { stroke: "#a8a090", width: 1.5 },
   added: { stroke: "#15803d", width: 2 },
   removed: { stroke: "#b91c1c", width: 2, dash: "5 4" },
@@ -63,7 +63,7 @@ function esc(text: string): string {
   return clean.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+export const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 const num = (n: number) => String(Math.round(n * 10) / 10);
 
@@ -131,7 +131,7 @@ function nodeSvg(node: ViewNode, box: Box): string {
 }
 
 /** The words under the picture: what was hidden, what the findings are, what the colours mean. */
-function footerLines(view: GraphView): string[] {
+export function footerLines(view: GraphView): string[] {
   const lines: string[] = [];
   if (view.mode === "delta") lines.push("Delta view: what changed, and the resources one reference away from it.");
   if (view.hidden.count > 0) {
@@ -147,7 +147,7 @@ function footerLines(view: GraphView): string[] {
   return lines;
 }
 
-function headerLines(view: GraphView): string[] {
+export function headerLines(view: GraphView): string[] {
   const lines: string[] = [];
   if (view.title) lines.push(view.title);
   if (view.changes) {

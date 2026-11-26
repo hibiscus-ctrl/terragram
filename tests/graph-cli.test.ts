@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 
-import { parseGraphDocument, projectGraph, renderGraphMermaid, renderGraphSvg } from "terragram-engine/graph";
+import { parseGraphDocument, projectGraph, renderGraphDrawio, renderGraphMermaid, renderGraphSvg } from "terragram-engine/graph";
 
 import { run } from "../packages/cli/src/cli.ts";
 import type { Io } from "../packages/cli/src/io.ts";
@@ -48,6 +48,14 @@ describe("terragram graph", () => {
     assert.equal(mermaid.stdout, renderGraphMermaid(projectGraph(doc(medium), { title: "estate" })));
     const json = await cli("graph", medium, "-f", "json");
     assert.deepEqual(JSON.parse(json.stdout), JSON.parse(JSON.stringify(projectGraph(doc(medium)))));
+  });
+
+  it("writes a draw.io file, the one the renderer draws", async () => {
+    const result = await cli("graph", small, "--format", "drawio", "--title", "estate", "-o", "out/small.drawio");
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stdout, "wrote out/small.drawio\n");
+    assert.equal(readFileSync(join(scratch, "out/small.drawio"), "utf8"), renderGraphDrawio(projectGraph(doc(small), { title: "estate" })));
+    assert.equal((await cli("graph", small, "-f", "drawio")).stdout, renderGraphDrawio(projectGraph(doc(small))));
   });
 
   it("writes a file with -o", async () => {

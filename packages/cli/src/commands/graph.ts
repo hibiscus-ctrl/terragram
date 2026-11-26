@@ -10,6 +10,7 @@ import {
   parseFindings,
   parseGraphDocument,
   projectGraph,
+  renderGraphDrawio,
   renderGraphMermaid,
   renderGraphSvg,
 } from "terragram-engine/graph";
@@ -29,7 +30,8 @@ Options:
                            or JSON with a "findings" list (severity, title or rule_id, and
                            type + id, a Terraform address that the graph keeps, or account,
                            to place each one)
-  -f, --format <format>    svg (default), mermaid (a flowchart) or json (the view model)
+  -f, --format <format>    svg (default), drawio (a diagrams.net
+                           file), mermaid (a flowchart) or json (the view model)
   --title <text>           a title for the picture
   --show-glue              draw the resources that are hidden as glue (attachments,
                            associations, random_*, null_resource, ...)
@@ -41,7 +43,7 @@ Options:
 Exit status: 0 success, 1 the command failed, 2 bad arguments.
 `;
 
-const FORMATS = ["svg", "mermaid", "json"] as const;
+const FORMATS = ["svg", "drawio", "mermaid", "json"] as const;
 
 function readGraph(io: Io, path: string): GraphDocument {
   try {
@@ -104,7 +106,13 @@ export async function graph(argv: string[], io: Io): Promise<number> {
     ...(values.title !== undefined && { title: values.title }),
   });
   const body =
-    format === "svg" ? `${renderGraphSvg(view)}\n` : format === "mermaid" ? renderGraphMermaid(view) : `${JSON.stringify(view, null, 2)}\n`;
+    format === "svg"
+      ? `${renderGraphSvg(view)}\n`
+      : format === "drawio"
+        ? renderGraphDrawio(view)
+        : format === "mermaid"
+          ? renderGraphMermaid(view)
+          : `${JSON.stringify(view, null, 2)}\n`;
 
   if (values.output === undefined) {
     io.out(body);
