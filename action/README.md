@@ -127,6 +127,7 @@ The comment holds, under a hidden marker so the next run updates it in place:
 
 - a Mermaid flowchart of the model diff: added components and edges green, removed ones red and dashed, changed ones amber (a changed label, kind, attribute or review flag);
 - a table of nodes and edges added, removed and changed;
+- an "Access changes" list when edges carry an access type (`terragram parse` writes them from the Terraform's IAM): grants added, removed, widened or narrowed, widened and unscoped ones first. It names components and levels only, never a policy;
 - the number of feasibility warnings (components that cannot be built on the chosen cloud, or flagged for review), the Terraform files the model change alters, the files that differ from `terraform-dir`, and the receipt hash.
 
 A model too large for Mermaid's limits is drawn as its changed part only, or not at all, with the table still there.

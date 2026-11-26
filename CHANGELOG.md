@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The Action's pull request comment lists the access changes in the model: edges whose access type was added, removed,
+  widened or narrowed, widest and unscoped first, as component names and levels only. A changed access type counts as a
+  changed edge in the diagram and the table.
 - `terragram parse` types the access edges of the Terraform it reads. An edge from a workload to the role or managed
   identity it runs as is `runs-as`; an edge from an identity to a resource its policy names is `read`, `write` or
   `admin`, by the strongest action the policy allows there; one the text cannot bound (a wildcard resource, `NotResource`,

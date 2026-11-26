@@ -1,7 +1,8 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import type { Cloud } from "terragram-engine/model";
+import { EDGE_ACCESS_META, type Cloud, type EdgeAccess } from "terragram-engine/model";
+import { strongerAccess } from "terragram-engine/iam";
 
 import { COMMENT_MARKER } from "./comment.ts";
 import type { Inputs } from "./inputs.ts";
@@ -44,18 +45,64 @@ export type ReportInput = {
 const MAX_LISTED = 12;
 const MAX_DIFF_CHARS = 24_000;
 
-/** Text from a model file, safe in a markdown table cell or list item. */
+/**
+ * Text from a model file, safe in a markdown table cell or list item. Every character that
+ * markdown or HTML gives a meaning is a numeric entity, which also keeps an `@name` from
+ * mentioning anyone; a bare `https://` or `www.` would still be turned into a link by GitHub,
+ * so the `:` and the `.` that make one are entities too.
+ */
 export function markdownText(text: string): string {
   return text
     .replace(/\s+/g, " ")
     .trim()
-    .replace(/[\\`*_{}[\]<>()#+!|~&@]/g, (char) => `&#${char.codePointAt(0)};`);
+    .replace(/[\\`*_{}[\]<>()#+!|~&@]/g, (char) => `&#${char.codePointAt(0)};`)
+    .replace(/:(?=\/\/)/g, "&#58;")
+    .replace(/www\./gi, (match) => `${match.slice(0, 3)}&#46;`);
 }
 
 function listed<T>(items: readonly T[], render: (item: T) => string): string[] {
   const shown = items.slice(0, MAX_LISTED).map((item) => `- ${render(item)}`);
   if (items.length > MAX_LISTED) shown.push(`- and ${items.length - MAX_LISTED} more`);
   return shown;
+}
+
+/**
+ * One line per edge whose access type was added, removed or changed, the widest first: a new
+ * or widened `unscoped` grant, then `admin`, then every other widening, then narrowings and
+ * removals. The report lists only the first lines, so what is cut is the least dangerous.
+ */
+function accessLines(diff: ModelDiff): string[] {
+  const names = new Map<string, string>();
+  for (const n of [...diff.nodes.unchanged, ...diff.nodes.added, ...diff.nodes.removed, ...diff.nodes.changed.map((c) => c.after)]) {
+    names.set(n.id, markdownText(n.label || n.id));
+  }
+  const name = (id: string) => names.get(id) ?? markdownText(id);
+  const phrase = (access: EdgeAccess) => EDGE_ACCESS_META[access].phrase;
+  type Row = { rank: number; key: string; text: string };
+  const rows: Row[] = [];
+  const row = (source: string, target: string, rank: number, text: string) =>
+    rows.push({ rank, key: `${source}\u0000${target}`, text });
+  const widest = (access: EdgeAccess | undefined) => (access === "unscoped" ? 0 : access === "admin" ? 1 : 2);
+  for (const e of diff.edges.added) {
+    if (e.access) row(e.source, e.target, widest(e.access), `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
+  }
+  for (const e of diff.edges.removed) {
+    if (e.access) row(e.source, e.target, 4, `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
+  }
+  for (const { before, after } of diff.edges.changed) {
+    if (before.access === after.access) continue;
+    const from = before.access ? EDGE_ACCESS_META[before.access].label : "a plain connection";
+    const to = after.access ? EDGE_ACCESS_META[after.access].label : "a plain connection";
+    const widened = after.access !== undefined && strongerAccess(before.access, after.access) === after.access;
+    row(
+      after.source,
+      after.target,
+      widened ? widest(after.access) : 3,
+      `**${widened ? "Widened" : "Narrowed"}** ${name(after.source)} to ${name(after.target)}: ${from} to ${to}`,
+    );
+  }
+  rows.sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  return rows.map((r) => r.text);
 }
 
 function statusLine(input: ReportInput): string {
@@ -116,6 +163,10 @@ function modelSection(input: ReportInput): string[] {
       }),
       "",
     );
+  }
+  const access = accessLines(diff);
+  if (access.length > 0) {
+    out.push("#### Access changes", "", ...listed(access, (line) => line), "");
   }
   return out;
 }
