@@ -263,17 +263,20 @@ function jsonToVal(text: string): Val | null {
 /** The text of a heredoc expression, or null when the expression is not one. */
 function heredocBody(expr: string): string | null {
   const text = expr.trim();
-  const head = /^<<-?\s*([A-Za-z_][A-Za-z0-9_]*)[^\n]*\n/.exec(text);
-  const tag = head?.[1];
-  if (!head || !tag) return null;
+  // The header is the first line: cut it with indexOf so no pattern runs over the rest.
+  const firstNewline = text.indexOf("\n");
+  if (firstNewline === -1) return null;
+  const tag = /^<<-?[ \t]*([A-Za-z_][A-Za-z0-9_]*)/.exec(text.slice(0, firstNewline))?.[1];
+  if (!tag) return null;
+  const bodyStart = firstNewline + 1;
   // One pass over the lines: the first line that is only the tag ends the body, and nothing but space may follow it.
-  let lineStart = head[0].length;
+  let lineStart = bodyStart;
   while (lineStart <= text.length) {
     const newline = text.indexOf("\n", lineStart);
     const lineEnd = newline === -1 ? text.length : newline;
     if (text.slice(lineStart, lineEnd).trim() === tag) {
       if (text.slice(lineEnd).trim() !== "") return null;
-      return text.slice(head[0].length, Math.max(head[0].length, lineStart - 1));
+      return text.slice(bodyStart, Math.max(bodyStart, lineStart - 1));
     }
     if (newline === -1) return null;
     lineStart = newline + 1;
