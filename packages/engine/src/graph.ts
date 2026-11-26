@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Draw an existing estate from infraharvest's `graph/v1` document, as an SVG or a Mermaid
+ * Draw an existing estate from infraharvest's `graph/v1` document, as an SVG, a draw.io file or a Mermaid
  * flowchart, optionally against an earlier graph and with findings laid over it. Pure and
  * deterministic: the same document gives the same bytes, in whatever order it lists its
  * nodes. See the README's "Graph rendering".
@@ -18,6 +18,7 @@ export {
   SEVERITIES,
 } from "./graph/findings.ts";
 export { DEFAULT_GLUE, type GlueRule } from "./graph/glue.ts";
+export { renderGraphDrawio } from "./graph/drawio.ts";
 export { renderGraphMermaid } from "./graph/mermaid.ts";
 export {
   type GraphView,

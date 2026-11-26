@@ -172,7 +172,7 @@ describe("terragram graph, as built", () => {
   const fixtures = join(root, "tests/fixtures/graph");
 
   it("draws the same SVG and Mermaid as the engine, from a bare directory", async () => {
-    const { parseGraphDocument, projectGraph, renderGraphMermaid, renderGraphSvg } = await import("terragram-engine/graph");
+    const { parseGraphDocument, projectGraph, renderGraphDrawio, renderGraphMermaid, renderGraphSvg } = await import("terragram-engine/graph");
     const bare = mkdtempSync(join(scratch, "bare-"));
     copyFileSync(cliBundle, join(bare, "terragram.mjs"));
     for (const name of ["small.json", "small-base.json"]) copyFileSync(join(fixtures, name), join(bare, name));
@@ -187,6 +187,10 @@ describe("terragram graph, as built", () => {
     const mermaid = spawn("small.json", "--format", "mermaid");
     assert.equal(mermaid.status, 0, mermaid.stderr);
     assert.equal(mermaid.stdout, renderGraphMermaid(projectGraph(doc("small.json"))));
+
+    const drawio = spawn("small.json", "--format", "drawio");
+    assert.equal(drawio.status, 0, drawio.stderr);
+    assert.equal(drawio.stdout, renderGraphDrawio(projectGraph(doc("small.json"))));
 
     assert.equal(spawn("small.json", "--delta").status, 2);
   });
