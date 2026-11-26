@@ -20399,11 +20399,20 @@ var modelNodeSchema = external_exports.object({
   position: external_exports.object({ x: external_exports.number(), y: external_exports.number() }).optional()
 });
 var EDGE_ORIGINS = ["derived", "user"];
+var EDGE_ACCESS = ["runs-as", "read", "write", "admin", "unscoped"];
+var EDGE_ACCESS_META = {
+  "runs-as": { label: "runs as", color: "#665e4f", dash: "4 3" },
+  read: { label: "read", color: "#2563eb" },
+  write: { label: "write", color: "#b45309" },
+  admin: { label: "admin", color: "#b91c1c" },
+  unscoped: { label: "unscoped", color: "#b91c1c", dash: "6 3" }
+};
 var modelEdgeSchema = external_exports.object({
   id: external_exports.string().min(1).max(80),
   source: external_exports.string().min(1).max(80),
   target: external_exports.string().min(1).max(80),
-  origin: external_exports.enum(EDGE_ORIGINS).default("derived")
+  origin: external_exports.enum(EDGE_ORIGINS).default("derived"),
+  access: external_exports.enum(EDGE_ACCESS).optional()
 });
 var infraModelSchema = external_exports.object({
   nodes: external_exports.array(modelNodeSchema).max(300),
@@ -22883,6 +22892,16 @@ function attributeClause(node2) {
 function nodeLabel(node2) {
   return node2.label || kindDefinition(node2.kind)?.label || node2.kind;
 }
+var ACCESS_PHRASE = {
+  "runs-as": "runs as",
+  read: "can read",
+  write: "can write to",
+  admin: "has admin access to",
+  unscoped: "has unscoped access to"
+};
+function connection(access) {
+  return access ? ACCESS_PHRASE[access] : "connects to";
+}
 function explainModel(model, cloud, regionLabel) {
   const resources = resourceNodes(model);
   if (resources.length === 0) {
@@ -22932,7 +22951,7 @@ function explainModel(model, cloud, regionLabel) {
     const sentences = drawn.slice(0, 8).map((edge) => {
       const source = byId2.get(edge.source);
       const target = byId2.get(edge.target);
-      return source && target ? `${nodeLabel(source)} connects to ${nodeLabel(target)}` : "";
+      return source && target ? `${nodeLabel(source)} ${connection(edge.access)} ${nodeLabel(target)}` : "";
     }).filter(Boolean);
     paragraphs.push(`${humanList(sentences)}.`);
   }
@@ -23269,10 +23288,10 @@ function wireEdge(source, target, cloud, plan) {
     if (encryption) encryption.value = s3Encryption("aws:kms", `aws_kms_key.${target.name}.arn`).value;
     return [];
   }
-  const connection = target.spec.connection?.(target.referent);
-  if (source.spec.settings && connection) {
+  const connection2 = target.spec.connection?.(target.referent);
+  if (source.spec.settings && connection2) {
     const host = source.blocks[source.spec.settings.blockIndex ?? 0] ?? source.consumer;
-    addSetting(host, source.spec.settings, connection);
+    addSetting(host, source.spec.settings, connection2);
     return [];
   }
   addDependsOn(source.consumer, `${target.referent.type}.${target.referent.name}`);
@@ -24047,17 +24066,17 @@ function collect(diff, changesOnly) {
   for (const n of diff.nodes.removed) add(n, "removed");
   for (const c of diff.nodes.changed) add(c.after, "changed");
   const edges = [];
-  const push = (source, target, state) => {
+  const push = (source, target, state, access) => {
     if (!all.has(source) || !all.has(target)) {
       return;
     }
     if (changesOnly && state === "same") return;
-    edges.push({ source, target, state });
+    edges.push(access ? { source, target, state, access } : { source, target, state });
   };
-  for (const e of diff.edges.unchanged) push(e.source, e.target, "same");
-  for (const e of diff.edges.added) push(e.source, e.target, "added");
-  for (const e of diff.edges.removed) push(e.source, e.target, "removed");
-  for (const c of diff.edges.changed) push(c.after.source, c.after.target, "changed");
+  for (const e of diff.edges.unchanged) push(e.source, e.target, "same", e.access);
+  for (const e of diff.edges.added) push(e.source, e.target, "added", e.access);
+  for (const e of diff.edges.removed) push(e.source, e.target, "removed", e.access);
+  for (const c of diff.edges.changed) push(c.after.source, c.after.target, "changed", c.after.access);
   let nodes = [...all.values()].sort((a, b) => a.node.id < b.node.id ? -1 : a.node.id > b.node.id ? 1 : 0);
   if (changesOnly) {
     const touched = new Set(edges.flatMap((e) => [e.source, e.target]));
@@ -24074,7 +24093,8 @@ function draw(nodes, edges) {
   const styled = { added: [], removed: [], changed: [] };
   edges.forEach((edge, index) => {
     const arrow = edge.state === "removed" ? "-.->" : "-->";
-    lines2.push(`  ${ids.get(edge.source)} ${arrow} ${ids.get(edge.target)}`);
+    const typed = edge.access ? `|${EDGE_ACCESS_META[edge.access].label}|` : "";
+    lines2.push(`  ${ids.get(edge.source)} ${arrow}${typed} ${ids.get(edge.target)}`);
     if (edge.state !== "same") styled[edge.state].push(index);
   });
   lines2.push(
@@ -24174,7 +24194,7 @@ function diffModels(base, head) {
   for (const [key, edge] of headEdges) {
     const before = baseEdges.get(key);
     if (!before) edges.added.push(edge);
-    else if (before.origin === edge.origin) edges.unchanged.push(edge);
+    else if (before.origin === edge.origin && before.access === edge.access) edges.unchanged.push(edge);
     else edges.changed.push({ before, after: edge });
   }
   for (const [key, edge] of baseEdges) if (!headEdges.has(key)) edges.removed.push(edge);

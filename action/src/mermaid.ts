@@ -1,7 +1,7 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import type { ModelNode } from "terragram-engine/model";
+import { EDGE_ACCESS_META, type EdgeAccess, type ModelNode } from "terragram-engine/model";
 
 import type { ModelDiff } from "./model-diff.ts";
 
@@ -41,7 +41,7 @@ export function mermaidText(text: string): string {
 }
 
 type DrawNode = { node: ModelNode; state: State };
-type DrawEdge = { source: string; target: string; state: State };
+type DrawEdge = { source: string; target: string; state: State; access?: EdgeAccess };
 
 function collect(diff: ModelDiff, changesOnly: boolean): { nodes: DrawNode[]; edges: DrawEdge[] } {
   const all = new Map<string, DrawNode>();
@@ -54,18 +54,18 @@ function collect(diff: ModelDiff, changesOnly: boolean): { nodes: DrawNode[]; ed
   for (const c of diff.nodes.changed) add(c.after, "changed");
 
   const edges: DrawEdge[] = [];
-  const push = (source: string, target: string, state: State) => {
+  const push = (source: string, target: string, state: State, access?: EdgeAccess) => {
     // An edge to a node the model does not contain cannot be drawn without inventing one.
     if (!all.has(source) || !all.has(target)) {
       return;
     }
     if (changesOnly && state === "same") return;
-    edges.push({ source, target, state });
+    edges.push(access ? { source, target, state, access } : { source, target, state });
   };
-  for (const e of diff.edges.unchanged) push(e.source, e.target, "same");
-  for (const e of diff.edges.added) push(e.source, e.target, "added");
-  for (const e of diff.edges.removed) push(e.source, e.target, "removed");
-  for (const c of diff.edges.changed) push(c.after.source, c.after.target, "changed");
+  for (const e of diff.edges.unchanged) push(e.source, e.target, "same", e.access);
+  for (const e of diff.edges.added) push(e.source, e.target, "added", e.access);
+  for (const e of diff.edges.removed) push(e.source, e.target, "removed", e.access);
+  for (const c of diff.edges.changed) push(c.after.source, c.after.target, "changed", c.after.access);
 
   let nodes = [...all.values()].sort((a, b) => (a.node.id < b.node.id ? -1 : a.node.id > b.node.id ? 1 : 0));
   if (changesOnly) {
@@ -84,7 +84,9 @@ function draw(nodes: DrawNode[], edges: DrawEdge[]): string {
   const styled: Record<Exclude<State, "same">, number[]> = { added: [], removed: [], changed: [] };
   edges.forEach((edge, index) => {
     const arrow = edge.state === "removed" ? "-.->" : "-->";
-    lines.push(`  ${ids.get(edge.source)} ${arrow} ${ids.get(edge.target)}`);
+    // A typed edge says what it is on the line; the words come from a fixed list, never from the file.
+    const typed = edge.access ? `|${EDGE_ACCESS_META[edge.access].label}|` : "";
+    lines.push(`  ${ids.get(edge.source)} ${arrow}${typed} ${ids.get(edge.target)}`);
     if (edge.state !== "same") styled[edge.state].push(index);
   });
   lines.push(

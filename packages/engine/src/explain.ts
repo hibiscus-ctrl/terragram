@@ -5,6 +5,7 @@ import { fieldsForKind, kindDefinition } from "./kinds.ts";
 import {
   CATEGORY_META,
   type Cloud,
+  type EdgeAccess,
   type InfraModel,
   type ModelNode,
   type NodeCategory,
@@ -56,6 +57,18 @@ function attributeClause(node: ModelNode): string {
 
 function nodeLabel(node: ModelNode): string {
   return node.label || kindDefinition(node.kind)?.label || node.kind;
+}
+
+const ACCESS_PHRASE: Record<EdgeAccess, string> = {
+  "runs-as": "runs as",
+  read: "can read",
+  write: "can write to",
+  admin: "has admin access to",
+  unscoped: "has unscoped access to",
+};
+
+function connection(access: EdgeAccess | undefined): string {
+  return access ? ACCESS_PHRASE[access] : "connects to";
 }
 
 /**
@@ -126,7 +139,7 @@ export function explainModel(model: InfraModel, cloud: Cloud, regionLabel: strin
       .map((edge) => {
         const source = byId.get(edge.source);
         const target = byId.get(edge.target);
-        return source && target ? `${nodeLabel(source)} connects to ${nodeLabel(target)}` : "";
+        return source && target ? `${nodeLabel(source)} ${connection(edge.access)} ${nodeLabel(target)}` : "";
       })
       .filter(Boolean);
     paragraphs.push(`${humanList(sentences)}.`);

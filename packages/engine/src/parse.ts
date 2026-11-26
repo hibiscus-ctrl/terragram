@@ -10,7 +10,8 @@ import {
   resourceTypeToKind,
 } from "./kinds.ts";
 import { reconcileEdges, uniqueNodeId } from "./engine.ts";
-import type { Cloud, InfraModel, ModelEdge, ModelNode } from "./model.ts";
+import { ANY_RESOURCE_ID, readIam, runsAsAddresses, strongerAccess } from "./iam.ts";
+import type { Cloud, EdgeAccess, InfraModel, ModelEdge, ModelNode } from "./model.ts";
 
 /**
  * Terraform → model. Reads a real document rather than pattern-matching resource
@@ -220,6 +221,38 @@ export function parseTerraform(source: string): ParseResult {
     }
   }
 
+  /* -- who runs as which identity, and what each identity may reach -- */
+
+  const edgeById = new Map(edges.map((e) => [e.id, e]));
+  const typeEdge = (from: string, target: string, access: EdgeAccess) => {
+    if (from === target) return;
+    const key = `${from}->${target}`;
+    const existing = edgeById.get(key);
+    if (existing) {
+      existing.access = strongerAccess(existing.access, access);
+      return;
+    }
+    const edge: ModelEdge = { id: key, source: from, target, origin: "user", access };
+    edgeById.set(key, edge);
+    edges.push(edge);
+  };
+  const kindOf = new Map(instances.map((i) => [i.node.id, i.node.kind]));
+  for (const instance of instances) {
+    if (instance.node.kind === "entra-id") continue;
+    for (const address of runsAsAddresses(instance.blocks, blocks)) {
+      const identity = ownerByAddress.get(address);
+      if (identity && kindOf.get(identity) === "entra-id") typeEdge(instance.node.id, identity, "runs-as");
+    }
+  }
+  const iam = readIam(blocks, (address) => ownerByAddress.get(address), cloud);
+  for (const edge of iam.edges) typeEdge(edge.source, edge.target, edge.access);
+  for (let i = untranslated.length - 1; i >= 0; i--) {
+    const [type, name] = (untranslated[i] ?? "").split(".");
+    if ([...iam.consumed].some((b) => b.type === "resource" && b.labels[0] === type && b.labels[1] === name)) {
+      untranslated.splice(i, 1);
+    }
+  }
+
   /* -- untranslated modules and data sources stay on the diagram, flagged -- */
 
   // A data source a translated component reads is part of that component — the
@@ -231,10 +264,14 @@ export function parseTerraform(source: string): ParseResult {
       .flatMap((expression) => [...expression.matchAll(DATA_REFERENCE_RE)].map((m) => `${m[1]}.${m[2]}`)),
   );
   const nodes = instances.map((i) => i.node);
+  // An unscoped grant has to end somewhere on the picture: one conceptual node for "any resource".
+  if (edges.some((e) => e.target === ANY_RESOURCE_ID)) {
+    nodes.push({ id: ANY_RESOURCE_ID, category: "edge", kind: "external", label: "Any resource (*)", flag: null });
+  }
   for (const block of blocks) {
     if (block.type === "module" ? !unreadModules.includes(block) : block.type !== "data") continue;
     if (block.type === "module" && isScaffoldModule(block)) continue;
-    if (block.type === "data" && readByComponents.has(block.labels.join("."))) continue;
+    if (block.type === "data" && (readByComponents.has(block.labels.join(".")) || iam.consumed.has(block))) continue;
     const name = block.labels.at(-1) ?? block.type;
     const id = uniqueNodeId(`external-${name}`, takenIds);
     takenIds.push(id);

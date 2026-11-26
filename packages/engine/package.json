@@ -24,6 +24,7 @@
     "./graph": "./src/graph.ts",
     "./graph-build": "./src/graph-build.ts",
     "./hcl": "./src/hcl.ts",
+    "./iam": "./src/iam.ts",
     "./inspector": "./src/inspector.ts",
     "./interchange": "./src/interchange.ts",
     "./kinds": "./src/kinds.ts",

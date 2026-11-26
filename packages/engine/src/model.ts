@@ -52,11 +52,33 @@ export type ModelNode = z.infer<typeof modelNodeSchema>;
  *  turn; `user` edges are the reviewer's own topology and are never regenerated. */
 const EDGE_ORIGINS = ["derived", "user"] as const;
 
+/**
+ * What an edge means for access, when the Terraform it was read from says so. `runs-as`
+ * joins a workload to the role or managed identity it runs under; the others join an
+ * identity to a resource its policy names, by the strongest level the policy grants
+ * there. `unscoped` is a grant that is not bounded to a drawn resource: a wildcard
+ * resource, a policy that cannot be read, a role assigned over a whole subscription. An
+ * edge with no access type is a plain connection.
+ */
+const EDGE_ACCESS = ["runs-as", "read", "write", "admin", "unscoped"] as const;
+export type EdgeAccess = (typeof EDGE_ACCESS)[number];
+
+/** How each access type is worded and coloured wherever an edge is drawn. `unscoped` and `admin`
+ *  share a colour; the wording (and `dash`, where the renderer draws one) tells them apart. */
+export const EDGE_ACCESS_META: Record<EdgeAccess, { label: string; color: string; dash?: string }> = {
+  "runs-as": { label: "runs as", color: "#665e4f", dash: "4 3" },
+  read: { label: "read", color: "#2563eb" },
+  write: { label: "write", color: "#b45309" },
+  admin: { label: "admin", color: "#b91c1c" },
+  unscoped: { label: "unscoped", color: "#b91c1c", dash: "6 3" },
+};
+
 const modelEdgeSchema = z.object({
   id: z.string().min(1).max(80),
   source: z.string().min(1).max(80),
   target: z.string().min(1).max(80),
   origin: z.enum(EDGE_ORIGINS).default("derived"),
+  access: z.enum(EDGE_ACCESS).optional(),
 });
 export type ModelEdge = z.infer<typeof modelEdgeSchema>;
 
