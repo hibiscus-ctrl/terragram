@@ -4,6 +4,7 @@
 
 import { relative, sep } from "node:path";
 
+import { checkAzureSkus } from "terragram-engine/azure-sku";
 import { buildEvidenceReceipt } from "terragram-engine/build-receipt";
 import { assessFeasibility } from "terragram-engine/feasibility";
 import { resourceNodes } from "terragram-engine/model";
@@ -91,6 +92,7 @@ async function execute(host: Host, workflow: Workflow): Promise<number> {
   const warnings = feasibility.components
     .filter((c) => c.status !== "buildable")
     .map((c) => `${c.label || c.id}: ${c.reason ?? "needs review"}`);
+  warnings.push(...checkAzureSkus(terraform.files).map((f) => f.message));
 
   // The pull request, when there is one: the model as the base had it, and what that changes.
   const pr = readPullRequest(host);

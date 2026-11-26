@@ -13,6 +13,8 @@
     "build": "node build.mjs && tsc -p tsconfig.build.json && node rewrite-declarations.mjs"
   },
   "exports": {
+    "./azure-sku": "./src/azure-sku.ts",
+    "./azure-sku-data": "./src/azure-sku-data.ts",
     "./build-receipt": "./src/build-receipt.ts",
     "./diagram-svg": "./src/diagram-svg.ts",
     "./engine": "./src/engine.ts",

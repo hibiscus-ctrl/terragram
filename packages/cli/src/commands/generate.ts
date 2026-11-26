@@ -3,6 +3,7 @@
 
 import { parseArgs } from "node:util";
 
+import { checkAzureSkus } from "terragram-engine/azure-sku";
 import { assessFeasibility } from "terragram-engine/feasibility";
 import { parseMermaid } from "terragram-engine/interchange";
 import { type Cloud, type InfraModel, resourceNodes } from "terragram-engine/model";
@@ -74,6 +75,7 @@ export async function generate(argv: string[], io: Io): Promise<number> {
   const terraform = emitTerraform(model, cloud, tool);
   const { omitted } = assessFeasibility(model, cloud);
   for (const label of omitted) notes.push(`left out, not buildable on ${cloud}: ${label}`);
+  for (const finding of checkAzureSkus(terraform.files)) notes.push(`warning: ${finding.message}`);
 
   const files = [...terraform.files.map((f) => f.name), "model.json"];
   for (const file of terraform.files) writeUnder(io, values.output, file.name, file.content);
