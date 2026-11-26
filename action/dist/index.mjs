@@ -20401,11 +20401,11 @@ var modelNodeSchema = external_exports.object({
 var EDGE_ORIGINS = ["derived", "user"];
 var EDGE_ACCESS = ["runs-as", "read", "write", "admin", "unscoped"];
 var EDGE_ACCESS_META = {
-  "runs-as": { label: "runs as", color: "#665e4f", dash: "4 3" },
-  read: { label: "read", color: "#2563eb" },
-  write: { label: "write", color: "#b45309" },
-  admin: { label: "admin", color: "#b91c1c" },
-  unscoped: { label: "unscoped", color: "#b91c1c", dash: "6 3" }
+  "runs-as": { label: "runs as", phrase: "runs as", color: "#665e4f", dash: "4 3" },
+  read: { label: "read", phrase: "can read", color: "#2563eb" },
+  write: { label: "write", phrase: "can write to", color: "#b45309" },
+  admin: { label: "admin", phrase: "has admin access to", color: "#b91c1c" },
+  unscoped: { label: "unscoped", phrase: "has unscoped access to", color: "#b91c1c", dash: "6 3" }
 };
 var modelEdgeSchema = external_exports.object({
   id: external_exports.string().min(1).max(80),
@@ -22892,15 +22892,8 @@ function attributeClause(node2) {
 function nodeLabel(node2) {
   return node2.label || kindDefinition(node2.kind)?.label || node2.kind;
 }
-var ACCESS_PHRASE = {
-  "runs-as": "runs as",
-  read: "can read",
-  write: "can write to",
-  admin: "has admin access to",
-  unscoped: "has unscoped access to"
-};
 function connection(access) {
-  return access ? ACCESS_PHRASE[access] : "connects to";
+  return access ? EDGE_ACCESS_META[access].phrase : "connects to";
 }
 function explainModel(model, cloud, regionLabel) {
   const resources = resourceNodes(model);
@@ -24264,6 +24257,12 @@ function readBaseModel(host, root, baseSha, modelPath) {
   return { state: "found", document: parsed.document };
 }
 
+// ../packages/engine/src/iam.ts
+var RANK = { "runs-as": 0, read: 1, write: 2, admin: 3, unscoped: 4 };
+function strongerAccess(a, b) {
+  return a !== void 0 && RANK[a] >= RANK[b] ? a : b;
+}
+
 // src/report.ts
 var MAX_LISTED = 12;
 var MAX_DIFF_CHARS = 24e3;
@@ -24274,6 +24273,36 @@ function listed(items, render) {
   const shown = items.slice(0, MAX_LISTED).map((item) => `- ${render(item)}`);
   if (items.length > MAX_LISTED) shown.push(`- and ${items.length - MAX_LISTED} more`);
   return shown;
+}
+function accessLines(diff) {
+  const names = /* @__PURE__ */ new Map();
+  for (const n of [...diff.nodes.unchanged, ...diff.nodes.added, ...diff.nodes.removed, ...diff.nodes.changed.map((c) => c.after)]) {
+    names.set(n.id, markdownText(n.label || n.id));
+  }
+  const name = (id) => names.get(id) ?? markdownText(id);
+  const phrase = (access) => EDGE_ACCESS_META[access].phrase;
+  const rows = [];
+  const row = (source, target, rank, text) => rows.push({ rank, key: `${source}\0${target}`, text });
+  for (const e of diff.edges.added) {
+    if (e.access) row(e.source, e.target, e.access === "unscoped" ? 0 : 1, `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
+  }
+  for (const e of diff.edges.removed) {
+    if (e.access) row(e.source, e.target, 3, `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
+  }
+  for (const { before, after } of diff.edges.changed) {
+    if (before.access === after.access) continue;
+    const from = before.access ? EDGE_ACCESS_META[before.access].label : "a plain connection";
+    const to = after.access ? EDGE_ACCESS_META[after.access].label : "a plain connection";
+    const widened = after.access !== void 0 && strongerAccess(before.access, after.access) === after.access;
+    row(
+      after.source,
+      after.target,
+      widened ? 0 : 2,
+      `**${widened ? "Widened" : "Narrowed"}** ${name(after.source)} to ${name(after.target)}: ${from} to ${to}`
+    );
+  }
+  rows.sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  return rows.map((r) => r.text);
 }
 function statusLine(input3) {
   const dir = `\`${input3.terraformDir}\``;
@@ -24323,6 +24352,10 @@ function modelSection(input3) {
       }),
       ""
     );
+  }
+  const access = accessLines(diff);
+  if (access.length > 0) {
+    out.push("#### Access changes", "", ...listed(access, (line) => line), "");
   }
   return out;
 }

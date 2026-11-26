@@ -273,3 +273,64 @@ describe("workflow log lines", () => {
     assert.ok(!out.includes("\r"));
   });
 });
+
+describe("the access changes in the report", () => {
+  const n = (id: string, label: string, kind = "functions"): ModelNode => ({ id, category: "compute", kind, label, flag: null });
+  const nodes = [n("fn", "Orders API"), n("role", "api-role", "entra-id"), n("data", "orders-data", "object-storage"), n("any", "Any resource (*)", "external")];
+  const e = (source: string, target: string, access?: ModelEdge["access"]): ModelEdge => ({
+    id: `${source}->${target}`,
+    source,
+    target,
+    origin: "user",
+    ...(access ? { access } : {}),
+  });
+  const baseModel = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "read"), e("role", "any", "unscoped")]);
+  const report = (before: InfraModel, after: InfraModel) => {
+    const diff = diffModels(before, after);
+    return renderReport({
+      mode: "check",
+      modelPath: "diagram.json",
+      terraformDir: "infra/",
+      cloud: "aws",
+      base: { state: "compared" },
+      diff,
+      diagram: renderDiagram(diff),
+      warnings: [],
+      terraformChanged: [],
+      files: [],
+      written: [],
+      contentHash: "sha256:abc",
+      signed: false,
+    });
+  };
+
+  it("lists what widened, was added, narrowed or removed, widest first, in the words of the comment", () => {
+    const head = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "write"), e("fn", "data", "admin")]);
+    const text = report(baseModel, head);
+    assert.match(text, /#### Access changes/);
+    const lines = text.split("\n").filter((l) => /^- \*\*/.test(l));
+    assert.deepEqual(lines, [
+      "- **Widened** api-role to orders-data: read to write",
+      "- **Added** Orders API has admin access to orders-data",
+      "- **Removed** api-role has unscoped access to Any resource &#40;&#42;&#41;",
+    ]);
+  });
+
+  it("says a narrowed grant is narrowed, and puts a new unscoped grant first", () => {
+    const head = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "read"), e("role", "any", "unscoped"), e("fn", "any", "unscoped")]);
+    const wider = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "admin"), e("role", "any", "unscoped")]);
+    assert.match(report(wider, baseModel), /\*\*Narrowed\*\* api-role to orders-data: admin to read/);
+    const lines = report(baseModel, head).split("\n").filter((l) => /^- \*\*/.test(l));
+    assert.deepEqual(lines, ["- **Added** Orders API has unscoped access to Any resource &#40;&#42;&#41;"]);
+  });
+
+  it("is absent when no access type changed, and escapes what the model file names", () => {
+    assert.doesNotMatch(report(baseModel, baseModel), /Access changes/);
+    const plain = model(nodes, [e("fn", "role"), e("role", "data")]);
+    assert.doesNotMatch(report(plain, model(nodes, [e("fn", "role"), e("role", "data"), e("fn", "data")])), /Access changes/);
+    const hostile = [n("fn", "x](https://evil)<b>"), ...nodes.slice(1)];
+    const text = report(model(hostile, [e("fn", "role")]), model(hostile, [e("fn", "role", "runs-as")]));
+    assert.match(text, /\*\*Widened\*\* x&#93;&#40;https:\/\/evil&#41;&#60;b&#62; to api-role: a plain connection to runs as/);
+    assert.doesNotMatch(text, /<b>/);
+  });
+});

@@ -5,6 +5,7 @@ import { fieldsForKind, kindDefinition } from "./kinds.ts";
 import {
   CATEGORY_META,
   type Cloud,
+  EDGE_ACCESS_META,
   type EdgeAccess,
   type InfraModel,
   type ModelNode,
@@ -59,16 +60,8 @@ function nodeLabel(node: ModelNode): string {
   return node.label || kindDefinition(node.kind)?.label || node.kind;
 }
 
-const ACCESS_PHRASE: Record<EdgeAccess, string> = {
-  "runs-as": "runs as",
-  read: "can read",
-  write: "can write to",
-  admin: "has admin access to",
-  unscoped: "has unscoped access to",
-};
-
 function connection(access: EdgeAccess | undefined): string {
-  return access ? ACCESS_PHRASE[access] : "connects to";
+  return access ? EDGE_ACCESS_META[access].phrase : "connects to";
 }
 
 /**

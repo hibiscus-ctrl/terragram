@@ -65,12 +65,12 @@ export type EdgeAccess = (typeof EDGE_ACCESS)[number];
 
 /** How each access type is worded and coloured wherever an edge is drawn. `unscoped` and `admin`
  *  share a colour; the wording (and `dash`, where the renderer draws one) tells them apart. */
-export const EDGE_ACCESS_META: Record<EdgeAccess, { label: string; color: string; dash?: string }> = {
-  "runs-as": { label: "runs as", color: "#665e4f", dash: "4 3" },
-  read: { label: "read", color: "#2563eb" },
-  write: { label: "write", color: "#b45309" },
-  admin: { label: "admin", color: "#b91c1c" },
-  unscoped: { label: "unscoped", color: "#b91c1c", dash: "6 3" },
+export const EDGE_ACCESS_META: Record<EdgeAccess, { label: string; phrase: string; color: string; dash?: string }> = {
+  "runs-as": { label: "runs as", phrase: "runs as", color: "#665e4f", dash: "4 3" },
+  read: { label: "read", phrase: "can read", color: "#2563eb" },
+  write: { label: "write", phrase: "can write to", color: "#b45309" },
+  admin: { label: "admin", phrase: "has admin access to", color: "#b91c1c" },
+  unscoped: { label: "unscoped", phrase: "has unscoped access to", color: "#b91c1c", dash: "6 3" },
 };
 
 const modelEdgeSchema = z.object({
