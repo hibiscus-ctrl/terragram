@@ -11,6 +11,641 @@ var __export = (target, all) => {
 // src/run.ts
 import { relative as relative4, sep as sep2 } from "node:path";
 
+// ../packages/engine/src/azure-sku-data.ts
+var AZURE_SKU_DATA = {
+  "refreshed": "2026-11-26",
+  "sources": {
+    "docs": "hashicorp/terraform-provider-azurerm v4.81.0 website/docs/r",
+    "prices": "https://prices.azure.com/api/retail/prices (api-version 2023-01-01-preview)"
+  },
+  "regions": ["attatlanta1", "attdallas1", "australiacentral", "australiacentral2", "australiaeast", "australiasoutheast", "austriaeast", "belgiumcentral", "brazilsouth", "brazilsoutheast", "canadacentral", "canadaeast", "centralindia", "centralus", "chilecentral", "denmarkeast", "eastasia", "eastus", "eastus2", "francecentral", "francesouth", "germanynorth", "germanywestcentral", "indiasouthcentral", "indonesiacentral", "israelcentral", "israelnorthwest", "italynorth", "japaneast", "japanwest", "jioindiacentral", "jioindiawest", "koreacentral", "koreasouth", "malaysiawest", "mexicocentral", "newzealandnorth", "northcentralus", "northeurope", "norwayeast", "norwaywest", "polandcentral", "qatarcentral", "saudiarabiaeast", "southafricanorth", "southafricawest", "southcentralus", "southcentralus2", "southeastasia", "southeastasia3", "southeastus5", "southindia", "spaincentral", "swedencentral", "swedensouth", "switzerlandnorth", "switzerlandwest", "taiwannorth", "taiwannorthwest", "uaecentral", "uaenorth", "uksouth", "ukwest", "usgovarizona", "usgovtexas", "usgovvirginia", "westcentralus", "westeurope", "westindia", "westus", "westus2", "westus3"],
+  "rules": {
+    "app-service-plan": {
+      "valid": ["B1", "B2", "B3", "D1", "F1", "I1", "I2", "I3", "I1v2", "I1mv2", "I2v2", "I2mv2", "I3v2", "I3mv2", "I4v2", "I4mv2", "I5v2", "I5mv2", "I6v2", "P1v2", "P2v2", "P3v2", "P0v3", "P1v3", "P2v3", "P3v3", "P1mv3", "P2mv3", "P3mv3", "P4mv3", "P5mv3", "P0v4", "P1v4", "P2v4", "P3v4", "P1mv4", "P2mv4", "P3mv4", "P4mv4", "P5mv4", "S1", "S2", "S3", "SHARED", "EP1", "EP2", "EP3", "FC1", "WS1", "WS2", "WS3", "Y1"],
+      "available": {
+        "sets": [
+          ["attatlanta1", "attdallas1", "southeastus5"],
+          ["attatlanta1", "attdallas1", "austriaeast", "malaysiawest", "southcentralus2", "taiwannorthwest", "usgovtexas"],
+          ["attatlanta1", "attdallas1", "australiacentral", "australiacentral2", "brazilsoutheast", "chilecentral", "southcentralus2", "southeastus5", "swedensouth", "usgovarizona", "westindia"],
+          ["attatlanta1", "attdallas1", "austriaeast", "indonesiacentral", "malaysiawest", "newzealandnorth", "southcentralus2", "southeastasia3", "southeastus5", "swedensouth"],
+          ["attatlanta1", "attdallas1", "austriaeast", "indonesiacentral", "malaysiawest", "newzealandnorth", "norwayeast", "norwaywest", "southcentralus2", "southeastasia3", "southeastus5", "swedensouth"],
+          ["attatlanta1", "attdallas1", "israelcentral", "italynorth", "polandcentral", "southeastus5", "usgovarizona", "usgovvirginia"],
+          ["attatlanta1", "attdallas1", "australiacentral", "australiacentral2", "australiasoutheast", "austriaeast", "belgiumcentral", "brazilsouth", "brazilsoutheast", "canadaeast", "chilecentral", "denmarkeast", "francesouth", "germanynorth", "indiasouthcentral", "indonesiacentral", "israelcentral", "israelnorthwest", "jioindiacentral", "jioindiawest", "koreasouth", "malaysiawest", "newzealandnorth", "norwaywest", "qatarcentral", "southafricawest", "southcentralus2", "southeastus5", "southindia", "swedensouth", "switzerlandwest", "taiwannorth", "taiwannorthwest", "uaecentral", "ukwest", "usgovarizona", "usgovtexas", "usgovvirginia", "westindia"],
+          ["attatlanta1", "attdallas1", "polandcentral", "southeastus5", "swedencentral"],
+          ["attatlanta1", "attdallas1", "australiacentral", "australiacentral2", "australiasoutheast", "austriaeast", "brazilsoutheast", "canadaeast", "francesouth", "germanynorth", "israelcentral", "israelnorthwest", "jioindiacentral", "jioindiawest", "koreasouth", "newzealandnorth", "norwaywest", "qatarcentral", "southafricawest", "southcentralus2", "southeastus5", "southindia", "swedensouth", "switzerlandwest", "taiwannorth", "taiwannorthwest", "uaecentral", "ukwest", "usgovarizona", "usgovtexas", "westindia"],
+          ["attatlanta1", "attdallas1", "austriaeast", "indonesiacentral", "southcentralus2", "southeastus5", "swedensouth", "switzerlandwest", "uaecentral"],
+          ["attatlanta1", "attdallas1", "malaysiawest", "southcentralus2", "southeastus5"],
+          ["attatlanta1", "attdallas1", "austriaeast", "indonesiacentral", "malaysiawest", "southcentralus2", "southeastasia3", "southeastus5"],
+          ["attatlanta1", "attdallas1", "austriaeast", "indonesiacentral", "malaysiawest", "southcentralus2", "southeastasia3", "southeastus5", "swedensouth", "switzerlandwest", "uaecentral"],
+          ["attatlanta1", "attdallas1", "southcentralus2", "southeastus5"]
+        ],
+        "skus": {
+          "B1": 0,
+          "B2": 0,
+          "B3": 0,
+          "F1": 1,
+          "FC1": 2,
+          "I1": 3,
+          "I12": 4,
+          "I13": 4,
+          "I14": 4,
+          "I1mv2": 5,
+          "I1mv4": 6,
+          "I1v2": 0,
+          "I1v4": 6,
+          "I2": 3,
+          "I2mv2": 5,
+          "I2mv4": 6,
+          "I2v2": 0,
+          "I2v4": 6,
+          "I3": 3,
+          "I3mv2": 5,
+          "I3mv4": 6,
+          "I3v2": 0,
+          "I3v4": 6,
+          "I4mv2": 5,
+          "I4mv4": 6,
+          "I4v2": 7,
+          "I4v4": 6,
+          "I5mv2": 5,
+          "I5mv4": 6,
+          "I5v2": 7,
+          "I5v4": 6,
+          "I6v2": 7,
+          "I6v4": 6,
+          "P0v3": 0,
+          "P0v4": 8,
+          "P1": 9,
+          "P1mv3": 0,
+          "P1mv4": 8,
+          "P1v2": 10,
+          "P1v3": 0,
+          "P1v4": 8,
+          "P2": 9,
+          "P2mv3": 0,
+          "P2mv4": 8,
+          "P2v2": 11,
+          "P2v3": 0,
+          "P2v4": 8,
+          "P3": 12,
+          "P3mv3": 0,
+          "P3mv4": 8,
+          "P3v2": 11,
+          "P3v3": 0,
+          "P3v4": 8,
+          "P4": 12,
+          "P4mv3": 0,
+          "P4mv4": 8,
+          "P5mv3": 0,
+          "P5mv4": 8,
+          "S1": 13,
+          "S2": 13,
+          "S3": 13
+        }
+      }
+    },
+    "redis-cache": {
+      "valid": ["Basic", "Standard", "Premium"],
+      "available": {
+        "sets": [
+          ["attatlanta1", "attdallas1", "southcentralus2", "southeastus5", "swedensouth"],
+          ["attatlanta1", "attdallas1", "southcentralus2", "southeastus5"]
+        ],
+        "skus": {
+          "Basic": 0,
+          "Premium": 1,
+          "Standard": 1
+        }
+      }
+    },
+    "storage-account": {
+      "valid": ["Standard_LRS", "Standard_GRS", "Standard_RAGRS", "Standard_ZRS", "Standard_GZRS", "Standard_RAGZRS", "Premium_LRS", "Premium_ZRS"],
+      "available": {
+        "sets": [
+          ["austriaeast", "belgiumcentral", "chilecentral", "denmarkeast", "indonesiacentral", "italynorth", "malaysiawest", "mexicocentral", "newzealandnorth", "polandcentral", "qatarcentral", "saudiarabiaeast", "southcentralus2", "southeastus5", "spaincentral", "taiwannorth", "taiwannorthwest"],
+          ["australiacentral", "australiacentral2", "australiasoutheast", "austriaeast", "belgiumcentral", "brazilsoutheast", "canadaeast", "chilecentral", "denmarkeast", "francesouth", "germanynorth", "indonesiacentral", "israelcentral", "italynorth", "jioindiacentral", "jioindiawest", "koreasouth", "malaysiawest", "mexicocentral", "newzealandnorth", "northcentralus", "norwaywest", "polandcentral", "qatarcentral", "saudiarabiaeast", "southafricawest", "southcentralus2", "southeastus5", "southindia", "spaincentral", "swedensouth", "switzerlandwest", "taiwannorth", "taiwannorthwest", "uaecentral", "ukwest", "usgovtexas", "westcentralus", "westindia", "westus"],
+          ["southcentralus2", "southeastus5", "taiwannorth", "taiwannorthwest"],
+          ["australiacentral", "australiacentral2", "austriaeast", "belgiumcentral", "chilecentral", "denmarkeast", "indonesiacentral", "israelcentral", "italynorth", "jioindiacentral", "jioindiawest", "malaysiawest", "mexicocentral", "newzealandnorth", "polandcentral", "qatarcentral", "saudiarabiaeast", "southcentralus2", "southeastus5", "spaincentral", "taiwannorth", "taiwannorthwest", "westindia"],
+          ["attatlanta1", "attdallas1", "australiacentral", "australiacentral2", "australiasoutheast", "brazilsoutheast", "canadaeast", "francesouth", "germanynorth", "jioindiacentral", "jioindiawest", "koreasouth", "northcentralus", "norwaywest", "southafricawest", "southcentralus2", "southeastus5", "southindia", "swedensouth", "switzerlandwest", "taiwannorth", "taiwannorthwest", "uaecentral", "ukwest", "usgovtexas", "westcentralus", "westindia", "westus"]
+        ],
+        "skus": {
+          "Standard_GRS": 0,
+          "Standard_GZRS": 1,
+          "Standard_LRS": 2,
+          "Standard_RAGRS": 0,
+          "Standard_RAGZRS": 3,
+          "Standard_ZRS": 4
+        }
+      }
+    },
+    "postgres-flexible": {
+      "valid": [],
+      "pattern": "^(?:B|GP|MO)_Standard_[A-Za-z0-9_]+$",
+      "available": {
+        "sets": [
+          ["attatlanta1", "attdallas1", "southcentralus2", "southeastus5"]
+        ],
+        "skus": {
+          "GP_Standard_D2s_v3": 0
+        }
+      }
+    },
+    "mysql-flexible": {
+      "valid": [],
+      "pattern": "^(?:B|GP|MO)_Standard_[A-Za-z0-9_]+$",
+      "available": {
+        "sets": [
+          ["attatlanta1", "attdallas1", "jioindiawest", "southcentralus2", "southeastus5"]
+        ],
+        "skus": {
+          "GP_Standard_D2ds_v4": 0
+        }
+      }
+    },
+    "key-vault": {
+      "valid": ["standard", "premium"]
+    },
+    "load-balancer": {
+      "valid": ["Basic", "Standard", "Gateway"]
+    },
+    "service-bus": {
+      "valid": ["Basic", "Standard", "Premium"]
+    },
+    "front-door": {
+      "valid": ["Standard_AzureFrontDoor", "Premium_AzureFrontDoor"]
+    },
+    "log-analytics": {
+      "valid": ["PerGB2018", "PerNode", "Premium", "Standalone", "Standard", "CapacityReservation", "LACluster", "Unlimited"]
+    }
+  }
+};
+
+// ../packages/engine/src/hcl.ts
+var IDENT_START = /[A-Za-z_]/;
+var IDENT_CHAR = /[A-Za-z0-9_-]/;
+function skipTrivia(src, start) {
+  let i = start;
+  while (i < src.length) {
+    const ch = src[i] ?? "";
+    if (ch === " " || ch === "	" || ch === "\r" || ch === "\n") {
+      i++;
+      continue;
+    }
+    if (ch === "#" || ch === "/" && src[i + 1] === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+      continue;
+    }
+    if (ch === "/" && src[i + 1] === "*") {
+      const end = src.indexOf("*/", i + 2);
+      i = end === -1 ? src.length : end + 2;
+      continue;
+    }
+    break;
+  }
+  return i;
+}
+function stringEnd(src, start) {
+  let i = start + 1;
+  while (i < src.length) {
+    const ch = src[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === '"') return i + 1;
+    i++;
+  }
+  return src.length;
+}
+function heredocEnd(src, start) {
+  let i = start + 2;
+  if (src[i] === "-") i++;
+  let tag = "";
+  while (i < src.length && IDENT_CHAR.test(src[i] ?? "")) {
+    tag += src[i];
+    i++;
+  }
+  if (!tag) return i;
+  const terminator = new RegExp(`^[ \\t]*${tag}[ \\t]*$`, "m");
+  const rest = src.slice(i);
+  const match = terminator.exec(rest);
+  return match ? i + match.index + match[0].length : src.length;
+}
+function isHeredocStart(src, i) {
+  if (src[i] !== "<" || src[i + 1] !== "<") return false;
+  const next = src[i + 2] === "-" ? src[i + 3] : src[i + 2];
+  return !!next && IDENT_START.test(next);
+}
+function readValue(src, start) {
+  let i = start;
+  let depth = 0;
+  while (i < src.length) {
+    const ch = src[i] ?? "";
+    if (ch === '"') {
+      i = stringEnd(src, i);
+      continue;
+    }
+    if (isHeredocStart(src, i)) {
+      i = heredocEnd(src, i);
+      continue;
+    }
+    if (ch === "#" || ch === "/" && src[i + 1] === "/") {
+      if (depth === 0) break;
+      while (i < src.length && src[i] !== "\n") i++;
+      continue;
+    }
+    if (ch === "/" && src[i + 1] === "*") {
+      const end = src.indexOf("*/", i + 2);
+      i = end === -1 ? src.length : end + 2;
+      continue;
+    }
+    if (ch === "{" || ch === "[" || ch === "(") {
+      depth++;
+      i++;
+      continue;
+    }
+    if (ch === "}" || ch === "]" || ch === ")") {
+      if (depth === 0) break;
+      depth--;
+      i++;
+      continue;
+    }
+    if (ch === "\n" && depth === 0) break;
+    i++;
+  }
+  return { value: src.slice(start, i).trim(), end: i };
+}
+function parseBody(src, start, top) {
+  const attributes = [];
+  const blocks = [];
+  let i = start;
+  while (i < src.length) {
+    i = skipTrivia(src, i);
+    if (i >= src.length) break;
+    if (src[i] === "}") {
+      if (!top) return { attributes, blocks, end: i + 1 };
+      i++;
+      continue;
+    }
+    const identStart = i;
+    if (!IDENT_START.test(src[i] ?? "")) {
+      i++;
+      continue;
+    }
+    while (i < src.length && IDENT_CHAR.test(src[i] ?? "")) i++;
+    const ident = src.slice(identStart, i);
+    const afterIdent = skipTrivia(src, i);
+    const next = src[afterIdent] ?? "";
+    if (next === "=" && src[afterIdent + 1] !== "=") {
+      const read = readValue(src, skipTrivia(src, afterIdent + 1));
+      attributes.push({ key: ident, value: read.value });
+      i = read.end;
+      continue;
+    }
+    const labels = [];
+    let j = afterIdent;
+    while (j < src.length) {
+      j = skipTrivia(src, j);
+      const ch = src[j] ?? "";
+      if (ch === '"') {
+        const end = stringEnd(src, j);
+        labels.push(src.slice(j + 1, end - 1));
+        j = end;
+        continue;
+      }
+      if (ch === "{") break;
+      if (IDENT_START.test(ch)) {
+        const s = j;
+        while (j < src.length && IDENT_CHAR.test(src[j] ?? "")) j++;
+        labels.push(src.slice(s, j));
+        continue;
+      }
+      break;
+    }
+    if (src[j] === "{") {
+      const body = parseBody(src, j + 1, false);
+      blocks.push({ type: ident, labels, attributes: body.attributes, blocks: body.blocks });
+      i = body.end;
+      continue;
+    }
+    while (i < src.length && src[i] !== "\n") i++;
+  }
+  return { attributes, blocks, end: i };
+}
+function parseHcl(src) {
+  return parseBody(src, 0, true).blocks;
+}
+function attributeOf(block2, key) {
+  return block2.attributes.find((a) => a.key === key)?.value;
+}
+function stringValue(expr) {
+  if (expr === void 0) return void 0;
+  const trimmed = expr.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1);
+  }
+  return void 0;
+}
+function indent(depth) {
+  return "  ".repeat(depth);
+}
+function alignWidths(attributes) {
+  const widths = new Array(attributes.length).fill(0);
+  let start = 0;
+  const close = (end) => {
+    if (end < start) return;
+    const width = attributes.slice(start, end + 1).reduce((w, a) => Math.max(w, a.key.length), 0);
+    for (let j = start; j <= end; j++) widths[j] = width;
+    start = end + 1;
+  };
+  for (let i = 0; i < attributes.length; i++) {
+    if (!(attributes[i]?.value ?? "").includes("\n")) continue;
+    close(i - 1);
+    close(i);
+  }
+  close(attributes.length - 1);
+  return widths;
+}
+function renderAt(block2, depth) {
+  const pad = indent(depth);
+  const labels = block2.labels.map((l) => ` "${l}"`).join("");
+  const widths = alignWidths(block2.attributes);
+  const lines2 = [`${pad}${block2.type}${labels} {`];
+  for (const [index, attribute] of block2.attributes.entries()) {
+    const width = widths[index] ?? attribute.key.length;
+    const gap = " ".repeat(Math.max(1, width - attribute.key.length + 1));
+    lines2.push(`${pad}${indent(1)}${attribute.key}${gap}= ${reindentValue(attribute.value, depth + 1)}`);
+  }
+  for (const nested of block2.blocks) {
+    if (lines2.length > 1) lines2.push("");
+    lines2.push(renderAt(nested, depth + 1));
+  }
+  lines2.push(`${pad}}`);
+  return lines2.join("\n");
+}
+function reindentValue(value, depth) {
+  if (!value.includes("\n")) return value;
+  const [first, ...rest] = value.split("\n");
+  const last = rest.at(-1) ?? "";
+  const base = (/^[ \t]*/.exec(last)?.[0] ?? "").length;
+  const pad = indent(depth);
+  return [
+    first,
+    ...rest.map((line) => {
+      if (!line.trim()) return "";
+      const own2 = (/^[ \t]*/.exec(line)?.[0] ?? "").length;
+      return `${pad}${line.slice(Math.min(base, own2))}`;
+    })
+  ].join("\n");
+}
+function renderBlock(block2) {
+  return renderAt(block2, 0);
+}
+function renderDocument(blocks) {
+  return blocks.length === 0 ? "" : `${blocks.map((b) => renderBlock(b)).join("\n\n")}
+`;
+}
+var CONTROL_ESCAPES = { "\n": "\\n", "\r": "\\r", "	": "\\t" };
+function escapeText(value) {
+  const text = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$\{/g, () => "$${").replace(/%\{/g, () => "%%{");
+  return Array.from(text, (ch) => {
+    const code = ch.charCodeAt(0);
+    const control = code < 32 || code === 127 || code === 8232 || code === 8233;
+    return control ? CONTROL_ESCAPES[ch] ?? `\\u${code.toString(16).padStart(4, "0")}` : ch;
+  }).join("");
+}
+function quote(value) {
+  return `"${escapeText(value)}"`;
+}
+function quoteTemplate(parts, ...values) {
+  const literal2 = (text) => text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${parts.map((part, i) => literal2(part) + (i < values.length ? escapeText(values[i] ?? "") : "")).join("")}"`;
+}
+function mapExpression(entries) {
+  if (entries.length === 0) return "{}";
+  const widths = alignWidths(entries);
+  const body = entries.map((e, i) => {
+    const pad = " ".repeat((widths[i] ?? e.key.length) - e.key.length + 1);
+    return `  ${e.key}${pad}= ${reindentValue(e.value, 1)}`;
+  }).join("\n");
+  return `{
+${body}
+}`;
+}
+function addMapEntry(host, attribute, entry) {
+  const existing = host.attributes.find((a) => a.key === attribute);
+  const entries = existing ? mapEntries(existing.value) : [];
+  if (entries.some((e) => e.key === entry.key)) return;
+  entries.push(entry);
+  const value = mapExpression(entries);
+  if (existing) existing.value = value;
+  else host.attributes.push({ key: attribute, value });
+}
+function mapEntries(expr) {
+  if (!expr) return [];
+  const trimmed = expr.trim();
+  if (!trimmed.startsWith("{")) return [];
+  const inner = trimmed.slice(1, -1);
+  const body = parseBody(inner, 0, true);
+  return body.attributes.map((a) => ({ key: a.key, value: a.value }));
+}
+function block(type, labels, attributes, blocks = []) {
+  return {
+    type,
+    labels,
+    attributes: attributes.filter(
+      (a) => !!a && a.value !== void 0
+    ),
+    blocks
+  };
+}
+
+// ../packages/engine/src/azure-sku.ts
+var BINDINGS = [
+  {
+    rule: "app-service-plan",
+    label: "App Service plan",
+    module: "Azure/avm-res-web-serverfarm/azurerm",
+    resource: "azurerm_service_plan",
+    moduleAttribute: "sku_name",
+    resourceAttribute: "sku_name"
+  },
+  {
+    rule: "redis-cache",
+    label: "Redis cache",
+    module: "Azure/avm-res-cache-redis/azurerm",
+    resource: "azurerm_redis_cache",
+    moduleAttribute: "sku_name",
+    resourceAttribute: "sku_name"
+  },
+  {
+    // A raw resource splits the SKU in two (`account_tier` + `account_replication_type`).
+    rule: "storage-account",
+    label: "storage account",
+    module: "Azure/avm-res-storage-storageaccount/azurerm",
+    resource: "azurerm_storage_account",
+    moduleAttribute: "account_sku_name",
+    resourceAttribute: "account_tier+account_replication_type"
+  },
+  {
+    rule: "postgres-flexible",
+    label: "PostgreSQL flexible server",
+    module: "Azure/avm-res-dbforpostgresql-flexibleserver/azurerm",
+    resource: "azurerm_postgresql_flexible_server",
+    moduleAttribute: "sku_name",
+    resourceAttribute: "sku_name"
+  },
+  {
+    rule: "mysql-flexible",
+    label: "MySQL flexible server",
+    module: "Azure/avm-res-dbformysql-flexibleserver/azurerm",
+    resource: "azurerm_mysql_flexible_server",
+    moduleAttribute: "sku_name",
+    resourceAttribute: "sku_name"
+  },
+  {
+    rule: "key-vault",
+    label: "Key Vault",
+    module: "Azure/avm-res-keyvault-vault/azurerm",
+    resource: "azurerm_key_vault",
+    moduleAttribute: "sku_name",
+    resourceAttribute: "sku_name"
+  },
+  {
+    rule: "load-balancer",
+    label: "load balancer",
+    module: "Azure/avm-res-network-loadbalancer/azurerm",
+    resource: "azurerm_lb",
+    moduleAttribute: "sku",
+    resourceAttribute: "sku"
+  },
+  {
+    rule: "service-bus",
+    label: "Service Bus namespace",
+    module: "Azure/avm-res-servicebus-namespace/azurerm",
+    resource: "azurerm_servicebus_namespace",
+    moduleAttribute: "sku",
+    resourceAttribute: "sku"
+  },
+  {
+    rule: "front-door",
+    label: "Front Door profile",
+    module: "Azure/avm-res-cdn-profile/azurerm",
+    resource: "azurerm_cdn_frontdoor_profile",
+    moduleAttribute: "sku",
+    resourceAttribute: "sku_name"
+  },
+  {
+    rule: "log-analytics",
+    label: "Log Analytics workspace",
+    module: "Azure/avm-res-operationalinsights-workspace/azurerm",
+    resource: "azurerm_log_analytics_workspace",
+    moduleAttribute: "log_analytics_workspace_sku",
+    resourceAttribute: "sku"
+  }
+];
+var SKU_RULE_IDS = BINDINGS.map((b) => b.rule);
+var MAX_REFERENCE_DEPTH = 5;
+function regionKey(value) {
+  return value.toLowerCase().replace(/\s+/g, "");
+}
+function resolveLocation(expr, plan, depth = 0) {
+  if (expr === void 0 || depth > MAX_REFERENCE_DEPTH) return void 0;
+  const text = expr.trim();
+  const literal2 = stringValue(text);
+  if (literal2 !== void 0) return literal2.includes("${") ? void 0 : literal2;
+  const variable = /^var\.([A-Za-z_][A-Za-z0-9_-]*)$/.exec(text);
+  if (variable) {
+    const block2 = plan.variables.get(variable[1] ?? "");
+    return block2 ? resolveLocation(attributeOf(block2, "default"), plan, depth + 1) : void 0;
+  }
+  const module = /^module\.([A-Za-z_][A-Za-z0-9_-]*)\.location$/.exec(text);
+  if (module) {
+    const block2 = plan.modules.get(module[1] ?? "");
+    return block2 ? resolveLocation(attributeOf(block2, "location"), plan, depth + 1) : void 0;
+  }
+  return void 0;
+}
+function skuOf(block2, binding) {
+  if (block2.type === "module") return stringValue(attributeOf(block2, binding.moduleAttribute));
+  const [first, second] = binding.resourceAttribute.split("+");
+  const head = stringValue(attributeOf(block2, first ?? ""));
+  if (second === void 0) return head;
+  const tail = stringValue(attributeOf(block2, second));
+  return head !== void 0 && tail !== void 0 ? `${head}_${tail}` : void 0;
+}
+var SKU_PATTERNS = {
+  "^(?:B|GP|MO)_Standard_[A-Za-z0-9_]+$": /^(?:B|GP|MO)_Standard_[A-Za-z0-9_]+$/i
+};
+function isKnown(rule, sku) {
+  const lower = sku.toLowerCase();
+  if (rule.valid.some((v) => v.toLowerCase() === lower)) return true;
+  if (rule.pattern === void 0 || !Object.hasOwn(SKU_PATTERNS, rule.pattern)) return false;
+  return SKU_PATTERNS[rule.pattern]?.test(sku) ?? false;
+}
+function canonical(rule, sku) {
+  const lower = sku.toLowerCase();
+  return rule.valid.find((v) => v.toLowerCase() === lower) ?? sku;
+}
+function notSoldIn(rule, sku, region) {
+  const available = rule.available;
+  if (!available) return false;
+  const index = available.skus[canonical(rule, sku)];
+  const sets = available.sets[index ?? -1];
+  return sets?.includes(region) === true;
+}
+function checkAzureSkus(files) {
+  const blocks = files.filter((f) => f.name.endsWith(".tf")).flatMap((f) => parseHcl(f.content));
+  const plan = {
+    variables: new Map(blocks.filter((b) => b.type === "variable").map((b) => [b.labels[0] ?? "", b])),
+    modules: new Map(blocks.filter((b) => b.type === "module").map((b) => [b.labels[0] ?? "", b]))
+  };
+  const { rules, regions, refreshed } = AZURE_SKU_DATA;
+  const known = new Set(regions);
+  const findings = [];
+  const unknownRegion = /* @__PURE__ */ new Map();
+  for (const block2 of blocks) {
+    const binding = block2.type === "module" ? BINDINGS.find((b) => b.module !== null && b.module === stringValue(attributeOf(block2, "source"))) : block2.type === "resource" ? BINDINGS.find((b) => b.resource === block2.labels[0]) : void 0;
+    const rule = binding && rules[binding.rule];
+    if (!binding || !rule) continue;
+    const sku = skuOf(block2, binding);
+    if (sku === void 0) continue;
+    const address = block2.type === "module" ? `module.${block2.labels[0]}` : `${block2.labels[0]}.${block2.labels[1]}`;
+    if (!isKnown(rule, sku)) {
+      findings.push({
+        severity: "warning",
+        rule: binding.rule,
+        address,
+        message: `${address}: "${sku}" is not a known ${binding.label} SKU (azurerm documentation, data of ${refreshed}); check the spelling, or refresh the SKU data if Azure added it since.`
+      });
+      continue;
+    }
+    const written = resolveLocation(attributeOf(block2, "location"), plan);
+    if (written === void 0) continue;
+    const region = regionKey(written);
+    if (!known.has(region)) {
+      unknownRegion.set(written, [...unknownRegion.get(written) ?? [], address]);
+    } else if (notSoldIn(rule, sku, region)) {
+      findings.push({
+        severity: "warning",
+        rule: binding.rule,
+        address,
+        message: `${address}: ${binding.label} SKU "${sku}" has no price in ${region} (Azure retail price list, data of ${refreshed}), so it is probably not offered there; pick another SKU or region.`
+      });
+    }
+  }
+  for (const [written, addresses] of unknownRegion) {
+    const list = [...new Set(addresses)].sort();
+    findings.push({
+      severity: "warning",
+      rule: "region",
+      address: list.join(", "),
+      message: `${list.join(", ")}: location "${written}" is not a region the SKU data knows (data of ${refreshed}), so SKU availability was not checked there.`
+    });
+  }
+  return findings.sort((a, b) => a.address < b.address ? -1 : a.address > b.address ? 1 : a.message < b.message ? -1 : a.message > b.message ? 1 : 0);
+}
+
 // ../packages/engine/src/graph/normalize.ts
 function compareText(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -19838,283 +20473,6 @@ function resourceNodes(model) {
 var ENGINE_NAME = "diagram-engine";
 var ENGINE_VERSION = "0.1.0";
 
-// ../packages/engine/src/hcl.ts
-var IDENT_START = /[A-Za-z_]/;
-var IDENT_CHAR = /[A-Za-z0-9_-]/;
-function skipTrivia(src, start) {
-  let i = start;
-  while (i < src.length) {
-    const ch = src[i] ?? "";
-    if (ch === " " || ch === "	" || ch === "\r" || ch === "\n") {
-      i++;
-      continue;
-    }
-    if (ch === "#" || ch === "/" && src[i + 1] === "/") {
-      while (i < src.length && src[i] !== "\n") i++;
-      continue;
-    }
-    if (ch === "/" && src[i + 1] === "*") {
-      const end = src.indexOf("*/", i + 2);
-      i = end === -1 ? src.length : end + 2;
-      continue;
-    }
-    break;
-  }
-  return i;
-}
-function stringEnd(src, start) {
-  let i = start + 1;
-  while (i < src.length) {
-    const ch = src[i];
-    if (ch === "\\") {
-      i += 2;
-      continue;
-    }
-    if (ch === '"') return i + 1;
-    i++;
-  }
-  return src.length;
-}
-function heredocEnd(src, start) {
-  let i = start + 2;
-  if (src[i] === "-") i++;
-  let tag = "";
-  while (i < src.length && IDENT_CHAR.test(src[i] ?? "")) {
-    tag += src[i];
-    i++;
-  }
-  if (!tag) return i;
-  const terminator = new RegExp(`^[ \\t]*${tag}[ \\t]*$`, "m");
-  const rest = src.slice(i);
-  const match = terminator.exec(rest);
-  return match ? i + match.index + match[0].length : src.length;
-}
-function isHeredocStart(src, i) {
-  if (src[i] !== "<" || src[i + 1] !== "<") return false;
-  const next = src[i + 2] === "-" ? src[i + 3] : src[i + 2];
-  return !!next && IDENT_START.test(next);
-}
-function readValue(src, start) {
-  let i = start;
-  let depth = 0;
-  while (i < src.length) {
-    const ch = src[i] ?? "";
-    if (ch === '"') {
-      i = stringEnd(src, i);
-      continue;
-    }
-    if (isHeredocStart(src, i)) {
-      i = heredocEnd(src, i);
-      continue;
-    }
-    if (ch === "#" || ch === "/" && src[i + 1] === "/") {
-      if (depth === 0) break;
-      while (i < src.length && src[i] !== "\n") i++;
-      continue;
-    }
-    if (ch === "/" && src[i + 1] === "*") {
-      const end = src.indexOf("*/", i + 2);
-      i = end === -1 ? src.length : end + 2;
-      continue;
-    }
-    if (ch === "{" || ch === "[" || ch === "(") {
-      depth++;
-      i++;
-      continue;
-    }
-    if (ch === "}" || ch === "]" || ch === ")") {
-      if (depth === 0) break;
-      depth--;
-      i++;
-      continue;
-    }
-    if (ch === "\n" && depth === 0) break;
-    i++;
-  }
-  return { value: src.slice(start, i).trim(), end: i };
-}
-function parseBody(src, start, top) {
-  const attributes = [];
-  const blocks = [];
-  let i = start;
-  while (i < src.length) {
-    i = skipTrivia(src, i);
-    if (i >= src.length) break;
-    if (src[i] === "}") {
-      if (!top) return { attributes, blocks, end: i + 1 };
-      i++;
-      continue;
-    }
-    const identStart = i;
-    if (!IDENT_START.test(src[i] ?? "")) {
-      i++;
-      continue;
-    }
-    while (i < src.length && IDENT_CHAR.test(src[i] ?? "")) i++;
-    const ident = src.slice(identStart, i);
-    const afterIdent = skipTrivia(src, i);
-    const next = src[afterIdent] ?? "";
-    if (next === "=" && src[afterIdent + 1] !== "=") {
-      const read = readValue(src, skipTrivia(src, afterIdent + 1));
-      attributes.push({ key: ident, value: read.value });
-      i = read.end;
-      continue;
-    }
-    const labels = [];
-    let j = afterIdent;
-    while (j < src.length) {
-      j = skipTrivia(src, j);
-      const ch = src[j] ?? "";
-      if (ch === '"') {
-        const end = stringEnd(src, j);
-        labels.push(src.slice(j + 1, end - 1));
-        j = end;
-        continue;
-      }
-      if (ch === "{") break;
-      if (IDENT_START.test(ch)) {
-        const s = j;
-        while (j < src.length && IDENT_CHAR.test(src[j] ?? "")) j++;
-        labels.push(src.slice(s, j));
-        continue;
-      }
-      break;
-    }
-    if (src[j] === "{") {
-      const body = parseBody(src, j + 1, false);
-      blocks.push({ type: ident, labels, attributes: body.attributes, blocks: body.blocks });
-      i = body.end;
-      continue;
-    }
-    while (i < src.length && src[i] !== "\n") i++;
-  }
-  return { attributes, blocks, end: i };
-}
-function attributeOf(block2, key) {
-  return block2.attributes.find((a) => a.key === key)?.value;
-}
-function stringValue(expr) {
-  if (expr === void 0) return void 0;
-  const trimmed = expr.trim();
-  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
-    return trimmed.slice(1, -1);
-  }
-  return void 0;
-}
-function indent(depth) {
-  return "  ".repeat(depth);
-}
-function alignWidths(attributes) {
-  const widths = new Array(attributes.length).fill(0);
-  let start = 0;
-  const close = (end) => {
-    if (end < start) return;
-    const width = attributes.slice(start, end + 1).reduce((w, a) => Math.max(w, a.key.length), 0);
-    for (let j = start; j <= end; j++) widths[j] = width;
-    start = end + 1;
-  };
-  for (let i = 0; i < attributes.length; i++) {
-    if (!(attributes[i]?.value ?? "").includes("\n")) continue;
-    close(i - 1);
-    close(i);
-  }
-  close(attributes.length - 1);
-  return widths;
-}
-function renderAt(block2, depth) {
-  const pad = indent(depth);
-  const labels = block2.labels.map((l) => ` "${l}"`).join("");
-  const widths = alignWidths(block2.attributes);
-  const lines2 = [`${pad}${block2.type}${labels} {`];
-  for (const [index, attribute] of block2.attributes.entries()) {
-    const width = widths[index] ?? attribute.key.length;
-    const gap = " ".repeat(Math.max(1, width - attribute.key.length + 1));
-    lines2.push(`${pad}${indent(1)}${attribute.key}${gap}= ${reindentValue(attribute.value, depth + 1)}`);
-  }
-  for (const nested of block2.blocks) {
-    if (lines2.length > 1) lines2.push("");
-    lines2.push(renderAt(nested, depth + 1));
-  }
-  lines2.push(`${pad}}`);
-  return lines2.join("\n");
-}
-function reindentValue(value, depth) {
-  if (!value.includes("\n")) return value;
-  const [first, ...rest] = value.split("\n");
-  const last = rest.at(-1) ?? "";
-  const base = (/^[ \t]*/.exec(last)?.[0] ?? "").length;
-  const pad = indent(depth);
-  return [
-    first,
-    ...rest.map((line) => {
-      if (!line.trim()) return "";
-      const own2 = (/^[ \t]*/.exec(line)?.[0] ?? "").length;
-      return `${pad}${line.slice(Math.min(base, own2))}`;
-    })
-  ].join("\n");
-}
-function renderBlock(block2) {
-  return renderAt(block2, 0);
-}
-function renderDocument(blocks) {
-  return blocks.length === 0 ? "" : `${blocks.map((b) => renderBlock(b)).join("\n\n")}
-`;
-}
-var CONTROL_ESCAPES = { "\n": "\\n", "\r": "\\r", "	": "\\t" };
-function escapeText(value) {
-  const text = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$\{/g, () => "$${").replace(/%\{/g, () => "%%{");
-  return Array.from(text, (ch) => {
-    const code = ch.charCodeAt(0);
-    const control = code < 32 || code === 127 || code === 8232 || code === 8233;
-    return control ? CONTROL_ESCAPES[ch] ?? `\\u${code.toString(16).padStart(4, "0")}` : ch;
-  }).join("");
-}
-function quote(value) {
-  return `"${escapeText(value)}"`;
-}
-function quoteTemplate(parts, ...values) {
-  const literal2 = (text) => text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  return `"${parts.map((part, i) => literal2(part) + (i < values.length ? escapeText(values[i] ?? "") : "")).join("")}"`;
-}
-function mapExpression(entries) {
-  if (entries.length === 0) return "{}";
-  const widths = alignWidths(entries);
-  const body = entries.map((e, i) => {
-    const pad = " ".repeat((widths[i] ?? e.key.length) - e.key.length + 1);
-    return `  ${e.key}${pad}= ${reindentValue(e.value, 1)}`;
-  }).join("\n");
-  return `{
-${body}
-}`;
-}
-function addMapEntry(host, attribute, entry) {
-  const existing = host.attributes.find((a) => a.key === attribute);
-  const entries = existing ? mapEntries(existing.value) : [];
-  if (entries.some((e) => e.key === entry.key)) return;
-  entries.push(entry);
-  const value = mapExpression(entries);
-  if (existing) existing.value = value;
-  else host.attributes.push({ key: attribute, value });
-}
-function mapEntries(expr) {
-  if (!expr) return [];
-  const trimmed = expr.trim();
-  if (!trimmed.startsWith("{")) return [];
-  const inner = trimmed.slice(1, -1);
-  const body = parseBody(inner, 0, true);
-  return body.attributes.map((a) => ({ key: a.key, value: a.value }));
-}
-function block(type, labels, attributes, blocks = []) {
-  return {
-    type,
-    labels,
-    attributes: attributes.filter(
-      (a) => !!a && a.value !== void 0
-    ),
-    blocks
-  };
-}
-
 // ../packages/engine/src/module-versions.ts
 var MODULE_VERSIONS = {
   "azure/resource-group": { source: "Azure/avm-res-resources-resourcegroup/azurerm", version: "0.4.0" },
@@ -24258,6 +24616,7 @@ async function execute(host, workflow) {
   const receiptPath = `${BUNDLE_DIR}/receipt.json`;
   const feasibility = assessFeasibility(model, cloud);
   const warnings = feasibility.components.filter((c) => c.status !== "buildable").map((c) => `${c.label || c.id}: ${c.reason ?? "needs review"}`);
+  warnings.push(...checkAzureSkus(terraform.files).map((f) => f.message));
   const pr = readPullRequest(host);
   let base = { state: "none" };
   let diff = null;

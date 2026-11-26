@@ -28,6 +28,7 @@
     "schemas:gen": "node scripts/gen-schemas.ts",
     "schemas:check": "node scripts/gen-schemas.ts --check",
     "refresh:providers": "node scripts/refresh-providers.mjs && npm run check:modules",
+    "refresh:azure-skus": "node scripts/refresh-azure-skus.mjs",
     "check:modules": "node scripts/check-module-inputs.ts",
     "check:imports": "depcruise packages/engine/src packages/cli/src action/src --output-type err-long && node scripts/check-engine-env.mjs",
     "knip": "knip"

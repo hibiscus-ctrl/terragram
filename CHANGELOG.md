@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   title; the `internet` icon is the outside world), nested groups (kept as members, reported), junctions (edges
   joined through them) and edges with sides and arrows. An icon outside Mermaid's built-ins makes a flagged generic
   component with a warning rather than a guess. Malformed input is refused with the line number.
+- `terragram generate` and the Action warn when the Azure Terraform names a SKU the azurerm provider does not
+  document (an App Service plan, Redis cache, storage account, PostgreSQL or MySQL flexible server, Key Vault,
+  load balancer, Service Bus namespace, Front Door profile or Log Analytics workspace), or one the Azure
+  retail price list has no price for in the plan's region. It reads a checked-in snapshot
+  (`npm run refresh:azure-skus` rewrites it) and never calls Azure; a SKU or region the snapshot does not know is a
+  warning that names the snapshot's date, never an error. The price list is not the Resource SKUs API, so it
+  cannot see capacity or subscription restrictions.
 
 ### Changed
 
