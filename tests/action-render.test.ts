@@ -310,8 +310,8 @@ describe("the access changes in the report", () => {
     assert.match(text, /#### Access changes/);
     const lines = text.split("\n").filter((l) => /^- \*\*/.test(l));
     assert.deepEqual(lines, [
-      "- **Widened** api-role to orders-data: read to write",
       "- **Added** Orders API has admin access to orders-data",
+      "- **Widened** api-role to orders-data: read to write",
       "- **Removed** api-role has unscoped access to Any resource &#40;&#42;&#41;",
     ]);
   });
@@ -330,7 +330,56 @@ describe("the access changes in the report", () => {
     assert.doesNotMatch(report(plain, model(nodes, [e("fn", "role"), e("role", "data"), e("fn", "data")])), /Access changes/);
     const hostile = [n("fn", "x](https://evil)<b>"), ...nodes.slice(1)];
     const text = report(model(hostile, [e("fn", "role")]), model(hostile, [e("fn", "role", "runs-as")]));
-    assert.match(text, /\*\*Widened\*\* x&#93;&#40;https:\/\/evil&#41;&#60;b&#62; to api-role: a plain connection to runs as/);
+    assert.match(text, /\*\*Widened\*\* x&#93;&#40;https&#58;\/\/evil&#41;&#60;b&#62; to api-role: a plain connection to runs as/);
     assert.doesNotMatch(text, /<b>/);
+  });
+
+  it("keeps the widest grants when the list is cut: a new unscoped, then admin, then other widenings", () => {
+    const many = Array.from({ length: 14 }, (_, i) => n(`t${i}`, `target ${i}`, "object-storage"));
+    const all = [...nodes, ...many];
+    // 14 grants widened from read to write, a new admin grant and a new unscoped grant
+    const before = model(all, [e("fn", "role", "runs-as"), ...many.map((t) => e("role", t.id, "read"))]);
+    const after = model(all, [
+      e("fn", "role", "runs-as"),
+      ...many.map((t) => e("role", t.id, "write")),
+      e("fn", "data", "admin"),
+      e("fn", "any", "unscoped"),
+    ]);
+    const lines = report(before, after).split("\n").filter((l) => /^- /.test(l));
+    assert.equal(lines.length, 13, "12 lines and the count of what was cut");
+    assert.equal(lines[0], "- **Added** Orders API has unscoped access to Any resource &#40;&#42;&#41;");
+    assert.equal(lines[1], "- **Added** Orders API has admin access to orders-data");
+    assert.match(lines[2] ?? "", /^- \*\*Widened\*\*/);
+    assert.equal(lines[12], "- and 4 more");
+  });
+
+  it("ranks a grant widened to unscoped or admin above one widened to write", () => {
+    const before = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "read"), e("fn", "data", "read")]);
+    const after = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "write"), e("fn", "data", "unscoped")]);
+    const lines = report(before, after).split("\n").filter((l) => /^- \*\*/.test(l));
+    assert.deepEqual(lines, [
+      "- **Widened** Orders API to orders-data: read to unscoped",
+      "- **Widened** api-role to orders-data: read to write",
+    ]);
+  });
+
+  it("neutralises links, autolinks and mentions in names taken from the model file", () => {
+    const labels = ["https://evil.example/x", "see www.evil.example", "WWW.EVIL.EXAMPLE", "ftp://evil.example", "@octocat and @org/team", "a@evil.example", "mailto:a@evil.example", "<https://evil.example>", "[x](https://evil.example)", "&#64;octocat &commat;octocat"];
+    for (const label of labels) {
+      const text = markdownText(label);
+      assert.doesNotMatch(text, /:\/\//, label);
+      assert.doesNotMatch(text, /www\./i, label);
+      assert.doesNotMatch(text, /@/, label);
+      assert.doesNotMatch(text, /[<>[\]()]/, label);
+      assert.doesNotMatch(text, /&(?!#\d+;)/, label);
+    }
+    assert.equal(markdownText("see www.evil.example"), "see www&#46;evil.example");
+    assert.equal(markdownText("https://evil.example"), "https&#58;//evil.example");
+    for (const label of labels) {
+      const hostile = [n("fn", label), ...nodes.slice(1)];
+      const text = report(model(hostile, [e("fn", "role")]), model(hostile, [e("fn", "role", "runs-as")]));
+      const line = text.split("\n").find((l) => l.startsWith("- **Widened**")) ?? "";
+      assert.doesNotMatch(line, /:\/\/|www\.|@|[<>[\]]/i, label);
+    }
   });
 });

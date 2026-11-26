@@ -24267,7 +24267,7 @@ function strongerAccess(a, b) {
 var MAX_LISTED = 12;
 var MAX_DIFF_CHARS = 24e3;
 function markdownText(text) {
-  return text.replace(/\s+/g, " ").trim().replace(/[\\`*_{}[\]<>()#+!|~&@]/g, (char) => `&#${char.codePointAt(0)};`);
+  return text.replace(/\s+/g, " ").trim().replace(/[\\`*_{}[\]<>()#+!|~&@]/g, (char) => `&#${char.codePointAt(0)};`).replace(/:(?=\/\/)/g, "&#58;").replace(/www\./gi, (match) => `${match.slice(0, 3)}&#46;`);
 }
 function listed(items, render) {
   const shown = items.slice(0, MAX_LISTED).map((item) => `- ${render(item)}`);
@@ -24283,11 +24283,12 @@ function accessLines(diff) {
   const phrase = (access) => EDGE_ACCESS_META[access].phrase;
   const rows = [];
   const row = (source, target, rank, text) => rows.push({ rank, key: `${source}\0${target}`, text });
+  const widest = (access) => access === "unscoped" ? 0 : access === "admin" ? 1 : 2;
   for (const e of diff.edges.added) {
-    if (e.access) row(e.source, e.target, e.access === "unscoped" ? 0 : 1, `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
+    if (e.access) row(e.source, e.target, widest(e.access), `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
   }
   for (const e of diff.edges.removed) {
-    if (e.access) row(e.source, e.target, 3, `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
+    if (e.access) row(e.source, e.target, 4, `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
   }
   for (const { before, after } of diff.edges.changed) {
     if (before.access === after.access) continue;
@@ -24297,7 +24298,7 @@ function accessLines(diff) {
     row(
       after.source,
       after.target,
-      widened ? 0 : 2,
+      widened ? widest(after.access) : 3,
       `**${widened ? "Widened" : "Narrowed"}** ${name(after.source)} to ${name(after.target)}: ${from} to ${to}`
     );
   }

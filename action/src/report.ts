@@ -45,12 +45,19 @@ export type ReportInput = {
 const MAX_LISTED = 12;
 const MAX_DIFF_CHARS = 24_000;
 
-/** Text from a model file, safe in a markdown table cell or list item. */
+/**
+ * Text from a model file, safe in a markdown table cell or list item. Every character that
+ * markdown or HTML gives a meaning is a numeric entity, which also keeps an `@name` from
+ * mentioning anyone; a bare `https://` or `www.` would still be turned into a link by GitHub,
+ * so the `:` and the `.` that make one are entities too.
+ */
 export function markdownText(text: string): string {
   return text
     .replace(/\s+/g, " ")
     .trim()
-    .replace(/[\\`*_{}[\]<>()#+!|~&@]/g, (char) => `&#${char.codePointAt(0)};`);
+    .replace(/[\\`*_{}[\]<>()#+!|~&@]/g, (char) => `&#${char.codePointAt(0)};`)
+    .replace(/:(?=\/\/)/g, "&#58;")
+    .replace(/www\./gi, (match) => `${match.slice(0, 3)}&#46;`);
 }
 
 function listed<T>(items: readonly T[], render: (item: T) => string): string[] {
@@ -59,7 +66,11 @@ function listed<T>(items: readonly T[], render: (item: T) => string): string[] {
   return shown;
 }
 
-/** One line per edge whose access type was added, removed or changed, widened ones first. */
+/**
+ * One line per edge whose access type was added, removed or changed, the widest first: a new
+ * or widened `unscoped` grant, then `admin`, then every other widening, then narrowings and
+ * removals. The report lists only the first lines, so what is cut is the least dangerous.
+ */
 function accessLines(diff: ModelDiff): string[] {
   const names = new Map<string, string>();
   for (const n of [...diff.nodes.unchanged, ...diff.nodes.added, ...diff.nodes.removed, ...diff.nodes.changed.map((c) => c.after)]) {
@@ -71,11 +82,12 @@ function accessLines(diff: ModelDiff): string[] {
   const rows: Row[] = [];
   const row = (source: string, target: string, rank: number, text: string) =>
     rows.push({ rank, key: `${source}\u0000${target}`, text });
+  const widest = (access: EdgeAccess | undefined) => (access === "unscoped" ? 0 : access === "admin" ? 1 : 2);
   for (const e of diff.edges.added) {
-    if (e.access) row(e.source, e.target, e.access === "unscoped" ? 0 : 1, `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
+    if (e.access) row(e.source, e.target, widest(e.access), `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
   }
   for (const e of diff.edges.removed) {
-    if (e.access) row(e.source, e.target, 3, `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
+    if (e.access) row(e.source, e.target, 4, `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
   }
   for (const { before, after } of diff.edges.changed) {
     if (before.access === after.access) continue;
@@ -85,7 +97,7 @@ function accessLines(diff: ModelDiff): string[] {
     row(
       after.source,
       after.target,
-      widened ? 0 : 2,
+      widened ? widest(after.access) : 3,
       `**${widened ? "Widened" : "Narrowed"}** ${name(after.source)} to ${name(after.target)}: ${from} to ${to}`,
     );
   }
