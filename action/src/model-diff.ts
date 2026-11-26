@@ -5,7 +5,7 @@ import type { InfraModel, ModelEdge, ModelNode } from "terragram-engine/model";
 
 /**
  * What changed between two versions of a model, by identity: a node by its id, an edge by
- * its two ends. A node is "changed" when something that reaches the Terraform differs
+ * its two ends (and "changed" when its origin or its access type differs). A node is "changed" when something that reaches the Terraform differs
  * (its kind, category, label, attributes or review flag); where it sits on the canvas
  * does not count, because moving a box builds nothing different.
  */
@@ -51,7 +51,7 @@ export function diffModels(base: InfraModel, head: InfraModel): ModelDiff {
   for (const [key, edge] of headEdges) {
     const before = baseEdges.get(key);
     if (!before) edges.added.push(edge);
-    else if (before.origin === edge.origin) edges.unchanged.push(edge);
+    else if (before.origin === edge.origin && before.access === edge.access) edges.unchanged.push(edge);
     else edges.changed.push({ before, after: edge });
   }
   for (const [key, edge] of baseEdges) if (!headEdges.has(key)) edges.removed.push(edge);

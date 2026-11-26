@@ -119,6 +119,16 @@
               "derived",
               "user"
             ]
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "runs-as",
+              "read",
+              "write",
+              "admin",
+              "unscoped"
+            ]
           }
         },
         "required": [

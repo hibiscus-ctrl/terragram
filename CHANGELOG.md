@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `terragram parse` types the access edges of the Terraform it reads. An edge from a workload to the role or managed
+  identity it runs as is `runs-as`; an edge from an identity to a resource its policy names is `read`, `write` or
+  `admin`, by the strongest action the policy allows there; one the text cannot bound (a wildcard resource, `NotResource`,
+  a policy that is a variable, file or template, an Azure role over a subscription or resource group, an unrecognised
+  role) ends at an "Any resource (*)" node as `unscoped`. AWS policies are read from `jsonencode`, JSON heredocs,
+  `aws_iam_policy_document` data sources, inline policies and attachments, and Azure from `azurerm_role_assignment`.
+  Nothing is evaluated, and a policy's text never reaches the model: an edge carries a type and nothing else. The SVG
+  writes the type on each line, the Action's pull request diagram labels it and counts a changed type as a change, and the
+  plain-English description says it. `access` is an optional field on a model edge (`diagram.model/v1`).
 - `terragram graph --format drawio` (and `renderGraphDrawio` in `terragram-engine/graph`) writes the estate as an
   uncompressed draw.io file that opens in diagrams.net: scopes, environments and module calls as containers, resources
   as cards inside them, references as connectors, laid out where the SVG puts them.
