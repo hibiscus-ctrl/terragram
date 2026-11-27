@@ -38,6 +38,10 @@ const reviewFlagSchema = z.object({
 });
 export type ReviewFlag = z.infer<typeof reviewFlagSchema>;
 
+/** The levels a node's access to itself is recorded at: only the ones that are a path to widen its own access. */
+const SELF_ACCESS = ["admin", "unscoped"] as const;
+export type SelfAccess = (typeof SELF_ACCESS)[number];
+
 const modelNodeSchema = z.object({
   id: z.string().min(1).max(80),
   category: z.enum(NODE_CATEGORIES),
@@ -54,6 +58,10 @@ const modelNodeSchema = z.object({
    *  out by dagre; nodes with one keep where the user dragged them, so the mental
    *  map survives a turn. */
   position: z.object({ x: z.number(), y: z.number() }).optional(),
+  /** Set when the node's own grants reach the node itself (a role whose policy may rewrite the role, a service account that may mint tokens for itself): a path to widen its own access. `admin`, or `unscoped` when the grant could not be read closely. Absent otherwise; lower levels on oneself are not recorded. Counts as admin access wherever access is shown. */
+  selfAccess: z.enum(SELF_ACCESS).optional().describe("Set when the node's own grants reach the node itself, so it can widen its own access (a role whose policy may rewrite the role, a service account that may mint tokens for itself): admin, or unscoped when the grant could not be read closely. Absent otherwise. Counts as admin access."),
+  /** With `selfAccess`: every grant behind it carries a Condition. The level is the same. */
+  selfConditional: z.boolean().optional().describe("With selfAccess: every grant behind it carries a condition. The level is the same."),
 });
 export type ModelNode = z.infer<typeof modelNodeSchema>;
 
@@ -90,6 +98,12 @@ export function edgeAccessLabel(edge: { access: EdgeAccess; conditional?: boolea
   const label = EDGE_ACCESS_META[edge.access].label;
   if (!edge.conditional) return label;
   return edge.unconditional ? `${label}, conditional (${EDGE_ACCESS_META[edge.unconditional].label} unconditional)` : `${label}, conditional`;
+}
+
+/** What a node's access to itself is called wherever it is shown: fixed wording, never text from the file. Undefined when the node has none. */
+export function selfAccessPhrase(node: { selfAccess?: SelfAccess | undefined; selfConditional?: boolean | undefined }): string | undefined {
+  if (!node.selfAccess) return undefined;
+  return `has ${node.selfAccess} access to itself${node.selfConditional ? " (conditional)" : ""}`;
 }
 
 const modelEdgeSchema = z.object({

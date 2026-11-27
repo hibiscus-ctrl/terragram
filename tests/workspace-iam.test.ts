@@ -720,9 +720,10 @@ resource "aws_iam_role_policy_attachment" "a" {
 `;
     const blocks = parseHcl(own);
     const owned = readIam(blocks, (address) => (address === "aws_iam_role.fn" ? "fn" : undefined));
-    assert.ok(owned.edges.some((e) => e.source === "fn" && e.target === "fn" && e.access === "admin"), "a policy that covers IAM may rewrite the role it is attached to");
+    assert.ok(owned.self.some((e) => e.source === "fn" && e.target === "fn" && e.access === "admin"), "a policy that covers IAM may rewrite the role it is attached to: kept apart from the edges, as the role's own access");
+    assert.equal(owned.edges.some((e) => e.source === e.target), false);
     assert.ok(owned.edges.some((e) => e.source === "fn" && e.target === ANY_RESOURCE_ID && e.access === "admin"));
-    assert.ok(grants(own).includes(`${ANY}: admin`), "a self edge cannot be drawn, so the model carries it as any resource");
+    assert.ok(grants(own).includes(`${ANY}: admin`), "the role's access to itself is on the node; the account-wide edge is in the model");
   });
 
   it("types a grant on a service the picture does not draw at its own level, over any resource", () => {

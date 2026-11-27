@@ -6,7 +6,7 @@ import type { InfraModel, ModelEdge, ModelNode } from "terragram-engine/model";
 /**
  * What changed between two versions of a model, by identity: a node by its id, an edge by
  * its two ends (and "changed" when its origin, its access type or whether it is conditional, or what it gives without the condition, differs). A node is "changed" when something that reaches the Terraform differs
- * (its kind, category, label, attributes or review flag); where it sits on the canvas
+ * (its kind, category, label, attributes, review flag or access to itself); where it sits on the canvas
  * does not count, because moving a box builds nothing different.
  */
 
@@ -27,7 +27,7 @@ export type ModelDiff = {
 
 function nodeSignature(node: ModelNode): string {
   const attributes = Object.entries(node.attributes ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return JSON.stringify([node.category, node.kind, node.label, attributes, node.flag?.reason ?? null]);
+  return JSON.stringify([node.category, node.kind, node.label, attributes, node.flag?.reason ?? null, node.selfAccess ?? null, node.selfConditional === true]);
 }
 
 const edgeKey = (edge: ModelEdge) => `${edge.source}\u0000${edge.target}`;

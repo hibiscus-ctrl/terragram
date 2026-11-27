@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A node whose own grants reach the node itself is now marked as a way to widen its own access, instead of being dropped. A role whose inline
+  policy allows `iam:PutRolePolicy`, `iam:AttachRolePolicy` or `iam:UpdateAssumeRolePolicy` (any IAM action that is not a read) on its own ARN, a
+  managed policy that covers IAM attached to it, an Azure identity with an administrator role over its own id, and a Google Cloud service account with
+  `roles/iam.serviceAccountTokenCreator` or an `...Admin` role on itself are `admin` over themselves; an action or role the reader cannot place is
+  `unscoped`. Nothing is drawn from a node to itself, so the model carries it on the node: `selfAccess` (`admin` or `unscoped`) and `selfConditional`,
+  both optional fields of `diagram.model/v1` (the id is unchanged). `explain` says "Can widen its own access: ...", the SVG card carries `self: admin`,
+  the diagram's node says it, and the pull request's "Access changes" list has a line for it (added, widened, narrowed or removed) ranked beside the edges. Reads and
+  writes on oneself, and `serviceAccountUser` on itself, are not marked. Only the level is kept, never the policy text.
 - The bundled AWS managed policy table now holds the `iam:Get*`/`iam:List*` reads the published policy documents grant (`AWSLambda_ReadOnlyAccess` and
   `AWSLambda_FullAccess`, `AmazonDynamoDBReadOnlyAccess` and `FullAccess`, `AmazonCognitoPowerUser`, `CloudFrontFullAccess`, `CloudWatchFullAccess`,
   `AWSKeyManagementServicePowerUser`), so IAM shows as `read` where a policy grants it. Beside a conditional `iam:PassRole` row the read stays visible as the

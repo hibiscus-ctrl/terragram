@@ -266,6 +266,13 @@ export function parseTerraform(source: string): ParseResult {
   }
   const iam = readIam(blocks, (address) => ownerByAddress.get(address));
   for (const edge of iam.edges) typeEdge(edge.source, edge.target, edge.access, edge);
+  // A grant on oneself cannot be an edge, so the node carries it: it is a way to widen its own access.
+  for (const edge of iam.self) {
+    const node = instances.find((i) => i.node.id === edge.source)?.node;
+    if (!node || (edge.access !== "admin" && edge.access !== "unscoped")) continue;
+    node.selfAccess = edge.access;
+    if (edge.conditional) node.selfConditional = true;
+  }
   for (let i = untranslated.length - 1; i >= 0; i--) {
     const [type, name] = (untranslated[i] ?? "").split(".");
     if ([...iam.consumed].some((b) => b.type === "resource" && b.labels[0] === type && b.labels[1] === name)) {

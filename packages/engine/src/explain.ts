@@ -11,6 +11,7 @@ import {
   type ModelNode,
   type NodeCategory,
   resourceNodes,
+  selfAccessPhrase,
 } from "./model.ts";
 
 /**
@@ -143,6 +144,15 @@ export function explainModel(model: InfraModel, cloud: Cloud, regionLabel: strin
       })
       .filter(Boolean);
     paragraphs.push(`${humanList(sentences)}.`);
+  }
+
+  /* ------------------------------------------------- access to oneself -- */
+
+  const selfEscalating = model.nodes.filter((n) => n.selfAccess);
+  if (selfEscalating.length > 0) {
+    const sentences = selfEscalating.slice(0, 8).map((n) => `${nodeLabel(n)} ${selfAccessPhrase(n)}`);
+    const more = selfEscalating.length > 8 ? `, and ${selfEscalating.length - 8} more` : "";
+    paragraphs.push(`Can widen its own access: ${humanList(sentences)}${more}.`);
   }
 
   /* ----------------------------------------------------------------- flags -- */

@@ -81,6 +81,18 @@
               "x",
               "y"
             ]
+          },
+          "selfAccess": {
+            "description": "Set when the node's own grants reach the node itself, so it can widen its own access (a role whose policy may rewrite the role, a service account that may mint tokens for itself): admin, or unscoped when the grant could not be read closely. Absent otherwise. Counts as admin access.",
+            "type": "string",
+            "enum": [
+              "admin",
+              "unscoped"
+            ]
+          },
+          "selfConditional": {
+            "description": "With selfAccess: every grant behind it carries a condition. The level is the same.",
+            "type": "boolean"
           }
         },
         "required": [

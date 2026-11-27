@@ -20382,6 +20382,7 @@ var CLOUD_DESCRIPTION = "The cloud the document describes. `gcp` is read only: s
 var reviewFlagSchema = external_exports.object({
   reason: external_exports.string().max(400)
 });
+var SELF_ACCESS = ["admin", "unscoped"];
 var modelNodeSchema = external_exports.object({
   id: external_exports.string().min(1).max(80),
   category: external_exports.enum(NODE_CATEGORIES),
@@ -20397,7 +20398,11 @@ var modelNodeSchema = external_exports.object({
   /** Canvas coordinates, once the node has been placed. Nodes without one are laid
    *  out by dagre; nodes with one keep where the user dragged them, so the mental
    *  map survives a turn. */
-  position: external_exports.object({ x: external_exports.number(), y: external_exports.number() }).optional()
+  position: external_exports.object({ x: external_exports.number(), y: external_exports.number() }).optional(),
+  /** Set when the node's own grants reach the node itself (a role whose policy may rewrite the role, a service account that may mint tokens for itself): a path to widen its own access. `admin`, or `unscoped` when the grant could not be read closely. Absent otherwise; lower levels on oneself are not recorded. Counts as admin access wherever access is shown. */
+  selfAccess: external_exports.enum(SELF_ACCESS).optional().describe("Set when the node's own grants reach the node itself, so it can widen its own access (a role whose policy may rewrite the role, a service account that may mint tokens for itself): admin, or unscoped when the grant could not be read closely. Absent otherwise. Counts as admin access."),
+  /** With `selfAccess`: every grant behind it carries a Condition. The level is the same. */
+  selfConditional: external_exports.boolean().optional().describe("With selfAccess: every grant behind it carries a condition. The level is the same.")
 });
 var EDGE_ORIGINS = ["derived", "user"];
 var EDGE_ACCESS = ["runs-as", "read", "write", "admin", "unscoped"];
@@ -20412,6 +20417,10 @@ function edgeAccessLabel(edge) {
   const label = EDGE_ACCESS_META[edge.access].label;
   if (!edge.conditional) return label;
   return edge.unconditional ? `${label}, conditional (${EDGE_ACCESS_META[edge.unconditional].label} unconditional)` : `${label}, conditional`;
+}
+function selfAccessPhrase(node2) {
+  if (!node2.selfAccess) return void 0;
+  return `has ${node2.selfAccess} access to itself${node2.selfConditional ? " (conditional)" : ""}`;
 }
 var modelEdgeSchema = external_exports.object({
   id: external_exports.string().min(1).max(80),
@@ -23121,6 +23130,12 @@ function explainModel(model, cloud, regionLabel) {
     }).filter(Boolean);
     paragraphs.push(`${humanList(sentences)}.`);
   }
+  const selfEscalating = model.nodes.filter((n) => n.selfAccess);
+  if (selfEscalating.length > 0) {
+    const sentences = selfEscalating.slice(0, 8).map((n) => `${nodeLabel(n)} ${selfAccessPhrase(n)}`);
+    const more = selfEscalating.length > 8 ? `, and ${selfEscalating.length - 8} more` : "";
+    paragraphs.push(`Can widen its own access: ${humanList(sentences)}${more}.`);
+  }
   const flagged = model.nodes.filter((n) => n.flag);
   if (flagged.length > 0) {
     const reasons = flagged.map((n) => `${nodeLabel(n)} \u2014 ${n.flag?.reason ?? ""}`);
@@ -24275,7 +24290,8 @@ function draw(nodes, edges) {
   const ids = new Map(nodes.map((n, i) => [n.node.id, `n${i}`]));
   const lines2 = ["flowchart LR"];
   for (const { node: node2 } of nodes) {
-    lines2.push(`  ${ids.get(node2.id)}["${mermaidText(node2.label || node2.id)}<br/>${mermaidText(node2.kind)}"]`);
+    const self = selfAccessPhrase(node2);
+    lines2.push(`  ${ids.get(node2.id)}["${mermaidText(node2.label || node2.id)}<br/>${mermaidText(node2.kind)}${self ? `<br/>${self}` : ""}"]`);
   }
   const styled = { added: [], removed: [], changed: [] };
   edges.forEach((edge, index) => {
@@ -24360,7 +24376,7 @@ function writeRegularFile(root, target, content, label) {
 // src/model-diff.ts
 function nodeSignature(node2) {
   const attributes = Object.entries(node2.attributes ?? {}).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
-  return JSON.stringify([node2.category, node2.kind, node2.label, attributes, node2.flag?.reason ?? null]);
+  return JSON.stringify([node2.category, node2.kind, node2.label, attributes, node2.flag?.reason ?? null, node2.selfAccess ?? null, node2.selfConditional === true]);
 }
 var edgeKey = (edge) => `${edge.source}\0${edge.target}`;
 var byId = (a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
@@ -24501,6 +24517,27 @@ function accessLines(diff) {
       widened ? widest(after.access) : 3,
       `**${widened ? "Widened" : "Narrowed"}** ${name(after.source)} to ${name(after.target)}: ${from} to ${to}`
     );
+  }
+  const selfOf = (n) => n?.selfAccess ? selfAccessPhrase(n) : void 0;
+  const selfLevel = (n) => n?.selfAccess === "unscoped" ? 0 : n?.selfAccess === "admin" ? 1 : 2;
+  for (const n of diff.nodes.added) {
+    const now = selfOf(n);
+    if (now) row(n.id, n.id, selfLevel(n), `**Added** ${name(n.id)} ${now}`);
+  }
+  for (const n of diff.nodes.removed) {
+    const was = selfOf(n);
+    if (was) row(n.id, n.id, 4, `**Removed** ${name(n.id)} ${was}`);
+  }
+  for (const { before, after } of diff.nodes.changed) {
+    const was = selfOf(before);
+    const now = selfOf(after);
+    if (was === now) continue;
+    if (now && !was) row(after.id, after.id, selfLevel(after), `**Added** ${name(after.id)} ${now}`);
+    else if (was && !now) row(after.id, after.id, 4, `**Removed** ${name(after.id)} ${was}`);
+    else {
+      const widened = before.selfAccess === after.selfAccess ? !after.selfConditional : strongerAccess(before.selfAccess ?? "read", after.selfAccess ?? "read") === after.selfAccess;
+      row(after.id, after.id, widened ? selfLevel(after) : 3, `**${widened ? "Widened" : "Narrowed"}** ${name(after.id)}: ${was} to ${now}`);
+    }
   }
   rows.sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   return rows.map((r) => r.text);

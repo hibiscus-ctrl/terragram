@@ -1,7 +1,7 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { type Cloud, EDGE_ACCESS_META, type EdgeAccess, edgeAccessLabel } from "terragram-engine/model";
+import { type Cloud, EDGE_ACCESS_META, type EdgeAccess, edgeAccessLabel, type ModelNode, selfAccessPhrase } from "terragram-engine/model";
 import { strongerAccess, unconditionalLevel } from "terragram-engine/iam";
 
 import { COMMENT_MARKER } from "./comment.ts";
@@ -112,6 +112,29 @@ function accessLines(diff: ModelDiff): string[] {
       widened ? widest(after.access) : 3,
       `**${widened ? "Widened" : "Narrowed"}** ${name(after.source)} to ${name(after.target)}: ${from} to ${to}`,
     );
+  }
+  // A node's access to itself is a path to widen its own access: a line like an edge's, ranked by the same level.
+  const selfOf = (n: ModelNode | undefined) => (n?.selfAccess ? selfAccessPhrase(n) : undefined);
+  const selfLevel = (n: ModelNode | undefined) => n?.selfAccess === "unscoped" ? 0 : n?.selfAccess === "admin" ? 1 : 2;
+  for (const n of diff.nodes.added) {
+    const now = selfOf(n);
+    if (now) row(n.id, n.id, selfLevel(n), `**Added** ${name(n.id)} ${now}`);
+  }
+  for (const n of diff.nodes.removed) {
+    const was = selfOf(n);
+    if (was) row(n.id, n.id, 4, `**Removed** ${name(n.id)} ${was}`);
+  }
+  for (const { before, after } of diff.nodes.changed) {
+    const was = selfOf(before);
+    const now = selfOf(after);
+    if (was === now) continue;
+    if (now && !was) row(after.id, after.id, selfLevel(after), `**Added** ${name(after.id)} ${now}`);
+    else if (was && !now) row(after.id, after.id, 4, `**Removed** ${name(after.id)} ${was}`);
+    else {
+      // The same access with a condition gone is wider; a level that is no longer the strongest, or a condition added, is narrower.
+      const widened = before.selfAccess === after.selfAccess ? !after.selfConditional : strongerAccess(before.selfAccess ?? "read", after.selfAccess ?? "read") === after.selfAccess;
+      row(after.id, after.id, widened ? selfLevel(after) : 3, `**${widened ? "Widened" : "Narrowed"}** ${name(after.id)}: ${was} to ${now}`);
+    }
   }
   rows.sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   return rows.map((r) => r.text);

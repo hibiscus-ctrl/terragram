@@ -41,6 +41,13 @@ export type IamReading = {
   consumed: Set<HclBlock>;
   /** The stand-ins for principals the picture does not draw that an edge starts at, by node id (see `GCP_PRINCIPALS`). The reader adds a node for each. */
   principals: Map<string, string>;
+  /**
+   * The nodes whose own grants reach the node itself at `admin` or `unscoped`: a role whose policy may rewrite
+   * the role (`iam:PutRolePolicy` on its own ARN), a service account that may mint tokens for itself. Such a
+   * grant cannot be an edge (nothing here draws a node to itself), but it is an escalation path, so it is carried as
+   * its own entry, one per node, `conditional` as an edge would be. Lower levels on oneself are not escalation and are not listed.
+   */
+  self: IamEdge[];
 };
 
 const RANK: Record<EdgeAccess, number> = { "runs-as": 0, read: 1, write: 2, admin: 3, unscoped: 4 };
@@ -582,7 +589,7 @@ function edgesOfStatements(
     const reach = st.notResources ? { targets: [], broad: true } : reachOf(st.resources, owner);
     const level = levelOf(st.actions, st.notActions);
     const conditional = st.conditional ? ({ conditional: true } as const) : {};
-    for (const target of reach.targets) if (target !== source) out.push({ source, target, access: level, ...conditional });
+    for (const target of reach.targets) out.push({ source, target, access: level, ...conditional });
     if (reach.broad) out.push({ source, target: ANY_RESOURCE_ID, access: "unscoped", ...conditional });
   }
   return out;
@@ -845,7 +852,7 @@ function readAzure(blocks: HclBlock[], owner: (address: string) => string | unde
       const roleName = stringValue(attributeOf(b, "role_definition_name"));
       const level: EdgeAccess = (roleName === undefined ? null : azureRoleLevel(roleName)) ?? "unscoped";
       const target = azureScopeTarget(attributeOf(b, "scope") ?? "", owner);
-      edge = target === undefined ? unscoped : target === source ? null : { source, target, access: level };
+      edge = target === undefined ? unscoped : { source, target, access: level };
     } catch {
       edge = unscoped;
     }
@@ -965,7 +972,8 @@ const GCP_NOT_A_TARGET = new Set([
 const GCP_ADMIN_ROLES = new Set(["roles/editor", "roles/cloudbuild.builds.editor"]);
 
 /** The roles that let a principal act as a service account. */
-const GCP_IMPERSONATION_ROLES = new Set(["roles/iam.serviceAccountUser", "roles/iam.serviceAccountTokenCreator"]);
+const GCP_TOKEN_CREATOR = "roles/iam.serviceAccountTokenCreator";
+const GCP_IMPERSONATION_ROLES = new Set(["roles/iam.serviceAccountUser", GCP_TOKEN_CREATOR]);
 
 type GcpLevel = "read" | "write" | "admin" | "unscoped" | "impersonate";
 
@@ -1197,8 +1205,15 @@ function readGcp(blocks: HclBlock[], owner: (address: string) => string | undefi
       const reached = reach ?? reachOfTarget(targetBlock, service);
       for (const source of sources) {
         for (const id of reached.ids) {
-          if (id === source.id) continue;
-          edge(source.id, id, accessOf(source, service === "service_account"), g.conditional);
+          const onServiceAccount = service === "service_account";
+          if (id !== source.id || level !== "impersonate") {
+            edge(source.id, id, accessOf(source, onServiceAccount), g.conditional);
+          } else if (!onServiceAccount) {
+            edge(source.id, id, "unscoped", g.conditional);
+          } else if (g.role?.t === "str" && g.role.text === GCP_TOKEN_CREATOR) {
+            // An account that may mint tokens for itself can sign as itself, whatever its own roles are: an escalation path, so `admin`. Acting as itself (`serviceAccountUser`) adds nothing.
+            edge(source.id, id, "admin", g.conditional);
+          }
         }
         // A target that cannot be pinned down is unscoped, whatever the role says; one that is not drawn is anything, at the role's level.
         if (reached.broad) edge(source.id, ANY_RESOURCE_ID, "unscoped", g.conditional);
@@ -1393,7 +1408,7 @@ function readGcp(blocks: HclBlock[], owner: (address: string) => string | undefi
  * (`aws_s3_bucket.data`, `module.api`) to the id of the node that block belongs to.
  */
 export function readIam(blocks: HclBlock[], owner: (address: string) => string | undefined): IamReading {
-  const reading: IamReading = { edges: [], consumed: new Set(), principals: new Map() };
+  const reading: IamReading = { edges: [], consumed: new Set(), principals: new Map(), self: [] };
   // Whatever cloud the file is mostly on, every cloud's grants in it are read: each is typed by its own resource types, and one that no reader read would be a grant the picture understates.
   readAws(blocks, owner, reading);
   readAzure(blocks, owner, reading);
@@ -1406,7 +1421,10 @@ export function readIam(blocks: HclBlock[], owner: (address: string) => string |
     const existing = merged.get(key);
     merged.set(key, existing ? { source: edge.source, target: edge.target, ...mergeAccess(existing, edge) } : edge);
   }
-  reading.edges = [...merged.values()];
+  // A grant on oneself is not an edge: it is kept apart, and only where it is an escalation path (`admin`, or `unscoped` when the reader cannot tell).
+  const all = [...merged.values()];
+  reading.edges = all.filter((e) => e.source !== e.target);
+  reading.self = all.filter((e) => e.source === e.target && (e.access === "admin" || e.access === "unscoped"));
   return reading;
 }
 

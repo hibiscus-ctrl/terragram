@@ -86,6 +86,11 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
   and the `access` blocks of a `google_bigquery_dataset`. A document read by many policies is read once (`readDocument`), and a file's Google Cloud grants cost at most `MAX_GCP_WORK`
   units; past that, or past any other cap, one unscoped edge from `principal-other` stands for the rest. A new Google resource type that
   grants access goes in `GCP_TARGET_ATTRIBUTES` with a test; an unlisted one is read by whatever its attributes point at.
+  **A grant on oneself is not an edge.** `readIam` keeps edges whose source is their target out of `edges` and returns the ones that are `admin` or `unscoped` as `self`
+  (an inline or managed policy that reaches the role's own node, an Azure role over the identity's own id, `serviceAccountTokenCreator` or an `...Admin` role on a service account for itself);
+  `parse` sets `selfAccess` (`admin`|`unscoped`) and `selfConditional` on the node, which counts as admin wherever access is shown (`selfAccessPhrase` in `model.ts` is the one wording:
+  `explain`, the SVG card, the Mermaid node and the Action's "Access changes" list all use it; `model-diff` counts it in a node's signature). Reads and writes on oneself and
+  `serviceAccountUser` on itself are not recorded. A new reader of grants must not filter `source === target` itself. The table's IAM reads (`["iam", "read"]`) come from the policy documents; do not drop them for being "console only".
   Renderers take the wording and colour from `EDGE_ACCESS_META` (`model.ts`); an untyped edge must still draw exactly as before.
 - **Google Cloud is read, not generated** (`gcp` in `CLOUDS`, not in `GENERATED_CLOUDS`). A file is `gcp` only when it has no AWS or Azure resource or module in it (`detectCloud`); otherwise it goes to the one of those it has most of, and `assessFeasibility` says which Google parts that cloud cannot build. A kind's `gcp` entry is a `ReadSpec`
   (`type`, `matches`, `matchBlock`, `read`, `moduleSource`): what a `google_*` resource or Google registry module reverse-maps to, never an
