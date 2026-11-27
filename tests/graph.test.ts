@@ -48,6 +48,7 @@ const load = (name: string): GraphDocument => parseGraphDocument(readFileSync(fi
 const small = load("small");
 const smallBase = load("small-base");
 const medium = load("medium");
+const gcp = load("gcp");
 const environments = load("environments");
 const environmentsBase = load("environments-base");
 const devProd = load("dev-prod");
@@ -965,6 +966,12 @@ describe("goldens", () => {
     golden("small.svg", `${renderGraphSvg(view(small, { title: "web tier" }))}\n`);
     golden("small.mmd", renderGraphMermaid(view(small, { title: "web tier" })));
     golden("small.drawio", renderGraphDrawio(view(small, { title: "web tier" })));
+  });
+
+  it("draws a Google Cloud estate", () => {
+    golden("gcp.svg", `${renderGraphSvg(view(gcp, { title: "orders" }))}\n`);
+    golden("gcp.mmd", renderGraphMermaid(view(gcp, { title: "orders" })));
+    golden("gcp.drawio", renderGraphDrawio(view(gcp, { title: "orders" })));
   });
 
   it("draws the medium estate", () => {

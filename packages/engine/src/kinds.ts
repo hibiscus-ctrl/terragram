@@ -11,7 +11,7 @@ import {
   quoteTemplate,
   stringValue,
 } from "./hcl.ts";
-import type { Cloud, ModelNode, NodeCategory, ReviewFlag } from "./model.ts";
+import type { Cloud, GeneratedCloud, ModelNode, NodeCategory, ReviewFlag } from "./model.ts";
 import { MODULE_VERSIONS, type ModuleKey } from "./module-versions.ts";
 import { PROVIDER_VERSIONS } from "./provider-versions.ts";
 
@@ -224,6 +224,13 @@ export type CloudSpec = {
   customDomain?: (host: HclBlock, domain: CustomDomain) => HclBlock[];
 };
 
+/**
+ * What a kind needs on a cloud Terragram reads but does not generate: the resource
+ * types that reverse-map to it, how to tell it from a kind that shares one, and what an
+ * inspector value reads back as. No `emit`, so such a cloud has no Terraform to write.
+ */
+export type ReadSpec = Pick<CloudSpec, "type" | "matches" | "matchBlock" | "read" | "moduleSource" | "moduleMatches">;
+
 /** A hostname the plan's own DNS zone publishes, and where that zone's records go. */
 export type CustomDomain = {
   /** Terraform name for the blocks the domain adds. */
@@ -254,6 +261,8 @@ export type KindDefinition = {
   fields: readonly KindField[];
   azure: CloudSpec | null;
   aws: CloudSpec | null;
+  /** Google Cloud: read only. A kind with only this is drawn and explained, never built. */
+  gcp?: ReadSpec | null;
 };
 
 /* ----------------------------------------------------------- option tables -- */
@@ -1056,6 +1065,28 @@ function frontDoorSecurityPolicies(slug: string, domainKeys: readonly string[]):
 
 /* ------------------------------------------------------------------ kinds -- */
 
+/** The registry modules a Google Cloud file's module call reverse-maps through: sources only, since Terragram pins and writes no Google module. */
+const GCP_MODULES = {
+  dns: "terraform-google-modules/cloud-dns/google",
+  loadBalancer: "terraform-google-modules/lb-http/google",
+  cloudRun: "GoogleCloudPlatform/cloud-run/google",
+  bucket: "terraform-google-modules/cloud-storage/google",
+  pubsub: "terraform-google-modules/pubsub/google",
+  network: "terraform-google-modules/network/google",
+  postgres: "GoogleCloudPlatform/sql-db/google//modules/postgresql",
+  mysql: "GoogleCloudPlatform/sql-db/google//modules/mysql",
+  serviceAccounts: "terraform-google-modules/service-accounts/google",
+  kms: "terraform-google-modules/kms/google",
+  gke: "terraform-google-modules/kubernetes-engine/google",
+  bigquery: "terraform-google-modules/bigquery/google",
+  project: "terraform-google-modules/project-factory/google",
+} as const;
+
+/** A storage bucket that serves a site: a `website` block (the resource) or input (a module). */
+function hasWebsite(b: HclBlock): boolean {
+  return b.blocks.some((x) => x.type === "website") || attr(b, "website") !== undefined;
+}
+
 export const KIND_DEFINITIONS: readonly KindDefinition[] = [
   {
     kind: "internet",
@@ -1116,6 +1147,12 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       }),
       read: (b) => readOne(b, "name", "Zone name", (v) => v),
       hostname: (ref) => refAddress(ref, "name"),
+    },
+    gcp: {
+      type: "google_dns_managed_zone",
+      matches: ["google_dns_record_set"],
+      moduleSource: GCP_MODULES.dns,
+      read: (b) => readOne(b, "dns_name", "Zone name", (v) => (/^[A-Za-z0-9.-]{1,120}$/.test(v) ? withoutTrailingDot(v) : undefined)),
     },
   },
 
@@ -1411,6 +1448,9 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       },
       hostname: (ref) => `aws_cloudfront_distribution.${ref.name}.domain_name`,
     },
+    gcp: {
+      type: "google_compute_security_policy",
+    },
   },
 
   {
@@ -1533,6 +1573,21 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
         return acmCertificate(domain);
       },
       hostname: (ref) => refAddress(ref, "dns_name"),
+    },
+    gcp: {
+      type: "google_compute_global_forwarding_rule",
+      matches: [
+        "google_compute_forwarding_rule",
+        "google_compute_url_map",
+        "google_compute_region_url_map",
+        "google_compute_target_http_proxy",
+        "google_compute_target_https_proxy",
+        "google_compute_backend_service",
+        "google_compute_region_backend_service",
+        "google_compute_health_check",
+        "google_compute_region_health_check",
+      ],
+      moduleSource: GCP_MODULES.loadBalancer,
     },
   },
 
@@ -1660,6 +1715,10 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       read: (b) =>
         readOne(b, "instance_type", "Compute tier", (v) => APP_TIER_AWS.from(v)),
       hostname: (ref) => refAddress(ref, "public_dns"),
+    },
+    gcp: {
+      type: "google_app_engine_standard_app_version",
+      matches: ["google_app_engine_flexible_app_version", "google_app_engine_application"],
     },
   },
 
@@ -1793,6 +1852,11 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       },
       read: (b) =>
         readOne(b, "cpu", "Container size", (v) => CONTAINER_SIZE_AWS.from(v)),
+    },
+    gcp: {
+      type: "google_cloud_run_v2_service",
+      matches: ["google_cloud_run_service", "google_cloud_run_v2_job"],
+      moduleSource: GCP_MODULES.cloudRun,
     },
   },
 
@@ -1956,6 +2020,10 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       // the bare host.
       hostname: (ref) => `trimsuffix(trimprefix(module.${ref.name}.lambda_function_url, "https://"), "/")`,
     },
+    gcp: {
+      type: "google_cloudfunctions2_function",
+      matches: ["google_cloudfunctions_function"],
+    },
   },
 
   {
@@ -2013,6 +2081,11 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
         };
       },
       hostname: (ref) => `module.${ref.name}.s3_bucket_bucket_regional_domain_name`,
+    },
+    gcp: {
+      type: "google_storage_bucket",
+      matchBlock: (b) => hasWebsite(b),
+      moduleSource: GCP_MODULES.bucket,
     },
   },
 
@@ -2094,6 +2167,11 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       read: (b) => readOne(b, "fifo_queue", "Delivery", (v) => DELIVERY.from(v)),
       connection: (ref) => ({ key: "QUEUE_URL", value: refAddress(ref, "queue_url") }),
     },
+    gcp: {
+      type: "google_pubsub_topic",
+      matches: ["google_pubsub_subscription"],
+      moduleSource: GCP_MODULES.pubsub,
+    },
   },
 
   {
@@ -2172,6 +2250,11 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
         privateSubnets: `module.${name}.private_subnets`,
       }),
     },
+    gcp: {
+      type: "google_compute_network",
+      matches: ["google_compute_subnetwork"],
+      moduleSource: GCP_MODULES.network,
+    },
   },
 
   {
@@ -2238,6 +2321,10 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
         key: "REDIS_HOST",
         value: refAddress(ref, "replication_group_primary_endpoint_address"),
       }),
+    },
+    gcp: {
+      type: "google_redis_instance",
+      matches: ["google_redis_cluster", "google_memcache_instance"],
     },
   },
 
@@ -2350,6 +2437,12 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       read: (b) => readOne(b, "engine_version", "PostgreSQL version", (v) => PG_VERSION.from(v)),
       connection: (ref) => ({ key: "DATABASE_HOST", value: refAddress(ref, "db_instance_address") }),
     },
+    gcp: {
+      type: "google_sql_database_instance",
+      matchBlock: (b) => (stringValue(attr(b, "database_version")) ?? "").startsWith("POSTGRES_"),
+      moduleSource: GCP_MODULES.postgres,
+      read: (b) => readOne(b, "database_version", "PostgreSQL version", (v) => PG_VERSION.from(v.replace(/^POSTGRES_/, ""))),
+    },
   },
 
   {
@@ -2435,6 +2528,13 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       read: (b) => readOne(b, "engine_version", "MySQL version", (v) => MYSQL_VERSION_AWS.from(v)),
       connection: (ref) => ({ key: "MYSQL_HOST", value: refAddress(ref, "db_instance_address") }),
     },
+    gcp: {
+      type: "google_sql_database_instance",
+      matchBlock: (b) => (stringValue(attr(b, "database_version")) ?? "").startsWith("MYSQL_"),
+      moduleSource: GCP_MODULES.mysql,
+      read: (b) =>
+        readOne(b, "database_version", "MySQL version", (v) => MYSQL_VERSION_AWS.from(v.replace(/^MYSQL_/, "").replace("_", "."))),
+    },
   },
 
   {
@@ -2494,6 +2594,10 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
         variables: [NAME_PREFIX],
       }),
       connection: (ref) => ({ key: "DYNAMODB_TABLE", value: refAddress(ref, "dynamodb_table_id") }),
+    },
+    gcp: {
+      type: "google_firestore_database",
+      matches: ["google_bigtable_instance", "google_bigtable_table"],
     },
   },
 
@@ -2566,6 +2670,11 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       },
       connection: (ref) => ({ key: "STORAGE_BUCKET", value: refAddress(ref, "s3_bucket_id") }),
     },
+    gcp: {
+      type: "google_storage_bucket",
+      matchBlock: (b) => !hasWebsite(b),
+      moduleSource: GCP_MODULES.bucket,
+    },
   },
 
   {
@@ -2606,6 +2715,10 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
         variables: [NAME_PREFIX],
       }),
       connection: (ref) => ({ key: "ROLE_ARN", value: refAddress(ref, "arn") }),
+    },
+    gcp: {
+      type: "google_service_account",
+      moduleSource: GCP_MODULES.serviceAccounts,
     },
   },
 
@@ -2677,6 +2790,11 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       }),
       connection: (ref) => ({ key: "SECRET_ARN", value: refAddress(ref, "arn") }),
     },
+    gcp: {
+      type: "google_secret_manager_secret",
+      matches: ["google_kms_key_ring", "google_kms_crypto_key"],
+      moduleSource: GCP_MODULES.kms,
+    },
   },
 
   {
@@ -2745,6 +2863,67 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       read: (b) => readOne(b, "retention_in_days", "Log retention", (v) => RETENTION.from(v)),
       connection: (ref) => ({ key: "LOG_GROUP", value: refAddress(ref, "cloudwatch_log_group_name") }),
     },
+    gcp: {
+      type: "google_monitoring_alert_policy",
+      matches: ["google_monitoring_notification_channel", "google_logging_metric", "google_logging_project_bucket_config"],
+    },
+  },
+  // Google Cloud resources with no counterpart in the two generated clouds yet: read, drawn and
+  // explained, never built, and not offered to a translator (see MODEL_KIND_IDS).
+  {
+    kind: "project",
+    category: "identity",
+    label: "Project",
+    role: "leaf",
+    keywords: [],
+    fields: [],
+    azure: null,
+    aws: null,
+    gcp: { type: "google_project", moduleSource: GCP_MODULES.project },
+  },
+
+  {
+    kind: "kubernetes",
+    category: "compute",
+    label: "Kubernetes Cluster",
+    role: "serving",
+    keywords: [],
+    fields: [],
+    azure: null,
+    aws: null,
+    gcp: { type: "google_container_cluster", matches: ["google_container_node_pool"], moduleSource: GCP_MODULES.gke },
+  },
+
+  {
+    kind: "virtual-machine",
+    category: "compute",
+    label: "Virtual Machine",
+    role: "serving",
+    keywords: [],
+    fields: [],
+    azure: null,
+    aws: null,
+    gcp: {
+      type: "google_compute_instance",
+      matches: [
+        "google_compute_instance_template",
+        "google_compute_instance_group",
+        "google_compute_instance_group_manager",
+        "google_compute_region_instance_group_manager",
+      ],
+    },
+  },
+
+  {
+    kind: "data-warehouse",
+    category: "storage",
+    label: "Data Warehouse",
+    role: "leaf",
+    keywords: [],
+    fields: [],
+    azure: null,
+    aws: null,
+    gcp: { type: "google_bigquery_dataset", matches: ["google_bigquery_table"], moduleSource: GCP_MODULES.bigquery },
   },
 ];
 
@@ -2800,9 +2979,10 @@ export const KIND_BY_ID: ReadonlyMap<string, KindDefinition> = new Map(
 
 /** Kinds a translator may select. `internet` is the conceptual ingress the spine
  *  adds itself and `external` is what the parser emits for a block it could not
- *  translate, so neither is ever part of the vocabulary a model chooses from. */
+ *  translate, so neither is ever part of the vocabulary a model chooses from. Nor is a kind
+ *  only Google Cloud has: it can be read, but nothing it chose could be built. */
 export const MODEL_KIND_IDS: readonly string[] = KIND_DEFINITIONS.filter(
-  (k) => k.role !== "conceptual" && k.role !== "external",
+  (k) => k.role !== "conceptual" && k.role !== "external" && (k.azure !== null || k.aws !== null),
 ).map((k) => k.kind);
 
 export const KIND_LABELS: Record<string, string> = Object.fromEntries(
@@ -2813,10 +2993,21 @@ export function kindDefinition(kind: string): KindDefinition | undefined {
   return KIND_BY_ID.get(kind);
 }
 
+/** What a kind emits on a cloud Terragram generates for; null on one it only reads (`gcp`). */
 export function cloudSpec(kind: string, cloud: Cloud): CloudSpec | null {
   const def = KIND_BY_ID.get(kind);
-  if (!def) return null;
+  if (!def || cloud === "gcp") return null;
   return (cloud === "azure" ? def.azure : def.aws) ?? null;
+}
+
+function specOf(def: KindDefinition, cloud: Cloud): ReadSpec | null {
+  return (cloud === "azure" ? def.azure : cloud === "aws" ? def.aws : def.gcp) ?? null;
+}
+
+/** What a kind reads back from on a cloud: its emit spec, or, on Google Cloud, its read spec. */
+export function readSpec(kind: string, cloud: Cloud): ReadSpec | null {
+  const def = KIND_BY_ID.get(kind);
+  return def ? specOf(def, cloud) : null;
 }
 
 /** The editable fields the inspector shows for a kind. */
@@ -2859,11 +3050,11 @@ export function resourceTypeToKind(
   cloud?: Cloud,
   parsed?: HclBlock,
 ): { kind: string; cloud: Cloud } | null {
-  const clouds: Cloud[] = cloud ? [cloud] : ["azure", "aws"];
+  const clouds: Cloud[] = cloud ? [cloud] : ["azure", "aws", "gcp"];
   let fallback: { kind: string; cloud: Cloud } | null = null;
   for (const c of clouds) {
     for (const def of KIND_DEFINITIONS) {
-      const spec = c === "azure" ? def.azure : def.aws;
+      const spec = specOf(def, c);
       if (!spec) continue;
       const claims = spec.type === type || (spec.matches?.includes(type) ?? false);
       if (!claims) continue;
@@ -2888,9 +3079,9 @@ export function moduleSourceToKind(
   parsed?: HclBlock,
 ): { kind: string; cloud: Cloud } | null {
   let fallback: { kind: string; cloud: Cloud } | null = null;
-  for (const c of ["azure", "aws"] as const) {
+  for (const c of ["azure", "aws", "gcp"] as const) {
     for (const def of KIND_DEFINITIONS) {
-      const spec = c === "azure" ? def.azure : def.aws;
+      const spec = specOf(def, c);
       if (!spec?.moduleSource) continue;
       if (spec.moduleSource !== source && !spec.moduleMatches?.includes(source)) continue;
       if (spec.matchBlock) {
@@ -2936,6 +3127,6 @@ export function isFronted(kind: string): boolean {
 }
 
 /** Provider source + version constraint for a cloud, from `provider-versions.ts`. */
-export function providerFor(cloud: Cloud): { name: string; source: string; version: string } {
+export function providerFor(cloud: GeneratedCloud): { name: string; source: string; version: string } {
   return PROVIDER_VERSIONS[cloud];
 }

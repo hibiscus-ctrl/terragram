@@ -6,7 +6,7 @@ import { z } from "zod";
 import { buildGraphModel } from "./graph-build.ts";
 import { KIND_LABELS, MODEL_KIND_IDS } from "./kinds.ts";
 import type { ManagedModelId } from "./managed-models.ts";
-import { type Cloud, CLOUDS, type InfraModel } from "./model.ts";
+import { type Cloud, GENERATED_CLOUDS, type InfraModel } from "./model.ts";
 import type { ModelClient } from "./ports.ts";
 
 /**
@@ -40,7 +40,7 @@ const TOOL_NAME = "emit_diagram";
 
 const toolOutputSchema = z.object({
   reply: z.string().default(""),
-  cloud: z.enum(CLOUDS).nullable().default(null),
+  cloud: z.enum(GENERATED_CLOUDS).nullable().default(null),
   components: z
     .array(
       z.object({
@@ -85,7 +85,7 @@ export function buildImageRequest(model: string, image: DiagramImage) {
             reply: { type: "string", description: "One or two sentences on what the picture shows." },
             cloud: {
               type: ["string", "null"],
-              enum: [...CLOUDS, null],
+              enum: [...GENERATED_CLOUDS, null],
               description: "The cloud the diagram's icons or labels depict, or null.",
             },
             components: {

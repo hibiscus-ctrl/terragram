@@ -3,10 +3,10 @@
 
 import { attributeOf, extractReferences, type HclBlock, mapEntries, parseHcl, stringValue } from "./hcl.ts";
 import {
-  cloudSpec,
   isScaffoldModule,
   kindDefinition,
   moduleSourceToKind,
+  readSpec,
   resourceTypeToKind,
 } from "./kinds.ts";
 import { reconcileEdges, uniqueNodeId } from "./engine.ts";
@@ -54,18 +54,22 @@ function moduleSource(block: HclBlock): string {
 }
 
 /** Majority vote on provider prefix (and module namespace), so a mixed file still
- *  picks a target. */
+ *  picks a target. A tie goes to Azure, then AWS. */
 function detectCloud(types: string[], sources: string[]): Cloud {
   let azure = 0;
   let aws = 0;
+  let gcp = 0;
   for (const type of types) {
     if (type.startsWith("azurerm_") || type.startsWith("azuread_")) azure++;
     if (type.startsWith("aws_")) aws++;
+    if (type.startsWith("google_")) gcp++;
   }
   for (const source of sources) {
     if (source.startsWith("Azure/")) azure++;
     if (source.startsWith("terraform-aws-modules/")) aws++;
+    if (source.startsWith("terraform-google-modules/") || source.startsWith("GoogleCloudPlatform/")) gcp++;
   }
+  if (gcp > Math.max(azure, aws)) return "gcp";
   return aws > azure ? "aws" : "azure";
 }
 
@@ -126,7 +130,7 @@ export function parseTerraform(source: string): ParseResult {
     return {
       ok: false,
       error:
-        "None of the resources in this file are ones that can be mapped yet. It reads the AWS and Azure services in the component palette — compute, networking, storage, identity and monitoring.",
+        "None of the resources in this file are ones that can be mapped yet. It reads the AWS, Azure and Google Cloud services in the component palette — compute, networking, storage, identity and monitoring.",
     };
   }
 
@@ -143,7 +147,7 @@ export function parseTerraform(source: string): ParseResult {
   }
 
   for (const [kind, items] of byKind) {
-    const spec = cloudSpec(kind, cloud);
+    const spec = readSpec(kind, cloud);
     const def = kindDefinition(kind);
     // A module block is its own primary when it is the kind's module: the whole
     // component is that one call. A module the kind merely `moduleMatches` (the
@@ -188,7 +192,7 @@ export function parseTerraform(source: string): ParseResult {
 
   // Read reviewer-facing attributes back out of the primary block.
   for (const instance of instances) {
-    const spec = cloudSpec(instance.node.kind, cloud);
+    const spec = readSpec(instance.node.kind, cloud);
     if (!spec?.read || !instance.primary) continue;
     const attributes = spec.read(instance.primary);
     if (Object.keys(attributes).length > 0) instance.node.attributes = attributes;
@@ -206,12 +210,14 @@ export function parseTerraform(source: string): ParseResult {
 
   const edges: ModelEdge[] = [];
   const seen = new Set<string>();
+  // Every Google Cloud resource names its project; that is where it lives, not a wire to it.
+  const projects = new Set(instances.filter((i) => i.node.kind === "project").map((i) => i.node.id));
   for (const instance of instances) {
     for (const block of instance.blocks) {
       for (const expression of expressions(block)) {
         for (const address of extractReferences(expression)) {
           const target = ownerByAddress.get(address);
-          if (!target || target === instance.node.id) continue;
+          if (!target || target === instance.node.id || projects.has(target)) continue;
           const key = `${instance.node.id}->${target}`;
           if (seen.has(key)) continue;
           seen.add(key);
@@ -336,5 +342,7 @@ export function parseTerraform(source: string): ParseResult {
 /** The node nothing else points at — where traffic enters the parsed graph. */
 function entryPoint(nodes: ModelNode[], edges: ModelEdge[]): string | undefined {
   const consumed = new Set(edges.map((e) => e.target));
-  return nodes.find((n) => !consumed.has(n.id) && n.category !== "edge")?.id ?? nodes[0]?.id;
+  // A Google Cloud project is where everything lives, not where a request enters.
+  const enters = (n: ModelNode) => !consumed.has(n.id) && n.category !== "edge" && n.kind !== "project";
+  return nodes.find(enters)?.id ?? nodes.find((n) => n.kind !== "project")?.id ?? nodes[0]?.id;
 }

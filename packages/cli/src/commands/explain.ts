@@ -16,9 +16,9 @@ Describe a model in plain English: what it builds, the path a request takes thro
 and what still needs confirming. Deterministic, the same text the review gate shows.
 
 Options:
-  --cloud aws|azure  override the cloud the model file names (default: azure)
-  --json             print the description with its cloud, region and omissions
-  -h, --help         show this help
+  --cloud aws|azure|gcp  override the cloud the model file names (default: azure)
+  --json                 print the description with its cloud, region and omissions
+  -h, --help             show this help
 `;
 
 export async function explain(argv: string[], io: Io): Promise<number> {

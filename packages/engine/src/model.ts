@@ -20,8 +20,13 @@ const NODE_CATEGORIES = [
 ] as const;
 export type NodeCategory = (typeof NODE_CATEGORIES)[number];
 
-export const CLOUDS = ["azure", "aws"] as const;
+/** Every cloud a model can describe. Google Cloud is read (parsed, drawn, explained, diffed) but not generated. */
+export const CLOUDS = ["azure", "aws", "gcp"] as const;
 export type Cloud = (typeof CLOUDS)[number];
+
+/** The clouds Terragram writes Terraform for: what `generate`, a brief and a picture can target. */
+export const GENERATED_CLOUDS = ["azure", "aws"] as const;
+export type GeneratedCloud = (typeof GENERATED_CLOUDS)[number];
 
 /** A low-confidence attribute the model surfaces at the review gate. */
 const reviewFlagSchema = z.object({

@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import { checkAzureSkus, SKU_PATTERNS, SKU_RULE_IDS } from "terragram-engine/azure-sku";
 import { AZURE_SKU_DATA } from "terragram-engine/azure-sku-data";
 import { composeFromPrompt } from "terragram-engine/engine";
-import { CLOUDS } from "terragram-engine/model";
+import { GENERATED_CLOUDS } from "terragram-engine/model";
 import { emitTerraform } from "terragram-engine/terraform";
 import { templateModel, WORKSPACE_TEMPLATES } from "terragram-engine/templates";
 
@@ -231,7 +231,7 @@ module "plan" {
     ];
     let checked = 0;
     for (const model of models) {
-      for (const cloud of CLOUDS) {
+      for (const cloud of GENERATED_CLOUDS) {
         const out = emitTerraform(model, cloud);
         assert.deepEqual(checkAzureSkus(out.files), [], `${cloud} output`);
         if (cloud === "azure") checked += out.files.length;

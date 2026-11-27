@@ -1,0 +1,27 @@
+---
+title: "orders"
+---
+flowchart TB
+  subgraph g0["Google Cloud project orders-prod-4f2a"]
+    subgraph g1["module terraform-google-modules/network/google 12.0.0"]
+      n2["google_compute_network<br/>orders"]
+      n3["google_compute_subnetwork<br/>orders-private"]
+    end
+    n0["google_bigquery_dataset<br/>orders_analytics"]
+    n1["google_cloud_run_v2_service<br/>orders-api"]
+    n4["google_container_cluster<br/>orders-batch"]
+    n5["google_pubsub_subscription<br/>orders-events-worker"]
+    n6["google_pubsub_topic<br/>orders-events"]
+    n7["google_service_account<br/>orders-api@orders-prod-…"]
+    n8["google_sql_database_instance<br/>orders"]
+    n9["google_storage_bucket<br/>orders-prod-4f2a-uploads"]
+  end
+  n0 --> n6
+  n1 --> n3
+  n1 --> n6
+  n1 --> n7
+  n1 --> n8
+  n3 --> n2
+  n4 --> n2
+  n4 --> n3
+  n5 --> n6

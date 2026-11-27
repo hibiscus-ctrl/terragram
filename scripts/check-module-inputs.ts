@@ -31,7 +31,7 @@ import { errorMessage } from "./lib/runtime.ts";
 import { attributeOf, type HclBlock, parseHcl, stringValue } from "terragram-engine/hcl";
 import { KIND_DEFINITIONS } from "terragram-engine/kinds";
 import { addNode } from "terragram-engine/inspector";
-import { type Cloud, CLOUDS, EMPTY_MODEL } from "terragram-engine/model";
+import { type Cloud, GENERATED_CLOUDS, EMPTY_MODEL } from "terragram-engine/model";
 import { emitTerraform } from "terragram-engine/terraform";
 
 const REGISTRY = "https://registry.terraform.io/v1/modules";
@@ -82,7 +82,7 @@ function emittedModules(kind: string, cloud: Cloud): Array<{ source: string; ver
 /** Union the inputs used across every kind that calls the same module. */
 const calls = new Map<string, { version: string; keys: Set<string>; kinds: Set<string> }>();
 for (const definition of KIND_DEFINITIONS) {
-  for (const cloud of CLOUDS) {
+  for (const cloud of GENERATED_CLOUDS) {
     const spec = cloud === "azure" ? definition.azure : definition.aws;
     if (!spec?.moduleSource) continue;
     for (const call of emittedModules(definition.kind, cloud)) {

@@ -26,7 +26,7 @@ import {
  * source of the facts.
  */
 
-const CLOUD_LABEL: Record<Cloud, string> = { azure: "Azure", aws: "AWS" };
+const CLOUD_LABEL: Record<Cloud, string> = { azure: "Azure", aws: "AWS", gcp: "Google Cloud" };
 
 const CATEGORY_ORDER: NodeCategory[] = [
   "compute",

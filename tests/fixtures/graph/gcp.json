@@ -1,0 +1,144 @@
+{
+  "schema": "infraharvest/graph/v1",
+  "run_id": "3b8d2c14-6a7e-4f90-8c15-0e9d7a1b2c33",
+  "generated_at": "2026-11-27T09:00:00Z",
+  "tool": {
+    "name": "infraharvest",
+    "version": "0.6.0"
+  },
+  "cloud": "google",
+  "nodes": [
+    {
+      "kind": "module",
+      "account": "orders-prod-4f2a",
+      "region": "europe-west2",
+      "source": "terraform-google-modules/network/google",
+      "version": "12.0.0"
+    },
+    {
+      "kind": "resource",
+      "type": "google_compute_network",
+      "id": "orders",
+      "account": "orders-prod-4f2a",
+      "region": "europe-west2",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "google_compute_subnetwork",
+      "id": "orders-private",
+      "account": "orders-prod-4f2a",
+      "region": "europe-west2",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "google_cloud_run_v2_service",
+      "id": "orders-api",
+      "account": "orders-prod-4f2a",
+      "region": "europe-west2"
+    },
+    {
+      "kind": "resource",
+      "type": "google_service_account",
+      "id": "orders-api@orders-prod-4f2a.iam.gserviceaccount.com",
+      "account": "orders-prod-4f2a",
+      "region": "europe-west2"
+    },
+    {
+      "kind": "resource",
+      "type": "google_sql_database_instance",
+      "id": "orders",
+      "account": "orders-prod-4f2a",
+      "region": "europe-west2"
+    },
+    {
+      "kind": "resource",
+      "type": "google_storage_bucket",
+      "id": "orders-prod-4f2a-uploads",
+      "account": "orders-prod-4f2a",
+      "region": "europe-west2"
+    },
+    {
+      "kind": "resource",
+      "type": "google_pubsub_topic",
+      "id": "orders-events",
+      "account": "orders-prod-4f2a",
+      "region": "europe-west2"
+    },
+    {
+      "kind": "resource",
+      "type": "google_pubsub_subscription",
+      "id": "orders-events-worker",
+      "account": "orders-prod-4f2a",
+      "region": "europe-west2"
+    },
+    {
+      "kind": "resource",
+      "type": "google_bigquery_dataset",
+      "id": "orders_analytics",
+      "account": "orders-prod-4f2a",
+      "region": "europe-west2"
+    },
+    {
+      "kind": "resource",
+      "type": "google_project_iam_member",
+      "id": "orders-prod-4f2a/roles/cloudsql.client/serviceAccount:orders-api",
+      "account": "orders-prod-4f2a",
+      "region": "europe-west2"
+    },
+    {
+      "kind": "resource",
+      "type": "google_container_cluster",
+      "id": "orders-batch",
+      "account": "orders-prod-4f2a",
+      "region": "europe-west2"
+    }
+  ],
+  "edges": [
+    {
+      "from": 2,
+      "to": 1
+    },
+    {
+      "from": 3,
+      "to": 4
+    },
+    {
+      "from": 3,
+      "to": 5
+    },
+    {
+      "from": 3,
+      "to": 7
+    },
+    {
+      "from": 3,
+      "to": 2
+    },
+    {
+      "from": 8,
+      "to": 7
+    },
+    {
+      "from": 11,
+      "to": 1
+    },
+    {
+      "from": 11,
+      "to": 2
+    },
+    {
+      "from": 10,
+      "to": 4
+    },
+    {
+      "from": 9,
+      "to": 7
+    }
+  ],
+  "redaction": {
+    "ids_hashed": false,
+    "hash_alg": "hmac-sha256"
+  }
+}

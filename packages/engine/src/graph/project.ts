@@ -92,7 +92,7 @@ const PROVIDER_NAME = { aws: "AWS account", azure: "Azure subscription", google:
 
 const CATEGORY_TOKENS: readonly (readonly [GraphCategory, ReadonlySet<string>])[] = [
   ["identity", new Set(["iam", "role", "policy", "identity", "principal", "account", "kms", "key", "secret", "vault"])],
-  ["data", new Set(["db", "rds", "dynamodb", "sql", "cosmosdb", "redis", "cache", "elasticache", "bigtable", "spanner", "mysql", "postgresql", "database", "redshift"])],
+  ["data", new Set(["db", "rds", "dynamodb", "sql", "cosmosdb", "redis", "cache", "elasticache", "bigtable", "spanner", "bigquery", "dataset", "mysql", "postgresql", "database", "redshift"])],
   ["storage", new Set(["s3", "bucket", "storage", "disk", "volume", "ebs", "efs", "blob", "file", "backup", "snapshot"])],
   ["network", new Set(["vpc", "subnet", "subnetwork", "route", "gateway", "network", "nat", "vnet", "firewall", "dns", "lb", "elb", "alb", "nlb", "security", "nsg", "eip", "endpoint", "peering", "vpn", "cloudfront", "cdn", "nic", "ip"])],
   ["compute", new Set(["instance", "lambda", "function", "ecs", "eks", "container", "cluster", "kubernetes", "vm", "machine", "autoscaling", "launch", "app", "batch", "compute", "service"])],
