@@ -224,18 +224,28 @@ export function parseTerraform(source: string): ParseResult {
   /* -- who runs as which identity, and what each identity may reach -- */
 
   const edgeById = new Map(edges.map((e) => [e.id, e]));
-  const typeEdge = (from: string, target: string, access: EdgeAccess, conditional?: boolean) => {
+  const typeEdge = (from: string, target: string, access: EdgeAccess, grant: { conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined } = {}) => {
     if (from === target) return;
     const key = `${from}->${target}`;
     const existing = edgeById.get(key);
     if (existing) {
-      const merged = mergeAccess(existing, { access, conditional });
+      const merged = mergeAccess(existing, { access, ...grant });
       existing.access = merged.access;
       if (merged.conditional) existing.conditional = true;
       else delete existing.conditional;
+      if (merged.unconditional) existing.unconditional = merged.unconditional;
+      else delete existing.unconditional;
       return;
     }
-    const edge: ModelEdge = { id: key, source: from, target, origin: "user", access, ...(conditional ? { conditional } : {}) };
+    const edge: ModelEdge = {
+      id: key,
+      source: from,
+      target,
+      origin: "user",
+      access,
+      ...(grant.conditional ? { conditional: true } : {}),
+      ...(grant.conditional && grant.unconditional ? { unconditional: grant.unconditional } : {}),
+    };
     edgeById.set(key, edge);
     edges.push(edge);
   };
@@ -248,7 +258,7 @@ export function parseTerraform(source: string): ParseResult {
     }
   }
   const iam = readIam(blocks, (address) => ownerByAddress.get(address), cloud);
-  for (const edge of iam.edges) typeEdge(edge.source, edge.target, edge.access, edge.conditional);
+  for (const edge of iam.edges) typeEdge(edge.source, edge.target, edge.access, edge);
   for (let i = untranslated.length - 1; i >= 0; i--) {
     const [type, name] = (untranslated[i] ?? "").split(".");
     if ([...iam.consumed].some((b) => b.type === "resource" && b.labels[0] === type && b.labels[1] === name)) {

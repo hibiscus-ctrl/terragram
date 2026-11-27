@@ -46,7 +46,7 @@ export function modelToSvg(model: InfraModel): string {
       if (!meta) return line;
       // The type is written on the line as well as coloured, so it survives greyscale and colour blindness.
       const lx = (x1 + x2) / 2;
-      const label = edgeAccessLabel({ access: e.access as EdgeAccess, conditional: e.conditional });
+      const label = edgeAccessLabel({ access: e.access as EdgeAccess, conditional: e.conditional, unconditional: e.unconditional });
       const labelWidth = label.length * 6 + 8;
       return `${line}<rect x="${lx - labelWidth / 2}" y="${midY - 8}" width="${labelWidth}" height="14" rx="3" fill="#faf8f4"/><text x="${lx}" y="${midY + 3}" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="${meta.color}">${esc(label)}</text>`;
     })

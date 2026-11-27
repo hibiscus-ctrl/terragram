@@ -1,7 +1,7 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { type EdgeAccess, edgeAccessLabel, type ModelNode } from "terragram-engine/model";
+import { type EdgeAccess, edgeAccessLabel, type ModelEdge, type ModelNode } from "terragram-engine/model";
 
 import type { ModelDiff } from "./model-diff.ts";
 
@@ -41,7 +41,7 @@ export function mermaidText(text: string): string {
 }
 
 type DrawNode = { node: ModelNode; state: State };
-type DrawEdge = { source: string; target: string; state: State; access?: EdgeAccess; conditional?: boolean };
+type DrawEdge = { source: string; target: string; state: State; access?: EdgeAccess; conditional?: boolean; unconditional?: EdgeAccess };
 
 function collect(diff: ModelDiff, changesOnly: boolean): { nodes: DrawNode[]; edges: DrawEdge[] } {
   const all = new Map<string, DrawNode>();
@@ -54,18 +54,19 @@ function collect(diff: ModelDiff, changesOnly: boolean): { nodes: DrawNode[]; ed
   for (const c of diff.nodes.changed) add(c.after, "changed");
 
   const edges: DrawEdge[] = [];
-  const push = (source: string, target: string, state: State, access?: EdgeAccess, conditional?: boolean) => {
+  const push = (source: string, target: string, state: State, edge: ModelEdge) => {
+    const { access, conditional, unconditional } = edge;
     // An edge to a node the model does not contain cannot be drawn without inventing one.
     if (!all.has(source) || !all.has(target)) {
       return;
     }
     if (changesOnly && state === "same") return;
-    edges.push(access ? { source, target, state, access, ...(conditional ? { conditional } : {}) } : { source, target, state });
+    edges.push(access ? { source, target, state, access, ...(conditional ? { conditional } : {}), ...(conditional && unconditional ? { unconditional } : {}) } : { source, target, state });
   };
-  for (const e of diff.edges.unchanged) push(e.source, e.target, "same", e.access, e.conditional);
-  for (const e of diff.edges.added) push(e.source, e.target, "added", e.access, e.conditional);
-  for (const e of diff.edges.removed) push(e.source, e.target, "removed", e.access, e.conditional);
-  for (const c of diff.edges.changed) push(c.after.source, c.after.target, "changed", c.after.access, c.after.conditional);
+  for (const e of diff.edges.unchanged) push(e.source, e.target, "same", e);
+  for (const e of diff.edges.added) push(e.source, e.target, "added", e);
+  for (const e of diff.edges.removed) push(e.source, e.target, "removed", e);
+  for (const c of diff.edges.changed) push(c.after.source, c.after.target, "changed", c.after);
 
   let nodes = [...all.values()].sort((a, b) => (a.node.id < b.node.id ? -1 : a.node.id > b.node.id ? 1 : 0));
   if (changesOnly) {
@@ -85,7 +86,7 @@ function draw(nodes: DrawNode[], edges: DrawEdge[]): string {
   edges.forEach((edge, index) => {
     const arrow = edge.state === "removed" ? "-.->" : "-->";
     // A typed edge says what it is on the line; the words come from a fixed list, never from the file.
-    const typed = edge.access ? `|${edgeAccessLabel({ access: edge.access, conditional: edge.conditional })}|` : "";
+    const typed = edge.access ? `|${edgeAccessLabel({ access: edge.access, conditional: edge.conditional, unconditional: edge.unconditional })}|` : "";
     lines.push(`  ${ids.get(edge.source)} ${arrow}${typed} ${ids.get(edge.target)}`);
     if (edge.state !== "same") styled[edge.state].push(index);
   });

@@ -64,8 +64,12 @@ function connection(access: EdgeAccess | undefined): string {
   return access ? EDGE_ACCESS_META[access].phrase : "connects to";
 }
 
-const whenConditional = (edge: { access?: EdgeAccess | undefined; conditional?: boolean | undefined }) =>
-  edge.access && edge.conditional ? " (conditional)" : "";
+const whenConditional = (edge: { access?: EdgeAccess | undefined; conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined }) =>
+  edge.access && edge.conditional
+    ? edge.unconditional
+      ? ` (conditional; ${EDGE_ACCESS_META[edge.unconditional].label} without the condition)`
+      : " (conditional)"
+    : "";
 
 /**
  * Describe the model in plain English. Pure and deterministic, so it is unit-testable

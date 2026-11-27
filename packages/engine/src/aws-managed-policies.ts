@@ -13,9 +13,13 @@
  * actions has. A Condition on every action at that level is kept as `conditional`; the level
  * itself is never lowered for one. Three reviewed adjustments, nothing else:
  *   - A policy published as read-only (ReadOnly*, ViewOnlyAccess, SecurityAudit) is `read`.
- *     Its only actions that are not named like a read verb are queries, validations, simulations
- *     and tests (`logs:StartQuery`, `iam:SimulatePrincipalPolicy`, `dynamodb:PartiQLSelect`,
- *     `ecr:BatchCheckLayerAvailability`), none of which changes a resource or a permission.
+ *     Its actions that are not named like a read verb are queries, validations, simulations,
+ *     tests, report and trace starts, generators, downloads and delivery to a log
+ *     (`logs:StartQuery`, `iam:SimulatePrincipalPolicy`, `iam:Generate*`, `dynamodb:PartiQLSelect`,
+ *     `ecr:BatchCheckLayerAvailability`, `config:Deliver*`, `elasticbeanstalk:Request*`,
+ *     `servicequotas:StartQuotaUtilizationReport`, `xray:StartTraceRetrieval`, `rds:Download*`,
+ *     `eks:AccessKubernetesApi`), none of which changes a permission. A few start work or reach
+ *     a cluster's own API, so for them the level is a review of the names, not a proof.
  *   - `iam:CreateServiceLinkedRole` and `iam:DeleteServiceLinkedRole` are not counted: they
  *     create the AWS-owned role for a service, which is never one of the roles a file draws.
  *     A read of IAM that a policy only needs to list roles in a console is not kept either.
@@ -26,12 +30,14 @@
  * Organizations and Account, including the actions on the other services that change who can
  * use a resource (`s3:PutBucketPolicy`, `kms:PutKeyPolicy`, `lambda:AddPermission`).
  *
- * What a row does not say. Only services the picture can draw (see `SERVICE_RESOURCE_TYPES`)
- * are listed; a grant on another service (an autoscaling policy, a tag, a metric stream) has
- * nothing to point at. A policy is attached to every resource of a service in the account,
- * so an edge goes to each drawn resource of the service; with none drawn, or more than
- * `MAX_MANAGED_TARGETS` (or the attachment already has `MAX_MANAGED_EDGES`), it goes to
- * "Any resource (*)" at the same level. AWS may widen a
+ * What a row says. Every service the policy grants on is listed, drawn or not: a grant on a
+ * service the picture has no resource for (`schemas`, `pi`, `wafv2`, `cognito-sync`) is
+ * still a grant, so it ends at "Any resource (*)" at its own level. A managed policy is
+ * attached to every resource of a service in the account (its Resource is `*`), so each
+ * grant always has an "Any resource (*)" edge, and also an edge to each drawn resource of the
+ * service (see `SERVICE_RESOURCE_TYPES`) unless there are none, more than `MAX_MANAGED_TARGETS`,
+ * or the attachment already has `MAX_MANAGED_EDGES`. IAM reads that only help a console list
+ * roles are the one thing a row leaves out. AWS may widen a
  * managed policy later: an ARN in the table is typed by the version above, and a policy that is
  * not in the table stays `unscoped`. A row should be regenerated, not edited, when AWS changes
  * the policy.
@@ -96,53 +102,53 @@ const POLICIES: ReadonlyMap<string, readonly ManagedGrant[]> = new Map<string, r
   "service-role/AWSLambdaKinesisExecutionRole": [["kinesis", "write"], ["logs", "write"]],
   "service-role/AWSLambdaSQSQueueExecutionRole": [["sqs", "write"], ["logs", "write"]],
   "service-role/AWSLambdaVPCAccessExecutionRole": [["logs", "write"], ["ec2", "write"]],
-  "AWSLambda_FullAccess": [["cloudformation", "read"], ["cloudwatch", "read"], ["ec2", "read"], ["kms", "read"], ["iam", "admin", true], ["lambda", "admin"], ["logs", "write"], ["states", "read"], ["xray", "read"]],
-  "AWSLambda_ReadOnlyAccess": [["cloudformation", "read"], ["cloudwatch", "read"], ["ec2", "read"], ["kms", "read"], ["logs", "read"], ["lambda", "read"], ["states", "read"], ["xray", "read"]],
+  "AWSLambda_FullAccess": [["cloudformation", "read"], ["cloudwatch", "read"], ["ec2", "read"], ["kms", "read"], ["iam", "admin", true], ["lambda", "admin"], ["logs", "write"], ["states", "read"], ["xray", "read"], ["tag", "read"]],
+  "AWSLambda_ReadOnlyAccess": [["cloudformation", "read"], ["cloudwatch", "read"], ["ec2", "read"], ["kms", "read"], ["logs", "read"], ["lambda", "read"], ["states", "read"], ["xray", "read"], ["tag", "read"]],
   "AWSStepFunctionsFullAccess": [["states", "admin"]],
   "AWSXRayDaemonWriteAccess": [["xray", "write"]],
   "AdministratorAccess": [["*", "admin"]],
   "AmazonAPIGatewayAdministrator": [["apigateway", "admin"]],
   "AmazonAPIGatewayInvokeFullAccess": [["execute-api", "write"]],
-  "AmazonCognitoPowerUser": [["cognito-identity", "admin"], ["cognito-idp", "admin"], ["kinesis", "read"], ["lambda", "read"], ["sns", "read"]],
-  "AmazonDynamoDBFullAccess": [["dynamodb", "admin"], ["dax", "admin"], ["cloudwatch", "write"], ["ec2", "read"], ["iam", "admin", true], ["kms", "read"], ["sns", "write"], ["lambda", "write"], ["kinesis", "read"]],
-  "AmazonDynamoDBReadOnlyAccess": [["cloudwatch", "read"], ["dynamodb", "read"], ["dax", "read"], ["ec2", "read"], ["kms", "read"], ["sns", "read"], ["lambda", "read"], ["kinesis", "read"]],
-  "AmazonEC2ContainerRegistryFullAccess": [["ecr", "admin"]],
-  "AmazonEC2ContainerRegistryPowerUser": [["ecr", "write"]],
+  "AmazonCognitoPowerUser": [["cognito-identity", "admin"], ["cognito-idp", "admin"], ["kinesis", "read"], ["lambda", "read"], ["sns", "read"], ["cognito-sync", "admin"], ["ses", "read"], ["mobiletargeting", "read"], ["acm", "read"], ["sms-voice", "read"]],
+  "AmazonDynamoDBFullAccess": [["dynamodb", "admin"], ["dax", "admin"], ["cloudwatch", "write"], ["ec2", "read"], ["iam", "admin", true], ["kms", "read"], ["sns", "write"], ["lambda", "write"], ["kinesis", "read"], ["application-autoscaling", "admin"], ["datapipeline", "write"], ["resource-groups", "write"], ["tag", "read"]],
+  "AmazonDynamoDBReadOnlyAccess": [["cloudwatch", "read"], ["dynamodb", "read"], ["dax", "read"], ["ec2", "read"], ["kms", "read"], ["sns", "read"], ["lambda", "read"], ["kinesis", "read"], ["application-autoscaling", "read"], ["datapipeline", "read"], ["resource-groups", "read"], ["tag", "read"]],
+  "AmazonEC2ContainerRegistryFullAccess": [["ecr", "admin"], ["cloudtrail", "read"], ["signin", "write"]],
+  "AmazonEC2ContainerRegistryPowerUser": [["ecr", "write"], ["signin", "write"]],
   "AmazonEC2ContainerRegistryReadOnly": [["ecr", "read"]],
   "AmazonEC2FullAccess": [["ec2", "admin"], ["elasticloadbalancing", "admin"], ["cloudwatch", "admin"], ["autoscaling", "admin"]],
   "AmazonEC2ReadOnlyAccess": [["ec2", "read"], ["elasticloadbalancing", "read"], ["cloudwatch", "read"], ["autoscaling", "read"]],
   "service-role/AmazonECSTaskExecutionRolePolicy": [["ecr", "write"], ["logs", "write"]],
   "AmazonEKSClusterPolicy": [["autoscaling", "write"], ["ec2", "write"], ["elasticloadbalancing", "write"], ["kms", "read"]],
-  "AmazonEKSWorkerNodePolicy": [["ec2", "read"], ["eks", "read"]],
+  "AmazonEKSWorkerNodePolicy": [["ec2", "read"], ["eks", "read"], ["eks-auth", "admin"]],
   "AmazonEKS_CNI_Policy": [["ec2", "write"]],
   "AmazonElasticFileSystemFullAccess": [["cloudwatch", "read"], ["ec2", "write"], ["elasticfilesystem", "admin"], ["kms", "read"], ["iam", "admin", true]],
-  "AmazonEventBridgeFullAccess": [["events", "admin"], ["secretsmanager", "write"], ["iam", "admin", true]],
+  "AmazonEventBridgeFullAccess": [["events", "admin"], ["secretsmanager", "write"], ["iam", "admin", true], ["schemas", "admin"], ["scheduler", "admin"], ["pipes", "admin"]],
   "AmazonKinesisFullAccess": [["kinesis", "admin"]],
   "AmazonKinesisReadOnlyAccess": [["kinesis", "read"]],
-  "AmazonRDSFullAccess": [["rds", "admin"], ["cloudwatch", "write"], ["ec2", "read"], ["sns", "write"], ["logs", "read"]],
-  "AmazonRDSReadOnlyAccess": [["rds", "read"], ["ec2", "read"], ["cloudwatch", "read"], ["logs", "read"]],
-  "AmazonRoute53FullAccess": [["route53", "admin"], ["cloudfront", "read"], ["cloudwatch", "read"], ["ec2", "read"], ["elasticloadbalancing", "read"], ["es", "read"], ["s3", "read"], ["sns", "read"], ["apigateway", "read"]],
+  "AmazonRDSFullAccess": [["rds", "admin"], ["cloudwatch", "write"], ["ec2", "read"], ["sns", "write"], ["logs", "read"], ["application-autoscaling", "admin"], ["outposts", "read"], ["devops-guru", "read"], ["pi", "admin"]],
+  "AmazonRDSReadOnlyAccess": [["rds", "read"], ["ec2", "read"], ["cloudwatch", "read"], ["logs", "read"], ["devops-guru", "read"]],
+  "AmazonRoute53FullAccess": [["route53", "admin"], ["cloudfront", "read"], ["cloudwatch", "read"], ["ec2", "read"], ["elasticloadbalancing", "read"], ["es", "read"], ["s3", "read"], ["sns", "read"], ["apigateway", "read"], ["route53domains", "admin"], ["elasticbeanstalk", "read"], ["lightsail", "read"], ["tag", "read"]],
   "AmazonRoute53ReadOnlyAccess": [["route53", "read"]],
   "AmazonS3FullAccess": [["s3", "admin"], ["s3-object-lambda", "admin"]],
   "AmazonS3ReadOnlyAccess": [["s3", "read"], ["s3-object-lambda", "read"]],
-  "AmazonSNSFullAccess": [["sns", "admin"]],
-  "AmazonSNSReadOnlyAccess": [["sns", "read"]],
+  "AmazonSNSFullAccess": [["sns", "admin"], ["sms-voice", "write", true]],
+  "AmazonSNSReadOnlyAccess": [["sns", "read"], ["sms-voice", "read", true]],
   "AmazonSQSFullAccess": [["sqs", "admin"]],
   "AmazonSQSReadOnlyAccess": [["sqs", "read"]],
-  "AmazonSSMFullAccess": [["cloudwatch", "write"], ["ec2", "read"], ["logs", "admin"], ["ssm", "admin"]],
-  "AmazonSSMManagedInstanceCore": [["ssm", "write"]],
+  "AmazonSSMFullAccess": [["cloudwatch", "write"], ["ec2", "read"], ["logs", "admin"], ["ssm", "admin"], ["ds", "write"], ["ec2messages", "admin"], ["ssmmessages", "write"]],
+  "AmazonSSMManagedInstanceCore": [["ssm", "write"], ["ssmmessages", "write"], ["ec2messages", "write"]],
   "AmazonSSMReadOnlyAccess": [["ssm", "read"]],
-  "CloudFrontFullAccess": [["s3", "read"], ["cloudfront", "admin"], ["kinesis", "read"], ["ec2", "read"], ["elasticloadbalancing", "read"], ["cloudwatch", "read"]],
+  "CloudFrontFullAccess": [["s3", "read"], ["cloudfront", "admin"], ["kinesis", "read"], ["ec2", "read"], ["elasticloadbalancing", "read"], ["cloudwatch", "read"], ["acm", "write", true], ["cloudfront-keyvaluestore", "admin"], ["waf", "read"], ["wafv2", "admin"], ["pricingplanmanager", "write"], ["freetier", "read"], ["shield", "read"]],
   "CloudWatchAgentServerPolicy": [["cloudwatch", "write"], ["ec2", "read"], ["logs", "write"], ["xray", "write"], ["ssm", "read"]],
-  "CloudWatchFullAccess": [["autoscaling", "read"], ["cloudwatch", "admin"], ["logs", "admin"], ["sns", "admin"]],
-  "CloudWatchLogsFullAccess": [["logs", "admin"], ["cloudwatch", "write"]],
-  "CloudWatchLogsReadOnlyAccess": [["logs", "read"], ["cloudwatch", "read"]],
-  "CloudWatchReadOnlyAccess": [["autoscaling", "read"], ["cloudwatch", "read"], ["logs", "read"], ["sns", "read"], ["xray", "read"]],
-  "IAMFullAccess": [["iam", "admin"]],
+  "CloudWatchFullAccess": [["autoscaling", "read"], ["cloudwatch", "admin"], ["logs", "admin"], ["sns", "admin"], ["oam", "read"]],
+  "CloudWatchLogsFullAccess": [["logs", "admin"], ["cloudwatch", "write"], ["observabilityadmin", "read"]],
+  "CloudWatchLogsReadOnlyAccess": [["logs", "read"], ["cloudwatch", "read"], ["observabilityadmin", "read"]],
+  "CloudWatchReadOnlyAccess": [["autoscaling", "read"], ["cloudwatch", "read"], ["logs", "read"], ["sns", "read"], ["xray", "read"], ["application-autoscaling", "read"], ["application-signals", "read"], ["cloudtrail", "read"], ["oam", "read"], ["observabilityadmin", "read"], ["rum", "read"], ["synthetics", "read"], ["servicequotas", "read"], ["resource-explorer-2", "read"], ["aidevops", "read"]],
+  "IAMFullAccess": [["iam", "admin"], ["organizations", "read"]],
   "IAMReadOnlyAccess": [["iam", "read"]],
   "PowerUserAccess": [["*", "admin"]],
   "ReadOnlyAccess": [["*", "read"]],
-  "SecretsManagerReadWrite": [["secretsmanager", "admin"], ["cloudformation", "write"], ["ec2", "read"], ["kms", "read"], ["lambda", "admin"], ["rds", "read"], ["s3", "read"]],
+  "SecretsManagerReadWrite": [["secretsmanager", "admin"], ["cloudformation", "write"], ["ec2", "read"], ["kms", "read"], ["lambda", "admin"], ["rds", "read"], ["s3", "read"], ["docdb-elastic", "read"], ["redshift", "read"], ["redshift-serverless", "read"], ["tag", "read"], ["serverlessrepo", "write"]],
   "SecurityAudit": [["*", "read"]],
   "job-function/ViewOnlyAccess": [["*", "read"]],
 }));

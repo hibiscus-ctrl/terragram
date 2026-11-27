@@ -14,16 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read from its document in the AWS managed policy reference with the same rule that levels an action in an inline
   policy: `AdministratorAccess` and `PowerUserAccess` are `admin`, `ReadOnlyAccess`, `ViewOnlyAccess` and
   `SecurityAudit` are `read`, `AmazonS3ReadOnlyAccess` is `read` and `AmazonS3FullAccess` is `admin` on the
-  drawn buckets, `AWSLambdaBasicExecutionRole` is `write` on logs. A grant goes to each drawn resource of its service,
-  or to "Any resource (*)" at the same level when none is drawn or there are more than the caps allow. Any other ARN
+  drawn buckets, `AWSLambdaBasicExecutionRole` is `write` on logs. A managed policy is on every resource in the account,
+  so each grant always ends at "Any resource (*)" at its level and also goes to each drawn resource of its service
+  (not when none is drawn or there are more than the caps allow), the role's own node included. A service the picture
+  cannot draw (`schemas`, `pi`, `wafv2`, `cognito-sync`, `eks-auth`) is a grant at "Any resource (*)", not left out. Any other ARN
   (another partition or account, a customer-managed or unlisted policy, a variable or a data source) is still
   `unscoped`. The table holds levels and service names only, never policy text.
 - A typed edge whose policy statement has a `Condition` (or a `condition` block in an `aws_iam_policy_document`) is
   marked `conditional: true`: the access level is the same one the statement would grant, and the edge is never dropped
-  or lowered because of it. It stays conditional only while every grant at its strongest level is. The SVG, the
+  or lowered because of it. It stays conditional only while every grant at its strongest level is, and then carries
+  `unconditional`, the strongest level some grant gives with no condition ("admin, conditional (write unconditional)"),
+  so an unconditional `s3:PutObject` is not hidden behind a conditional `s3:PutBucketPolicy`. A condition that is
+  always true (`Null`, any `...IfExists` operator, a value that is only `*`) is not counted. The SVG, the
   pull request diagram, the plain-English description and the Action's "Access changes" list say "conditional", and a
   condition added or removed is a change of its own. `conditional` is an optional field on a model edge
-  (`diagram.model/v1`); the condition itself never reaches the model.
+  (`diagram.model/v1`), with the optional `unconditional` level beside it; the condition itself never reaches the model.
 - The Action's pull request comment lists the access changes in the model: edges whose access type was added, removed,
   widened or narrowed, widest and unscoped first, as component names and levels only. A changed access type counts as a
   changed edge in the diagram and the table.

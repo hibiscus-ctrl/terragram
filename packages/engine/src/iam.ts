@@ -31,6 +31,8 @@ type IamEdge = {
   access: EdgeAccess;
   /** Every statement behind the grant carries a Condition. The level is the same; the condition may narrow when it applies. */
   conditional?: true;
+  /** With `conditional`: the strongest level some grant over the same pair gives with no condition at all. Always below `access`. */
+  unconditional?: EdgeAccess;
 };
 
 export type IamReading = {
@@ -46,19 +48,35 @@ export function strongerAccess(a: EdgeAccess | undefined, b: EdgeAccess): EdgeAc
   return a !== undefined && RANK[a] >= RANK[b] ? a : b;
 }
 
-type Typed = { access?: EdgeAccess | undefined; conditional?: boolean | undefined };
+type Typed = { access?: EdgeAccess | undefined; conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined };
+
+/** The strongest level a grant gives with no condition: its own level, or the lower one a conditional edge carries. Undefined when every grant on it is conditional. */
+export function unconditionalLevel(t: Typed | undefined): EdgeAccess | undefined {
+  return t?.conditional === true ? t.unconditional : t?.access;
+}
 
 /**
  * Two grants over one pair of nodes: the type is the stronger one, and the edge is
  * conditional only when every grant at that strongest level is. A condition never lowers a
- * level, and a grant without one is never hidden behind a conditional one.
+ * level, and a grant without one is never hidden behind a conditional one: a conditional
+ * edge also carries the strongest level some grant gives with no condition (`unconditional`),
+ * so an unconditional `write` stays visible under a conditional `admin`.
  */
-export function mergeAccess(a: Typed | undefined, b: { access: EdgeAccess; conditional?: boolean | undefined }): { access: EdgeAccess; conditional?: true } {
+export function mergeAccess(
+  a: Typed | undefined,
+  b: { access: EdgeAccess; conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined },
+): { access: EdgeAccess; conditional?: true; unconditional?: EdgeAccess } {
   const access = strongerAccess(a?.access, b.access);
   const holds = (t: Typed | undefined) => t?.access === access;
   const conditional = [a, b].filter(holds).every((t) => t?.conditional === true);
-  return conditional ? { access, conditional: true } : { access };
+  if (!conditional) return { access };
+  const floor = [unconditionalLevel(a), unconditionalLevel(b)].reduce<EdgeAccess | undefined>(
+    (best, level) => (level === undefined || level === "runs-as" ? best : strongerAccess(best, level)),
+    undefined,
+  );
+  return floor !== undefined && floor !== access ? { access, conditional: true, unconditional: floor } : { access, conditional: true };
 }
+
 
 /* ------------------------------------------------------------ value reader -- */
 
@@ -347,17 +365,33 @@ function statementsOfDocument(doc: Val): Statement[] | null {
   return out;
 }
 
+/** An operator that holds whatever the request looks like (`Null`, anything `...IfExists`, with or without a `ForAnyValue:` prefix): it never narrows when a grant applies. */
+function neverNarrows(operator: string): boolean {
+  const name = (operator.split(":").pop() ?? "").trim().toLowerCase();
+  return name === "null" || name.endsWith("ifexists");
+}
+
+/** Whether a condition's values can rule a request out: not when there are none, and not when one of them is only wildcards (it matches anything). */
+function narrowingValues(v: Val): boolean {
+  const values = listOf(v);
+  return values.length > 0 && !values.some((value) => value.t === "str" && !value.interpolated && /^\*+$/.test(value.text));
+}
+
 /**
  * Whether a Condition value is a real one: an object with at least one operator, each
- * holding at least one key. An empty object, a string or anything unreadable is not
- * counted, so a statement is only ever marked conditional on evidence.
+ * holding at least one key, and at least one key that can rule a request out. An empty
+ * object, a string or anything unreadable is not counted, and neither is a condition that
+ * is always true (`Null`, `...IfExists`, a value that is only `*`): a statement is only
+ * ever marked conditional on evidence, and when in doubt it is not.
  */
 function isCondition(v: Val): boolean {
-  return (
-    v.t === "obj" &&
-    v.entries.length > 0 &&
-    v.entries.every((operator) => operator.value.t === "obj" && operator.value.entries.length > 0)
-  );
+  if (v.t !== "obj" || v.entries.length === 0) return false;
+  let narrows = false;
+  for (const operator of v.entries) {
+    if (operator.value.t !== "obj" || operator.value.entries.length === 0) return false;
+    if (!neverNarrows(operator.key) && operator.value.entries.some((key) => narrowingValues(key.value))) narrows = true;
+  }
+  return narrows;
 }
 
 function statementOf(st: Val, conditionBlock = false): Statement {
@@ -396,9 +430,13 @@ function statementsOfDataBlock(doc: HclBlock): Statement[] | null {
   return out;
 }
 
-/** A static `condition { test, variable, values }` block; a `dynamic` one is not counted. */
+/** A static `condition { test, variable, values }` block that can rule a request out; a `dynamic` one, a `Null` or `...IfExists` test and a `*` value are not counted. */
 function isConditionBlock(b: HclBlock): boolean {
-  return b.type === "condition" && ["test", "variable", "values"].every((key) => attributeOf(b, key) !== undefined);
+  if (b.type !== "condition" || !["test", "variable", "values"].every((key) => attributeOf(b, key) !== undefined)) return false;
+  const test = stringValue(attributeOf(b, "test"));
+  if (test !== undefined && neverNarrows(test)) return false;
+  const values = readVal(attributeOf(b, "values") ?? "");
+  return values !== null && narrowingValues(values);
 }
 
 const READ_VERBS = ["get", "list", "describe", "head", "batchget", "query", "scan", "select", "lookup", "view", "search", "read", "receive", "decrypt", "verify"];
@@ -619,21 +657,24 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     const known = drawnByService.get(service);
     if (known) return known;
     const prefixes = Object.hasOwn(SERVICE_RESOURCE_TYPES, service) ? (SERVICE_RESOURCE_TYPES[service] ?? []) : [];
-    const ids: string[] = [];
+    const ids = new Set<string>();
     for (const b of blocks) {
       const [type, name] = b.labels;
       if (b.type !== "resource" || !type || !name || !prefixes.some((p) => type.startsWith(p))) continue;
       const id = owner(`${type}.${name}`);
-      if (id && !ids.includes(id)) ids.push(id);
+      if (id) ids.add(id);
     }
-    drawnByService.set(service, ids);
-    return ids;
+    const found = [...ids];
+    drawnByService.set(service, found);
+    return found;
   };
 
   /**
-   * The edges of a well-known managed policy: its level on each drawn resource of each
-   * service it covers, or at "Any resource (*)" where it covers none that is drawn (or too many
-   * to draw one edge each), or everywhere for a policy that covers every service.
+   * The edges of a well-known managed policy. Every one of them grants on Resource `*`, so each
+   * grant always reaches "Any resource (*)" at its own level, and also its level on each drawn
+   * resource of its service (when there are some, not too many, and the attachment is under its
+   * edge cap), the role's own node included: a policy that covers IAM may rewrite the role it is
+   * attached to. A service the picture cannot draw has the account-wide edge alone.
    */
   const managedEdges = (source: string, arn: string): IamEdge[] | undefined => {
     const grants = managedPolicyGrants(arn);
@@ -642,10 +683,9 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     let drawn = 0;
     for (const [service, access, conditional] of grants) {
       const flag = conditional ? ({ conditional: true } as const) : {};
-      const targets = service === "*" ? [] : drawnOf(service).filter((id) => id !== source);
-      if (targets.length === 0 || targets.length > MAX_MANAGED_TARGETS || drawn + targets.length > MAX_MANAGED_EDGES) {
-        out.push({ source, target: ANY_RESOURCE_ID, access, ...flag });
-      } else {
+      out.push({ source, target: ANY_RESOURCE_ID, access, ...flag });
+      const targets = service === "*" ? [] : drawnOf(service);
+      if (targets.length > 0 && targets.length <= MAX_MANAGED_TARGETS && drawn + targets.length <= MAX_MANAGED_EDGES) {
         for (const target of targets) out.push({ source, target, access, ...flag });
         drawn += targets.length;
       }

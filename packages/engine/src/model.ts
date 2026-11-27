@@ -60,6 +60,8 @@ const EDGE_ORIGINS = ["derived", "user"] as const;
  * resource, a policy that cannot be read, a role assigned over a whole subscription. An
  * edge with no access type is a plain connection. `conditional` marks a typed edge whose
  * grant is behind a condition; the type is what the grant would allow, never narrowed.
+ * `unconditional` is, on a conditional edge, the strongest level some grant gives with no
+ * condition at all.
  */
 const EDGE_ACCESS = ["runs-as", "read", "write", "admin", "unscoped"] as const;
 export type EdgeAccess = (typeof EDGE_ACCESS)[number];
@@ -74,9 +76,11 @@ export const EDGE_ACCESS_META: Record<EdgeAccess, { label: string; phrase: strin
   unscoped: { label: "unscoped", phrase: "has unscoped access to", color: "#b91c1c", dash: "6 3" },
 };
 
-/** The word an edge's access type is drawn with: the type, and "conditional" when its grant is behind a condition. Fixed wording, never text from the file. */
-export function edgeAccessLabel(edge: { access: EdgeAccess; conditional?: boolean | undefined }): string {
-  return edge.conditional ? `${EDGE_ACCESS_META[edge.access].label}, conditional` : EDGE_ACCESS_META[edge.access].label;
+/** The word an edge's access type is drawn with: the type, "conditional" when its grant is behind a condition, and the level some grant gives without one. Fixed wording, never text from the file. */
+export function edgeAccessLabel(edge: { access: EdgeAccess; conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined }): string {
+  const label = EDGE_ACCESS_META[edge.access].label;
+  if (!edge.conditional) return label;
+  return edge.unconditional ? `${label}, conditional (${EDGE_ACCESS_META[edge.unconditional].label} unconditional)` : `${label}, conditional`;
 }
 
 const modelEdgeSchema = z.object({
@@ -87,6 +91,8 @@ const modelEdgeSchema = z.object({
   access: z.enum(EDGE_ACCESS).optional(),
   /** Set (to true) when every grant behind a typed edge carries a condition. Absent otherwise. */
   conditional: z.boolean().optional(),
+  /** On a conditional edge: the strongest level some grant gives with no condition at all, below `access`. Absent otherwise. */
+  unconditional: z.enum(EDGE_ACCESS).optional(),
 });
 export type ModelEdge = z.infer<typeof modelEdgeSchema>;
 
