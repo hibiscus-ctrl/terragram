@@ -129,6 +129,19 @@
               "admin",
               "unscoped"
             ]
+          },
+          "conditional": {
+            "type": "boolean"
+          },
+          "unconditional": {
+            "type": "string",
+            "enum": [
+              "runs-as",
+              "read",
+              "write",
+              "admin",
+              "unscoped"
+            ]
           }
         },
         "required": [

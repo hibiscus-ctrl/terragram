@@ -52,11 +52,22 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
 - **Typed edges** (`iam.ts`, read by `parse.ts`). An edge may carry `access`: `runs-as` (a workload to the role or identity in
   its `role`, `task_role_arn`, `iam_instance_profile` or `identity_ids`), `read`/`write`/`admin` (an identity to a drawn resource its
   policy or role assignment names, by the strongest action or role there) or `unscoped` (to the conceptual `any-resource` node:
-  a wildcard anywhere in a resource, `NotResource`, a policy the text does not show, a managed policy that is not defined in the file, an Azure
+  a wildcard anywhere in a resource, `NotResource`, a policy the text does not show, a managed policy that is neither defined in the file nor in the table below, an Azure
   role over anything but one drawn resource). The policy is read as text, never evaluated, and never kept: the model gets edges, not
   statements. Understating access is the dangerous direction, so whatever the reader is not certain of (an attribute it cannot read, a
   template that is not one drawn reference, an action with a character it cannot match, nesting past 64 levels) is `unscoped`, never dropped.
-  Deny statements are not read. A new reader that needs the policy's words in the model is a schema decision, not a tweak.
+  Deny statements are not read. A statement with a real Condition (an object of operators, or a static `condition` block) marks its edges
+  `conditional: true`: the level is unchanged, the edge is never dropped or lowered, and it stays conditional only while every grant at its
+  strongest level is (`mergeAccess`), and then carries `unconditional`: the strongest level some grant gives with no condition, so a lower
+  unconditional grant is never hidden behind a conditional higher one. A condition that is always true (`Null`, `...IfExists`, a value that is only `*`) is not counted.
+  The condition's own text is never read into the model. A new reader that needs the policy's words in the model is a schema decision, not a tweak.
+  AWS managed policies attached by a literal `arn:aws:iam::aws:policy/...` ARN (or `arn:${data.aws_partition.x.partition}:...`) are typed from
+  `aws-managed-policies.ts`: a small bundled table (~55 well-known policies, dated by `AWS_MANAGED_POLICIES_VERSION`) of the level each grants per
+  service, read from the policy's own document in the AWS reference with the same action rule as an inline policy. Its header says how rows
+  are made and which three adjustments were reviewed; regenerate a row when AWS changes the policy, do not hand-edit a level down. A managed policy
+  is on Resource `*`, so every grant always has an `any-resource` edge at its level, plus an edge to each drawn resource of its service (`SERVICE_RESOURCE_TYPES`)
+  unless none is drawn or there are more than `MAX_MANAGED_TARGETS`/`MAX_MANAGED_EDGES` allow. The table lists every service a policy grants on,
+  drawn or not (a service with no drawn type is the `any-resource` edge alone). An ARN not in the table stays `unscoped`.
   Renderers take the wording and colour from `EDGE_ACCESS_META` (`model.ts`); an untyped edge must still draw exactly as before.
 - **Azure SKU check** (`azure-sku.ts`, data in `azure-sku-data.ts`). `generate` and the Action run `checkAzureSkus` over the
   emitted files and report its findings as warnings (CLI notes, the Action's report). It parses the HCL, reads the SKU argument of

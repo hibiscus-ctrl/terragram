@@ -1,8 +1,8 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { EDGE_ACCESS_META, type Cloud, type EdgeAccess } from "terragram-engine/model";
-import { strongerAccess } from "terragram-engine/iam";
+import { type Cloud, EDGE_ACCESS_META, type EdgeAccess, edgeAccessLabel } from "terragram-engine/model";
+import { strongerAccess, unconditionalLevel } from "terragram-engine/iam";
 
 import { COMMENT_MARKER } from "./comment.ts";
 import type { Inputs } from "./inputs.ts";
@@ -70,6 +70,8 @@ function listed<T>(items: readonly T[], render: (item: T) => string): string[] {
  * One line per edge whose access type was added, removed or changed, the widest first: a new
  * or widened `unscoped` grant, then `admin`, then every other widening, then narrowings and
  * removals. The report lists only the first lines, so what is cut is the least dangerous.
+ * A grant behind a condition keeps its level and ranks as if it had none: the line says
+ * "(conditional)", and a condition added or dropped is a line of its own, never a reason to omit one.
  */
 function accessLines(diff: ModelDiff): string[] {
   const names = new Map<string, string>();
@@ -83,17 +85,27 @@ function accessLines(diff: ModelDiff): string[] {
   const row = (source: string, target: string, rank: number, text: string) =>
     rows.push({ rank, key: `${source}\u0000${target}`, text });
   const widest = (access: EdgeAccess | undefined) => (access === "unscoped" ? 0 : access === "admin" ? 1 : 2);
+  const when = (e: { conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined }) =>
+    e.conditional ? (e.unconditional ? ` (conditional; ${e.unconditional} without the condition)` : " (conditional)") : "";
   for (const e of diff.edges.added) {
-    if (e.access) row(e.source, e.target, widest(e.access), `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
+    if (e.access) row(e.source, e.target, widest(e.access), `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}${when(e)}`);
   }
   for (const e of diff.edges.removed) {
-    if (e.access) row(e.source, e.target, 4, `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
+    if (e.access) row(e.source, e.target, 4, `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}${when(e)}`);
   }
   for (const { before, after } of diff.edges.changed) {
-    if (before.access === after.access) continue;
-    const from = before.access ? EDGE_ACCESS_META[before.access].label : "a plain connection";
-    const to = after.access ? EDGE_ACCESS_META[after.access].label : "a plain connection";
-    const widened = after.access !== undefined && strongerAccess(before.access, after.access) === after.access;
+    if (before.access === after.access && Boolean(before.conditional) === Boolean(after.conditional) && before.unconditional === after.unconditional) continue;
+    const describe = (e: { access?: EdgeAccess | undefined; conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined }) =>
+      e.access ? edgeAccessLabel({ access: e.access, conditional: e.conditional, unconditional: e.unconditional }) : "a plain connection";
+    const from = describe(before);
+    const to = describe(after);
+    // The same type with a condition gone, or a stronger level without one, is wider; with one added it is narrower. A new type is judged by its level.
+    const floor = (e: typeof before) => unconditionalLevel(e) ?? "runs-as";
+    const widened =
+      after.access !== undefined &&
+      (before.access === after.access
+        ? floor(before) !== floor(after) && strongerAccess(floor(before), floor(after)) === floor(after)
+        : strongerAccess(before.access, after.access) === after.access);
     row(
       after.source,
       after.target,

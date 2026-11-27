@@ -277,12 +277,13 @@ describe("workflow log lines", () => {
 describe("the access changes in the report", () => {
   const n = (id: string, label: string, kind = "functions"): ModelNode => ({ id, category: "compute", kind, label, flag: null });
   const nodes = [n("fn", "Orders API"), n("role", "api-role", "entra-id"), n("data", "orders-data", "object-storage"), n("any", "Any resource (*)", "external")];
-  const e = (source: string, target: string, access?: ModelEdge["access"]): ModelEdge => ({
+  const e = (source: string, target: string, access?: ModelEdge["access"], conditional = false): ModelEdge => ({
     id: `${source}->${target}`,
     source,
     target,
     origin: "user",
     ...(access ? { access } : {}),
+    ...(conditional ? { conditional } : {}),
   });
   const baseModel = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "read"), e("role", "any", "unscoped")]);
   const report = (before: InfraModel, after: InfraModel) => {
@@ -322,6 +323,35 @@ describe("the access changes in the report", () => {
     assert.match(report(wider, baseModel), /\*\*Narrowed\*\* api-role to orders-data: admin to read/);
     const lines = report(baseModel, head).split("\n").filter((l) => /^- \*\*/.test(l));
     assert.deepEqual(lines, ["- **Added** Orders API has unscoped access to Any resource &#40;&#42;&#41;"]);
+  });
+
+  it("lists a conditional grant as conditional, and a condition added or dropped as a change of its own", () => {
+    const lines = (before: InfraModel, after: InfraModel) => report(before, after).split("\n").filter((l) => /^- \*\*/.test(l));
+    const open = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "admin")]);
+    const guarded = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "admin", true)]);
+    assert.deepEqual(lines(open, guarded), ["- **Narrowed** api-role to orders-data: admin to admin, conditional"]);
+    assert.deepEqual(lines(guarded, open), ["- **Widened** api-role to orders-data: admin, conditional to admin"]);
+    assert.deepEqual(lines(model(nodes, [e("fn", "role", "runs-as")]), guarded), ["- **Added** api-role has admin access to orders-data (conditional)"]);
+    assert.deepEqual(lines(guarded, model(nodes, [e("fn", "role", "runs-as")])), ["- **Removed** api-role has admin access to orders-data (conditional)"]);
+    // A conditional admin grant is still listed ahead of a plain widening.
+    const head = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "admin", true), e("role", "any", "unscoped"), e("fn", "any", "read")]);
+    assert.deepEqual(lines(baseModel, head), [
+      "- **Widened** api-role to orders-data: read to admin, conditional",
+      "- **Added** Orders API can read Any resource &#40;&#42;&#41;",
+    ]);
+  });
+
+  it("lists the level a conditional grant gives without its condition, and a change of it as a widening or narrowing", () => {
+    const lines = (before: InfraModel, after: InfraModel) => report(before, after).split("\n").filter((l) => /^- \*\*/.test(l));
+    const floor = (unconditional: ModelEdge["access"]): ModelEdge => ({ ...e("role", "data", "admin", true), ...(unconditional ? { unconditional } : {}) });
+    const none = model(nodes, [e("fn", "role", "runs-as"), floor(undefined)]);
+    const write = model(nodes, [e("fn", "role", "runs-as"), floor("write")]);
+    const read = model(nodes, [e("fn", "role", "runs-as"), floor("read")]);
+    assert.deepEqual(lines(none, write), ["- **Widened** api-role to orders-data: admin, conditional to admin, conditional (write unconditional)"]);
+    assert.deepEqual(lines(write, read), ["- **Narrowed** api-role to orders-data: admin, conditional (write unconditional) to admin, conditional (read unconditional)"]);
+    assert.deepEqual(lines(write, none), ["- **Narrowed** api-role to orders-data: admin, conditional (write unconditional) to admin, conditional"]);
+    assert.deepEqual(lines(model(nodes, [e("fn", "role", "runs-as")]), write), ["- **Added** api-role has admin access to orders-data (conditional; write without the condition)"]);
+    assert.match(report(none, write), /\|admin, conditional \(write unconditional\)\|/);
   });
 
   it("is absent when no access type changed, and escapes what the model file names", () => {

@@ -64,6 +64,13 @@ function connection(access: EdgeAccess | undefined): string {
   return access ? EDGE_ACCESS_META[access].phrase : "connects to";
 }
 
+const whenConditional = (edge: { access?: EdgeAccess | undefined; conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined }) =>
+  edge.access && edge.conditional
+    ? edge.unconditional
+      ? ` (conditional; ${EDGE_ACCESS_META[edge.unconditional].label} without the condition)`
+      : " (conditional)"
+    : "";
+
 /**
  * Describe the model in plain English. Pure and deterministic, so it is unit-testable
  * and can be regenerated identically when verifying a receipt.
@@ -132,7 +139,7 @@ export function explainModel(model: InfraModel, cloud: Cloud, regionLabel: strin
       .map((edge) => {
         const source = byId.get(edge.source);
         const target = byId.get(edge.target);
-        return source && target ? `${nodeLabel(source)} ${connection(edge.access)} ${nodeLabel(target)}` : "";
+        return source && target ? `${nodeLabel(source)} ${connection(edge.access)} ${nodeLabel(target)}${whenConditional(edge)}` : "";
       })
       .filter(Boolean);
     paragraphs.push(`${humanList(sentences)}.`);

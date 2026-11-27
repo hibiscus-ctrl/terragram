@@ -10,7 +10,7 @@ import {
   resourceTypeToKind,
 } from "./kinds.ts";
 import { reconcileEdges, uniqueNodeId } from "./engine.ts";
-import { ANY_RESOURCE_ID, readIam, runsAsAddresses, strongerAccess } from "./iam.ts";
+import { ANY_RESOURCE_ID, mergeAccess, readIam, runsAsAddresses } from "./iam.ts";
 import type { Cloud, EdgeAccess, InfraModel, ModelEdge, ModelNode } from "./model.ts";
 
 /**
@@ -224,15 +224,28 @@ export function parseTerraform(source: string): ParseResult {
   /* -- who runs as which identity, and what each identity may reach -- */
 
   const edgeById = new Map(edges.map((e) => [e.id, e]));
-  const typeEdge = (from: string, target: string, access: EdgeAccess) => {
+  const typeEdge = (from: string, target: string, access: EdgeAccess, grant: { conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined } = {}) => {
     if (from === target) return;
     const key = `${from}->${target}`;
     const existing = edgeById.get(key);
     if (existing) {
-      existing.access = strongerAccess(existing.access, access);
+      const merged = mergeAccess(existing, { access, ...grant });
+      existing.access = merged.access;
+      if (merged.conditional) existing.conditional = true;
+      else delete existing.conditional;
+      if (merged.unconditional) existing.unconditional = merged.unconditional;
+      else delete existing.unconditional;
       return;
     }
-    const edge: ModelEdge = { id: key, source: from, target, origin: "user", access };
+    const edge: ModelEdge = {
+      id: key,
+      source: from,
+      target,
+      origin: "user",
+      access,
+      ...(grant.conditional ? { conditional: true } : {}),
+      ...(grant.conditional && grant.unconditional ? { unconditional: grant.unconditional } : {}),
+    };
     edgeById.set(key, edge);
     edges.push(edge);
   };
@@ -245,7 +258,7 @@ export function parseTerraform(source: string): ParseResult {
     }
   }
   const iam = readIam(blocks, (address) => ownerByAddress.get(address), cloud);
-  for (const edge of iam.edges) typeEdge(edge.source, edge.target, edge.access);
+  for (const edge of iam.edges) typeEdge(edge.source, edge.target, edge.access, edge);
   for (let i = untranslated.length - 1; i >= 0; i--) {
     const [type, name] = (untranslated[i] ?? "").split(".");
     if ([...iam.consumed].some((b) => b.type === "resource" && b.labels[0] === type && b.labels[1] === name)) {

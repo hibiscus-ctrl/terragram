@@ -1,6 +1,7 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { MAX_MANAGED_EDGES, MAX_MANAGED_TARGETS, managedPolicyGrants, SERVICE_RESOURCE_TYPES } from "./aws-managed-policies.ts";
 import { attributeOf, extractReferences, type HclBlock, stringValue } from "./hcl.ts";
 import type { Cloud, EdgeAccess } from "./model.ts";
 
@@ -15,7 +16,8 @@ import type { Cloud, EdgeAccess } from "./model.ts";
  *
  * What the text cannot bound is typed `unscoped` rather than guessed at: a wildcard
  * resource, a policy that is a variable, a file or a template, an action that is not a
- * plain string, a role assigned over a subscription.
+ * plain string, a role assigned over a subscription, a managed policy that is neither
+ * defined in the file nor in the bundled table of well-known AWS ones.
  */
 
 /** The conceptual node an `unscoped` edge ends at. */
@@ -27,6 +29,10 @@ type IamEdge = {
   /** The resource it reaches, or `ANY_RESOURCE_ID`. */
   target: string;
   access: EdgeAccess;
+  /** Every statement behind the grant carries a Condition. The level is the same; the condition may narrow when it applies. */
+  conditional?: true;
+  /** With `conditional`: the strongest level some grant over the same pair gives with no condition at all. Always below `access`. */
+  unconditional?: EdgeAccess;
 };
 
 export type IamReading = {
@@ -41,6 +47,36 @@ const RANK: Record<EdgeAccess, number> = { "runs-as": 0, read: 1, write: 2, admi
 export function strongerAccess(a: EdgeAccess | undefined, b: EdgeAccess): EdgeAccess {
   return a !== undefined && RANK[a] >= RANK[b] ? a : b;
 }
+
+type Typed = { access?: EdgeAccess | undefined; conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined };
+
+/** The strongest level a grant gives with no condition: its own level, or the lower one a conditional edge carries. Undefined when every grant on it is conditional. */
+export function unconditionalLevel(t: Typed | undefined): EdgeAccess | undefined {
+  return t?.conditional === true ? t.unconditional : t?.access;
+}
+
+/**
+ * Two grants over one pair of nodes: the type is the stronger one, and the edge is
+ * conditional only when every grant at that strongest level is. A condition never lowers a
+ * level, and a grant without one is never hidden behind a conditional one: a conditional
+ * edge also carries the strongest level some grant gives with no condition (`unconditional`),
+ * so an unconditional `write` stays visible under a conditional `admin`.
+ */
+export function mergeAccess(
+  a: Typed | undefined,
+  b: { access: EdgeAccess; conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined },
+): { access: EdgeAccess; conditional?: true; unconditional?: EdgeAccess } {
+  const access = strongerAccess(a?.access, b.access);
+  const holds = (t: Typed | undefined) => t?.access === access;
+  const conditional = [a, b].filter(holds).every((t) => t?.conditional === true);
+  if (!conditional) return { access };
+  const floor = [unconditionalLevel(a), unconditionalLevel(b)].reduce<EdgeAccess | undefined>(
+    (best, level) => (level === undefined || level === "runs-as" ? best : strongerAccess(best, level)),
+    undefined,
+  );
+  return floor !== undefined && floor !== access ? { access, conditional: true, unconditional: floor } : { access, conditional: true };
+}
+
 
 /* ------------------------------------------------------------ value reader -- */
 
@@ -291,6 +327,8 @@ type Statement = {
   notActions: boolean;
   resources: Val[];
   notResources: boolean;
+  /** The statement has a Condition: some request it allows may be refused. */
+  conditional: boolean;
 };
 
 const norm = (key: string) => key.toLowerCase().replace(/_/g, "");
@@ -327,7 +365,37 @@ function statementsOfDocument(doc: Val): Statement[] | null {
   return out;
 }
 
-function statementOf(st: Val): Statement {
+/** An operator that holds whatever the request looks like (`Null`, anything `...IfExists`, with or without a `ForAnyValue:` prefix): it never narrows when a grant applies. */
+function neverNarrows(operator: string): boolean {
+  const name = (operator.split(":").pop() ?? "").trim().toLowerCase();
+  return name === "null" || name.endsWith("ifexists");
+}
+
+/** Whether a condition's values can rule a request out: not when there are none, and not when one of them is only wildcards (it matches anything). */
+function narrowingValues(v: Val): boolean {
+  const values = listOf(v);
+  return values.length > 0 && !values.some((value) => value.t === "str" && !value.interpolated && /^\*+$/.test(value.text));
+}
+
+/**
+ * Whether a Condition value is a real one: an object with at least one operator, each
+ * holding at least one key, and at least one key that can rule a request out. An empty
+ * object, a string or anything unreadable is not counted, and neither is a condition that
+ * is always true (`Null`, `...IfExists`, a value that is only `*`): a statement is only
+ * ever marked conditional on evidence, and when in doubt it is not.
+ */
+function isCondition(v: Val): boolean {
+  if (v.t !== "obj" || v.entries.length === 0) return false;
+  let narrows = false;
+  for (const operator of v.entries) {
+    if (operator.value.t !== "obj" || operator.value.entries.length === 0) return false;
+    if (!neverNarrows(operator.key) && operator.value.entries.some((key) => narrowingValues(key.value))) narrows = true;
+  }
+  return narrows;
+}
+
+function statementOf(st: Val, conditionBlock = false): Statement {
+  const conditional = conditionBlock || valuesOf(st, "condition", "conditions").some(isCondition);
   const actions = valuesOf(st, "action", "actions");
   const notActions = valuesOf(st, "notaction", "notactions");
   const resources = valuesOf(st, "resource", "resources");
@@ -338,6 +406,7 @@ function statementOf(st: Val): Statement {
     notActions: notActions.length > 0,
     resources: resources.length + notResources.length > 0 ? [...resources, ...notResources].flatMap(listOf) : [UNREADABLE],
     notResources: notResources.length > 0,
+    conditional,
   };
 }
 
@@ -356,9 +425,18 @@ function statementsOfDataBlock(doc: HclBlock): Statement[] | null {
     // An attribute that cannot be read is kept as unreadable, not dropped: a dropped one reads as "grants nothing".
     const obj: Val = { t: "obj", entries: b.attributes.map((a) => ({ key: a.key, value: readVal(a.value) ?? UNREADABLE })) };
     if (isDeny(valuesOf(obj, "effect"))) continue;
-    out.push(statementOf(obj));
+    out.push(statementOf(obj, b.blocks.some(isConditionBlock)));
   }
   return out;
+}
+
+/** A static `condition { test, variable, values }` block that can rule a request out; a `dynamic` one, a `Null` or `...IfExists` test and a `*` value are not counted. */
+function isConditionBlock(b: HclBlock): boolean {
+  if (b.type !== "condition" || !["test", "variable", "values"].every((key) => attributeOf(b, key) !== undefined)) return false;
+  const test = stringValue(attributeOf(b, "test"));
+  if (test !== undefined && neverNarrows(test)) return false;
+  const values = readVal(attributeOf(b, "values") ?? "");
+  return values !== null && narrowingValues(values);
 }
 
 const READ_VERBS = ["get", "list", "describe", "head", "batchget", "query", "scan", "select", "lookup", "view", "search", "read", "receive", "decrypt", "verify"];
@@ -501,8 +579,9 @@ function edgesOfStatements(
     if (st.actions.length === 0 || st.resources.length === 0) continue;
     const reach = st.notResources ? { targets: [], broad: true } : reachOf(st.resources, owner);
     const level = levelOf(st.actions, st.notActions);
-    for (const target of reach.targets) if (target !== source) out.push({ source, target, access: level });
-    if (reach.broad) out.push({ source, target: ANY_RESOURCE_ID, access: "unscoped" });
+    const conditional = st.conditional ? ({ conditional: true } as const) : {};
+    for (const target of reach.targets) if (target !== source) out.push({ source, target, access: level, ...conditional });
+    if (reach.broad) out.push({ source, target: ANY_RESOURCE_ID, access: "unscoped", ...conditional });
   }
   return out;
 }
@@ -572,10 +651,53 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     return edges.length;
   };
 
+  /** The resource types of one service the file draws, as node ids, found once. */
+  const drawnByService = new Map<string, string[]>();
+  const drawnOf = (service: string): string[] => {
+    const known = drawnByService.get(service);
+    if (known) return known;
+    const prefixes = Object.hasOwn(SERVICE_RESOURCE_TYPES, service) ? (SERVICE_RESOURCE_TYPES[service] ?? []) : [];
+    const ids = new Set<string>();
+    for (const b of blocks) {
+      const [type, name] = b.labels;
+      if (b.type !== "resource" || !type || !name || !prefixes.some((p) => type.startsWith(p))) continue;
+      const id = owner(`${type}.${name}`);
+      if (id) ids.add(id);
+    }
+    const found = [...ids];
+    drawnByService.set(service, found);
+    return found;
+  };
+
   /**
-   * A managed policy attached to `source`. Only a policy defined in this file is read; an
-   * ARN, a data source, a variable or anything else is a policy this reader cannot see
-   * (AdministratorAccess, PowerUserAccess, IAMFullAccess and the rest), so it is unscoped.
+   * The edges of a well-known managed policy. Every one of them grants on Resource `*`, so each
+   * grant always reaches "Any resource (*)" at its own level, and also its level on each drawn
+   * resource of its service (when there are some, not too many, and the attachment is under its
+   * edge cap), the role's own node included: a policy that covers IAM may rewrite the role it is
+   * attached to. A service the picture cannot draw has the account-wide edge alone.
+   */
+  const managedEdges = (source: string, arn: string): IamEdge[] | undefined => {
+    const grants = managedPolicyGrants(arn);
+    if (!grants) return undefined;
+    const out: IamEdge[] = [];
+    let drawn = 0;
+    for (const [service, access, conditional] of grants) {
+      const flag = conditional ? ({ conditional: true } as const) : {};
+      out.push({ source, target: ANY_RESOURCE_ID, access, ...flag });
+      const targets = service === "*" ? [] : drawnOf(service);
+      if (targets.length > 0 && targets.length <= MAX_MANAGED_TARGETS && drawn + targets.length <= MAX_MANAGED_EDGES) {
+        for (const target of targets) out.push({ source, target, access, ...flag });
+        drawn += targets.length;
+      }
+    }
+    return out;
+  };
+
+  /**
+   * A managed policy attached to `source`. A policy defined in this file is read. An ARN in
+   * the bundled table of well-known AWS policies (AdministratorAccess, AmazonS3ReadOnlyAccess
+   * and the like) gets the level and services the table gives it. Anything else (another ARN,
+   * a data source, a variable) is a policy this reader cannot see, so it is unscoped.
    */
   const attach = (source: string, expr: string | undefined, holder: HclBlock | null): void => {
     const unscoped = () => {
@@ -596,6 +718,18 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     for (const item of items) {
       const policy = item.t === "list" || item.t === "obj" ? undefined : policies.get(policyAddress(item));
       if (!policy) {
+        const arn = managedArn(item);
+        let known: IamEdge[] | undefined;
+        try {
+          known = arn === null ? undefined : managedEdges(source, arn);
+        } catch {
+          known = undefined; // fails closed: the policy is then unscoped
+        }
+        if (known) {
+          out.edges.push(...known);
+          if (holder) out.consumed.add(holder);
+          continue;
+        }
         unscoped();
         continue;
       }
@@ -621,6 +755,24 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
       out.consumed.add(b);
     }
   }
+}
+
+/**
+ * The ARN text of a managed policy attached by a string: a literal in the `aws` partition, or
+ * that with its partition taken from `data.aws_partition.<name>.partition`. Null for anything
+ * else (a reference, a function, another template, another partition, a long string, an escape).
+ */
+function managedArn(item: Val): string | null {
+  if (item.t !== "str" || item.text.length > 240 || item.text.includes("\\")) return null;
+  const text = item.text;
+  if (!item.interpolated) return text.startsWith("arn:aws:") ? text : null;
+  // Only `arn:${data.aws_partition.<name>.partition}:...`: cut at the first brace instead of running a pattern over the rest.
+  const open = "arn:${";
+  if (!text.startsWith(open)) return null;
+  const close = text.indexOf("}", open.length);
+  if (close === -1 || text.indexOf("${", close) !== -1 || text.indexOf("%{") !== -1) return null;
+  const reference = text.slice(open.length, close);
+  return /^data\.aws_partition\.[A-Za-z_][\w-]*\.partition$/.test(reference) ? `arn:aws${text.slice(close + 1)}` : null;
 }
 
 /** The address of the local policy an ARN expression names (`aws_iam_policy.x.arn` or its template), or "" for anything else. */
@@ -718,7 +870,7 @@ export function readIam(blocks: HclBlock[], owner: (address: string) => string |
   for (const edge of reading.edges) {
     const key = `${edge.source}->${edge.target}`;
     const existing = merged.get(key);
-    merged.set(key, existing ? { ...existing, access: strongerAccess(existing.access, edge.access) } : edge);
+    merged.set(key, existing ? { source: edge.source, target: edge.target, ...mergeAccess(existing, edge) } : edge);
   }
   reading.edges = [...merged.values()];
   return reading;

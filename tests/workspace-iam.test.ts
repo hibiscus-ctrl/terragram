@@ -7,7 +7,8 @@ import { describe, it } from "node:test";
 import { modelToSvg } from "terragram-engine/diagram-svg";
 import { explainModel } from "terragram-engine/explain";
 import { parseHcl } from "terragram-engine/hcl";
-import { ANY_RESOURCE_ID, readIam, runsAsAddresses, strongerAccess } from "terragram-engine/iam";
+import { AWS_MANAGED_POLICIES_VERSION, MAX_MANAGED_EDGES, MAX_MANAGED_TARGETS, managedPolicyGrants, managedPolicyKeys } from "../packages/engine/src/aws-managed-policies.ts";
+import { ANY_RESOURCE_ID, mergeAccess, readIam, runsAsAddresses, strongerAccess } from "terragram-engine/iam";
 import type { InfraModel } from "terragram-engine/model";
 import { infraModelSchema } from "terragram-engine/model";
 import { parseTerraform } from "terragram-engine/parse";
@@ -100,7 +101,7 @@ resource "aws_iam_role_policy" "fn" {
     }
   });
 
-  it("types a wildcard resource, NotResource, an unreadable policy and AdministratorAccess as unscoped", () => {
+  it("types a wildcard resource, NotResource, an unreadable policy and a managed policy it does not know as unscoped", () => {
     const wildcard = read(withPolicy(`jsonencode({ Statement = [{ Effect = "Allow", Action = "s3:GetObject", Resource = "*" }] })`));
     assert.deepEqual(typed(wildcard.model), ["functions -> entra-id: runs-as", `entra-id -> ${ANY_RESOURCE_ID}: unscoped`]);
     assert.equal(wildcard.model.nodes.find((n) => n.id === ANY_RESOURCE_ID)?.label, "Any resource (*)");
@@ -119,7 +120,7 @@ resource "aws_iam_role_policy" "fn" {
     const admin = read(`${AWS_BASE}
 resource "aws_iam_role_policy_attachment" "admin" {
   role       = aws_iam_role.fn.name
-  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+  policy_arn = "arn:aws:iam::aws:policy/SomeNewManagedPolicy"
 }
 `);
     assert.deepEqual(typed(admin.model).slice(1), [`entra-id -> ${ANY_RESOURCE_ID}: unscoped`]);
@@ -467,6 +468,379 @@ describe("drawing typed edges", () => {
   });
 });
 
+describe("conditions keep the level and mark the edge", () => {
+  const withStatements = (statements: string) => `${AWS_BASE}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = jsonencode({ Statement = [${statements}] })
+}
+`;
+  /** `source -> target: access`, with " (conditional)" when marked, and the level some grant gives without a condition when it is lower. */
+  const marked = (model: InfraModel) =>
+    model.edges
+      .filter((e) => e.access && e.access !== "runs-as")
+      .map((e) => `${e.target}: ${e.access}${e.conditional ? (e.unconditional ? ` (conditional, ${e.unconditional} unconditional)` : " (conditional)") : ""}`);
+
+  it("marks a grant behind a Condition as conditional without lowering its level", () => {
+    const { model } = read(
+      withStatements(`
+      { Effect = "Allow", Action = "s3:*", Resource = aws_s3_bucket.data.arn, Condition = { StringEquals = { "aws:RequestedRegion" = "eu-west-1" } } },
+      { Effect = "Allow", Action = "sqs:SendMessage", Resource = aws_sqs_queue.jobs.arn },`),
+    );
+    assert.deepEqual(marked(model), ["object-storage: admin (conditional)", "queue: write"]);
+  });
+
+  it("marks a wildcard or NotAction grant conditional but still unscoped, and never drops it", () => {
+    const wildcard = read(withStatements(`{ Effect = "Allow", Action = "s3:GetObject", Resource = "*", Condition = { Bool = { "aws:SecureTransport" = "true" } } }`));
+    assert.deepEqual(marked(wildcard.model), [`${ANY_RESOURCE_ID}: unscoped (conditional)`]);
+    const notAction = read(withStatements(`{ Effect = "Allow", NotAction = "iam:*", Resource = aws_s3_bucket.data.arn, Condition = { Bool = { "x" = "y" } } }`));
+    assert.deepEqual(marked(notAction.model), ["object-storage: unscoped (conditional)"]);
+  });
+
+  it("is conditional only when every grant at the strongest level is", () => {
+    const cond = `Condition = { StringEquals = { "aws:RequestedRegion" = "eu-west-1" } }`;
+    const bucket = "Resource = aws_s3_bucket.data.arn";
+    const both = read(withStatements(`{ Effect = "Allow", Action = "s3:GetObject", ${bucket}, ${cond} }, { Effect = "Allow", Action = "s3:ListBucket", ${bucket} }`));
+    assert.deepEqual(marked(both.model), ["object-storage: read"], "an unconditional grant at the same level wins");
+    const stronger = read(withStatements(`{ Effect = "Allow", Action = "s3:PutObject", ${bucket}, ${cond} }, { Effect = "Allow", Action = "s3:GetObject", ${bucket} }`));
+    assert.deepEqual(marked(stronger.model), ["object-storage: write (conditional, read unconditional)"], "the level shown is the conditional one, and the floor under it");
+    const unconditionalAdmin = read(withStatements(`{ Effect = "Allow", Action = "s3:*", ${bucket} }, { Effect = "Allow", Action = "s3:GetObject", ${bucket}, ${cond} }`));
+    assert.deepEqual(marked(unconditionalAdmin.model), ["object-storage: admin"]);
+  });
+
+  it("counts a condition only when it is a real one", () => {
+    for (const condition of [`Condition = {}`, `Condition = { StringEquals = {} }`, `Condition = var.condition`, `Condition = "x"`, `Condition = []`]) {
+      const { model } = read(withStatements(`{ Effect = "Allow", Action = "s3:PutObject", Resource = aws_s3_bucket.data.arn, ${condition} }`));
+      assert.deepEqual(marked(model), ["object-storage: write"], condition);
+    }
+  });
+
+  it("shows the unconditional floor under a conditional top level, however the grants are written", () => {
+    const cond = `Condition = { StringEquals = { "aws:RequestedRegion" = "eu-west-1" } }`;
+    const bucket = "Resource = aws_s3_bucket.data.arn";
+    // An unconditional PutObject is not hidden behind a conditional PutBucketPolicy.
+    const { model } = read(withStatements(`{ Effect = "Allow", Action = "s3:PutObject", ${bucket} }, { Effect = "Allow", Action = "s3:PutBucketPolicy", ${bucket}, ${cond} }`));
+    assert.deepEqual(marked(model), ["object-storage: admin (conditional, write unconditional)"]);
+    // Order does not matter, and the strongest unconditional level wins.
+    const reversed = read(withStatements(`{ Effect = "Allow", Action = "s3:PutBucketPolicy", ${bucket}, ${cond} }, { Effect = "Allow", Action = "s3:GetObject", ${bucket} }, { Effect = "Allow", Action = "s3:PutObject", ${bucket} }`));
+    assert.deepEqual(marked(reversed.model), ["object-storage: admin (conditional, write unconditional)"]);
+    // Only conditional grants: no floor. An unconditional grant at the top level: not conditional at all.
+    const none = read(withStatements(`{ Effect = "Allow", Action = "s3:PutBucketPolicy", ${bucket}, ${cond} }`));
+    assert.deepEqual(marked(none.model), ["object-storage: admin (conditional)"]);
+    // The floor survives a second policy over the same pair (a role policy plus an attached managed one).
+    const twice = read(`${withStatements(`{ Effect = "Allow", Action = "s3:PutObject", ${bucket} }, { Effect = "Allow", Action = "s3:PutBucketPolicy", ${bucket}, ${cond} }`)}
+resource "aws_iam_role_policy_attachment" "a" {
+  role       = aws_iam_role.fn.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+}
+`);
+    assert.deepEqual(marked(twice.model).filter((m) => m.startsWith("object-storage")), ["object-storage: admin (conditional, write unconditional)"]);
+    assert.match(JSON.stringify(model), /"unconditional":"write"/);
+  });
+
+  it("does not count a condition that is always true", () => {
+    const alwaysTrue = [
+      `Condition = { StringLike = { "aws:PrincipalArn" = "*" } }`,
+      `Condition = { ArnLike = { "aws:PrincipalArn" = ["arn:aws:iam::123456789012:role/x", "*"] } }`,
+      `Condition = { Null = { "aws:TokenIssueTime" = "false" } }`,
+      `Condition = { StringEqualsIfExists = { "aws:RequestedRegion" = "eu-west-1" } }`,
+      `Condition = { "ForAnyValue:StringLikeIfExists" = { "aws:TagKeys" = "team" } }`,
+      `Condition = { Null = { "a" = "true" }, StringLike = { "b" = "*" } }`,
+    ];
+    for (const condition of alwaysTrue) {
+      const { model } = read(withStatements(`{ Effect = "Allow", Action = "s3:PutObject", Resource = aws_s3_bucket.data.arn, ${condition} }`));
+      assert.deepEqual(marked(model), ["object-storage: write"], condition);
+    }
+    // One real key among the always-true ones still narrows the grant.
+    const real = read(withStatements(`{ Effect = "Allow", Action = "s3:PutObject", Resource = aws_s3_bucket.data.arn, Condition = { Null = { "a" = "true" }, StringEquals = { "aws:RequestedRegion" = "eu-west-1" } } }`));
+    assert.deepEqual(marked(real.model), ["object-storage: write (conditional)"]);
+    // The same in a policy document data source.
+    const block = (test: string, values: string) => `${AWS_BASE}
+data "aws_iam_policy_document" "fn" {
+  statement {
+    actions   = ["s3:PutObject"]
+    resources = [aws_s3_bucket.data.arn]
+    condition {
+      test     = "${test}"
+      variable = "aws:PrincipalArn"
+      values   = ${values}
+    }
+  }
+}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = data.aws_iam_policy_document.fn.json
+}
+`;
+    assert.deepEqual(marked(read(block("StringLike", '["*"]')).model), ["object-storage: write"]);
+    assert.deepEqual(marked(read(block("Null", '["false"]')).model), ["object-storage: write"]);
+    assert.deepEqual(marked(read(block("StringEqualsIfExists", '["x"]')).model), ["object-storage: write"]);
+    assert.deepEqual(marked(read(block("StringLike", '["arn:aws:iam::123456789012:role/x"]')).model), ["object-storage: write (conditional)"]);
+  });
+
+  it("reads a condition in a JSON heredoc and in a policy document data source", () => {
+    const heredoc = read(`${AWS_BASE}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = <<EOT
+{"Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"\${aws_s3_bucket.data.arn}/*","Condition":{"IpAddress":{"aws:SourceIp":"10.0.0.0/8"}}}]}
+EOT
+}
+`);
+    assert.deepEqual(marked(heredoc.model), ["object-storage: write (conditional)"]);
+
+    const data = read(`${AWS_BASE}
+data "aws_iam_policy_document" "fn" {
+  statement {
+    actions   = ["s3:PutObject"]
+    resources = [aws_s3_bucket.data.arn]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = ["eu-west-1"]
+    }
+  }
+  statement {
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.jobs.arn]
+    dynamic "condition" {
+      for_each = var.conditions
+      content {
+        test     = condition.value.test
+        variable = condition.value.variable
+        values   = condition.value.values
+      }
+    }
+  }
+}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = data.aws_iam_policy_document.fn.json
+}
+`);
+    assert.deepEqual(marked(data.model), ["object-storage: write (conditional)", "queue: write"], "a generated condition is not counted");
+  });
+
+  it("keeps the condition's text out of the model", () => {
+    const { model } = read(withStatements(`{ Effect = "Allow", Action = "s3:PutObject", Resource = aws_s3_bucket.data.arn, Condition = { StringEquals = { "aws:PrincipalTag/team" = "secret-team-value" } } }`));
+    const json = JSON.stringify(model);
+    for (const leaked of ["secret-team-value", "PrincipalTag", "StringEquals"]) assert.equal(json.includes(leaked), false, leaked);
+    assert.match(json, /"conditional":true/);
+  });
+
+  it("merges conditions by the strongest level", () => {
+    assert.deepEqual(mergeAccess(undefined, { access: "read", conditional: true }), { access: "read", conditional: true });
+    assert.deepEqual(mergeAccess({ access: "read", conditional: true }, { access: "read" }), { access: "read" });
+    assert.deepEqual(mergeAccess({ access: "read" }, { access: "write", conditional: true }), { access: "write", conditional: true, unconditional: "read" });
+    assert.deepEqual(mergeAccess({ access: "admin" }, { access: "read", conditional: true }), { access: "admin" });
+    assert.deepEqual(mergeAccess({ access: "admin", conditional: true }, { access: "read" }), { access: "admin", conditional: true, unconditional: "read" });
+    assert.deepEqual(mergeAccess({ access: "admin", conditional: true }, { access: "admin", conditional: true }), { access: "admin", conditional: true });
+    // The floor is the strongest unconditional level over every grant, and an already merged edge keeps its own.
+    const merged = mergeAccess({ access: "admin", conditional: true, unconditional: "read" }, { access: "write" });
+    assert.deepEqual(merged, { access: "admin", conditional: true, unconditional: "write" });
+    assert.deepEqual(mergeAccess(merged, { access: "read", conditional: true }), merged);
+    assert.deepEqual(mergeAccess({ access: "admin", conditional: true, unconditional: "write" }, { access: "admin" }), { access: "admin" }, "an unconditional grant at the top level ends the condition");
+    assert.deepEqual(mergeAccess({ access: "runs-as" }, { access: "write", conditional: true }), { access: "write", conditional: true }, "a runs-as link is not a level of access");
+  });
+
+  it("draws it: the SVG, the diagram, the description and the pull request diff say conditional", () => {
+    const conditional: InfraModel = {
+      nodes: [
+        { id: "role", category: "identity", kind: "entra-id", label: "Role", flag: null },
+        { id: "bucket", category: "storage", kind: "object-storage", label: "Bucket", flag: null },
+      ],
+      edges: [{ id: "role->bucket", source: "role", target: "bucket", origin: "user", access: "admin", conditional: true }],
+      topology: "manual",
+    };
+    assert.match(modelToSvg(conditional), />admin, conditional</);
+    assert.match(explainModel(conditional, "aws", "us-east-1"), /Role has admin access to Bucket \(conditional\)/);
+    const plain: InfraModel = { ...conditional, edges: [{ id: "role->bucket", source: "role", target: "bucket", origin: "user", access: "admin" }] };
+    const diff = diffModels(plain, conditional);
+    assert.equal(diff.edges.changed.length, 1, "a condition added is a change");
+    assert.equal(diffModels(conditional, conditional).edges.unchanged.length, 1);
+    assert.match(renderDiagram(diff).mermaid ?? "", /-->\|admin, conditional\|/);
+    assert.equal(infraModelSchema.parse(conditional).edges[0]?.conditional, true);
+    assert.throws(() => infraModelSchema.parse({ ...conditional, edges: [{ ...conditional.edges[0], conditional: "yes" }] }));
+    // The level some grant gives without the condition is drawn and described too, and is a change of its own.
+    const floor: InfraModel = { ...conditional, edges: [{ id: "role->bucket", source: "role", target: "bucket", origin: "user", access: "admin", conditional: true, unconditional: "write" }] };
+    assert.match(modelToSvg(floor), />admin, conditional \(write unconditional\)</);
+    assert.match(explainModel(floor, "aws", "us-east-1"), /Role has admin access to Bucket \(conditional; write without the condition\)/);
+    assert.equal(diffModels(conditional, floor).edges.changed.length, 1);
+    assert.match(renderDiagram(diffModels(conditional, floor)).mermaid ?? "", /-->\|admin, conditional \(write unconditional\)\|/);
+    assert.equal(infraModelSchema.parse(floor).edges[0]?.unconditional, "write");
+    assert.throws(() => infraModelSchema.parse({ ...floor, edges: [{ ...floor.edges[0], unconditional: "root" }] }));
+  });
+});
+
+describe("well-known AWS managed policies", () => {
+  const attach = (arn: string, extra = "") => `${AWS_BASE}${extra}
+resource "aws_iam_role_policy_attachment" "a" {
+  role       = aws_iam_role.fn.name
+  policy_arn = ${arn}
+}
+`;
+  /** The edges past the workload's own runs-as edge, with " (conditional)" where marked. */
+  const grants = (tf: string) =>
+    read(tf).model.edges.filter((e) => e.access && e.access !== "runs-as").map((e) => `${e.target}: ${e.access}${e.conditional ? " (conditional)" : ""}`);
+  const ANY = ANY_RESOURCE_ID;
+
+  it("types a policy that covers every service at its level over any resource", () => {
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AdministratorAccess"')), [`${ANY}: admin`]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/PowerUserAccess"')), [`${ANY}: admin`]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/ReadOnlyAccess"')), [`${ANY}: read`]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/job-function/ViewOnlyAccess"')), [`${ANY}: read`]);
+  });
+
+  it("types a service policy at its level on each drawn resource of that service", () => {
+    // Every one also reaches "Any resource (*)" at the same level: the policy is on Resource `*`, not on the drawn buckets.
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"')), [`${ANY}: read`, "object-storage: read"]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonS3FullAccess"')), [`${ANY}: admin`, "object-storage: admin"]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonSQSReadOnlyAccess"')), [`${ANY}: read`, "queue: read"]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonSQSFullAccess"')), [`${ANY}: admin`, "queue: admin"]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess"')).filter((g) => g.startsWith("nosql")), ["nosql: read"]);
+  });
+
+  it("shows the account-wide reach of a managed policy next to the drawn resources, never only the drawn ones", () => {
+    const buckets = ["a", "b"].map((n) => `resource "aws_s3_bucket" "${n}" {\n  bucket = "${n}"\n}\n`).join("");
+    const edges = grants(attach('"arn:aws:iam::aws:policy/AmazonS3FullAccess"', buckets));
+    assert.equal(edges.length, 4, "any resource, the base bucket and the two new ones");
+    assert.ok(edges.includes(`${ANY}: admin`), "the account-wide edge is there");
+    assert.equal(edges.filter((e) => e === "object-storage: admin").length, 1, "one edge per pair; the drawn ones are kept");
+    const typed = read(attach('"arn:aws:iam::aws:policy/AmazonS3FullAccess"', buckets)).model.edges.filter((e) => e.access === "admin");
+    assert.deepEqual(typed.map((e) => e.target).filter((t) => t !== ANY).length, 3);
+    assert.ok(typed.some((e) => e.target === ANY));
+  });
+
+  it("keeps the role's own edge when the policy covers IAM, and the account-wide edge in the model", () => {
+    const own = `${AWS_BASE}
+resource "aws_iam_role_policy_attachment" "a" {
+  role       = aws_iam_role.fn.name
+  policy_arn = "arn:aws:iam::aws:policy/IAMFullAccess"
+}
+`;
+    const blocks = parseHcl(own);
+    const owned = readIam(blocks, (address) => (address === "aws_iam_role.fn" ? "fn" : undefined), "aws");
+    assert.ok(owned.edges.some((e) => e.source === "fn" && e.target === "fn" && e.access === "admin"), "a policy that covers IAM may rewrite the role it is attached to");
+    assert.ok(owned.edges.some((e) => e.source === "fn" && e.target === ANY_RESOURCE_ID && e.access === "admin"));
+    assert.ok(grants(own).includes(`${ANY}: admin`), "a self edge cannot be drawn, so the model carries it as any resource");
+  });
+
+  it("types a grant on a service the picture does not draw at its own level, over any resource", () => {
+    // EKS worker nodes read EC2 and EKS, and may assume the role of a pod: that one is admin, on a service with nothing to point at.
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"')), [`${ANY}: admin`]);
+    for (const [policy, services] of [
+      ["AmazonEventBridgeFullAccess", ["schemas", "scheduler", "pipes"]],
+      ["AmazonRDSFullAccess", ["application-autoscaling", "pi"]],
+      ["AmazonRDSReadOnlyAccess", ["devops-guru"]],
+      ["CloudFrontFullAccess", ["wafv2", "acm"]],
+      ["AmazonCognitoPowerUser", ["cognito-sync"]],
+      ["AmazonEKSWorkerNodePolicy", ["eks-auth"]],
+    ] as const) {
+      const held = (managedPolicyGrants(`arn:aws:iam::aws:policy/${policy}`) ?? []).map(([service]) => service);
+      for (const service of services) assert.ok(held.includes(service), `${policy}: ${service}`);
+    }
+  });
+
+  it("ends a grant at any resource when the policy's service has nothing drawn, keeping its level", () => {
+    // Logs are not drawn here: the Lambda basic execution role still writes somewhere the picture does not show.
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"')), [`${ANY}: write`]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/IAMFullAccess"')), [`${ANY}: admin`]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/IAMReadOnlyAccess"')), [`${ANY}: read`]);
+  });
+
+  it("keeps a policy's strongest grant per resource and its conditions", () => {
+    // Lambda full access: admin on the drawn function and, on Resource *, at any resource, where the conditional iam:PassRole joins it.
+    // The helpers on services that are not drawn (logs, states, xray) are lower, so they do not change the pair's level.
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AWSLambda_FullAccess"')).sort(), [`${ANY}: admin`, "functions: admin"]);
+    // DynamoDB full access: the same conditional PassRole, but DAX is admin without one, so the pair is not conditional.
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"')).sort(), [`${ANY}: admin`, "functions: write", "nosql: admin"]);
+  });
+
+  it("reads the ARN written with the partition from a data source, and nothing else templated", () => {
+    const partition = '"arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonS3ReadOnlyAccess"';
+    assert.deepEqual(grants(attach(partition)), [`${ANY}: read`, "object-storage: read"]);
+    assert.deepEqual(grants(attach(`[${partition}]`.slice(1, -1))), [`${ANY}: read`, "object-storage: read"]);
+  });
+
+  it("attaches through managed_policy_arns and the other attachment resource too, and consumes the block", () => {
+    const onRole = AWS_BASE.replace('name = "fn"', 'name = "fn"\n  managed_policy_arns = ["arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess", "arn:aws:iam::aws:policy/AmazonSQSFullAccess"]');
+    assert.deepEqual(grants(onRole), [`${ANY}: admin`, "object-storage: read", "queue: admin"]);
+    const shared = `${AWS_BASE}
+resource "aws_iam_policy_attachment" "a" {
+  name       = "a"
+  roles      = [aws_iam_role.fn.name]
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+}
+`;
+    const result = read(shared);
+    assert.deepEqual(grants(shared), [`${ANY}: read`, "object-storage: read"]);
+    assert.deepEqual(result.untranslated, [], "a recognised attachment is understood, not left as a block");
+  });
+
+  it("draws one edge to any resource, not one per resource, once a service has more drawn than the cap", () => {
+    const buckets = Array.from({ length: MAX_MANAGED_TARGETS + 1 }, (_, i) => `resource "aws_s3_bucket" "b${i}" {\n  bucket = "b${i}"\n}\n`).join("");
+    const many = grants(attach('"arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"', buckets));
+    assert.deepEqual(many, [`${ANY}: read`]);
+    const few = Array.from({ length: 3 }, (_, i) => `resource "aws_s3_bucket" "c${i}" {\n  bucket = "c${i}"\n}\n`).join("");
+    assert.equal(grants(attach('"arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"', few)).length, 5, "any resource, the base bucket and the three new ones, an edge to each");
+  });
+
+  it("bounds the edges one attachment adds, whatever it covers", () => {
+    // Route 53 full access reads EC2, load balancers and S3: with 25 of the first two drawn, the bucket no longer fits.
+    const drawn = Array.from({ length: MAX_MANAGED_TARGETS }, (_, i) => `resource "aws_vpc" "v${i}" {\n  cidr_block = "10.${i}.0.0/16"\n}\nresource "aws_lb" "l${i}" {\n  name = "l${i}"\n}\n`).join("");
+    const { model } = read(attach('"arn:aws:iam::aws:policy/AmazonRoute53FullAccess"', drawn));
+    const typedEdges = model.edges.filter((e) => e.access && e.access !== "runs-as");
+    const kindOf = (id: string) => model.nodes.find((n) => n.id === id)?.kind;
+    assert.equal(typedEdges.filter((e) => e.target !== ANY_RESOURCE_ID).length, MAX_MANAGED_EDGES);
+    assert.equal(typedEdges.some((e) => kindOf(e.target) === "object-storage"), false, "the bucket is past the cap");
+    assert.equal(typedEdges.find((e) => e.target === ANY_RESOURCE_ID)?.access, "admin", "route53 itself has nothing drawn");
+  });
+
+  it("never keeps the policy's name or any text in the model", () => {
+    const json = JSON.stringify(read(attach('"arn:aws:iam::aws:policy/AmazonS3FullAccess"')).model);
+    for (const leaked of ["AmazonS3FullAccess", "arn:aws", "s3:", "policy"]) assert.equal(json.includes(leaked), false, leaked);
+  });
+
+  it("holds a small, valid, versioned table whose levels follow the policies' published purpose", () => {
+    const keys = managedPolicyKeys();
+    assert.ok(keys.length >= 30 && keys.length <= 80, `${keys.length} policies`);
+    assert.match(AWS_MANAGED_POLICIES_VERSION, /^\d{4}-\d{2}-\d{2}$/);
+    for (const key of keys) {
+      assert.match(key, /^(?:[a-z-]+\/)?[A-Za-z0-9_+=,.@-]{1,128}$/, key);
+      const grants = managedPolicyGrants(`arn:aws:iam::aws:policy/${key}`);
+      assert.ok(grants && grants.length > 0, key);
+      for (const [service, level, conditional] of grants ?? []) {
+        assert.match(service, /^(?:\*|[a-z0-9-]+)$/, `${key}: ${service}`);
+        assert.ok(["read", "write", "admin"].includes(level), `${key}: ${level}`);
+        assert.ok(conditional === undefined || conditional === true, key);
+      }
+      // A policy published as read-only grants nothing above read.
+      if (/ReadOnly|ViewOnly|SecurityAudit/.test(key)) assert.ok((grants ?? []).every(([, level]) => level === "read"), key);
+      // A full-access policy to one service reaches admin there.
+      if (/FullAccess$/.test(key) && !/^(?:AmazonRDS|AmazonEC2Container|AmazonAPIGatewayInvoke)/.test(key) && (grants ?? []).length === 1) assert.equal(grants?.[0]?.[1], "admin", key);
+    }
+    for (const [arn, level] of [["AdministratorAccess", "admin"], ["PowerUserAccess", "admin"], ["ReadOnlyAccess", "read"]] as const) {
+      assert.deepEqual(managedPolicyGrants(`arn:aws:iam::aws:policy/${arn}`), [["*", level]]);
+    }
+    assert.equal(managedPolicyGrants("arn:aws:iam::aws:policy/NotInTheTable"), undefined);
+    assert.equal(managedPolicyGrants(`arn:aws:iam::aws:policy/${"A".repeat(5000)}`), undefined);
+  });
+
+  it("does not look up a hostile ARN: long, escaped or nested text is unscoped, quickly", () => {
+    const start = performance.now();
+    for (const arn of [
+      `"${"arn:aws:iam::aws:policy/".repeat(20_000)}"`,
+      `"arn:\${data.aws_partition.${"a".repeat(200_000)}.partition}:iam::aws:policy/AdministratorAccess"`,
+      '"arn:aws:iam::aws:policy/Administrator\\u0041ccess"',
+      '"arn:aws:iam::aws:policy/AdministratorAccess%{ if true }"',
+      `"arn:\${data.aws_partition.\${data.aws_partition.x.partition}.partition}:iam::aws:policy/AdministratorAccess"`,
+    ]) {
+      assert.deepEqual(grants(attach(arn)), [`${ANY}: unscoped`], arn.slice(0, 60));
+    }
+    assert.ok(performance.now() - start < 2000);
+  });
+});
+
 /* ------------------------------------------------------------ hostile input -- */
 
 describe("what the reader is not sure of is unscoped, never dropped", () => {
@@ -608,18 +982,23 @@ resource "aws_iam_role_policy_attachment" "a" {
 }
 `;
     for (const arn of [
-      `"arn:aws:iam::aws:policy/AdministratorAccess"`,
-      `"arn:aws:iam::aws:policy/PowerUserAccess"`,
-      `"arn:aws:iam::aws:policy/IAMFullAccess"`,
-      `"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"`,
+      `"arn:aws:iam::aws:policy/SomeNewManagedPolicy"`,
+      `"arn:aws:iam::aws:policy/service-role/AdministratorAccess"`,
+      `"arn:aws:iam::aws:policy/administratoraccess"`,
+      `"arn:aws-cn:iam::aws:policy/AdministratorAccess"`,
+      `"arn:aws:iam::123456789012:policy/AdministratorAccess"`,
       `"arn:aws:iam::\${data.aws_caller_identity.me.account_id}:policy/x"`,
+      `"arn:\${var.partition}:iam::aws:policy/AdministratorAccess"`,
+      `"arn:\${data.aws_partition.current.partition}:iam::aws:policy/AdministratorAccess\${var.suffix}"`,
+      `"arn:aws:iam::aws:policy/__proto__"`,
+      `"arn:aws:iam::aws:policy/constructor"`,
       "var.policy_arn",
       "data.aws_iam_policy.p.arn",
       "aws_iam_policy.not_in_this_file.arn",
     ]) {
       assert.deepEqual(grants(attach(arn)), [ANY], arn);
     }
-    const onRole = `${AWS_BASE.replace('name = "fn"', 'name = "fn"\n  managed_policy_arns = ["arn:aws:iam::aws:policy/IAMFullAccess", aws_iam_policy.q.arn]')}
+    const onRole = `${AWS_BASE.replace('name = "fn"', 'name = "fn"\n  managed_policy_arns = ["arn:aws:iam::aws:policy/SomeNewManagedPolicy", aws_iam_policy.q.arn]')}
 resource "aws_iam_policy" "q" {
   name   = "q"
   policy = jsonencode({ Statement = [{ Effect = "Allow", Action = "sqs:SendMessage", Resource = aws_sqs_queue.jobs.arn }] })
