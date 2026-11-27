@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import { modelToSvg } from "terragram-engine/diagram-svg";
 import { explainModel } from "terragram-engine/explain";
 import { parseHcl } from "terragram-engine/hcl";
-import { ANY_RESOURCE_ID, readIam, runsAsAddresses, strongerAccess } from "terragram-engine/iam";
+import { ANY_RESOURCE_ID, mergeAccess, readIam, runsAsAddresses, strongerAccess } from "terragram-engine/iam";
 import type { InfraModel } from "terragram-engine/model";
 import { infraModelSchema } from "terragram-engine/model";
 import { parseTerraform } from "terragram-engine/parse";
@@ -464,6 +464,130 @@ describe("drawing typed edges", () => {
   it("is part of the model document", () => {
     assert.equal(infraModelSchema.parse(model).edges[1]?.access, "unscoped");
     assert.throws(() => infraModelSchema.parse({ ...model, edges: [{ id: "a", source: "fn", target: "role", access: "root" }] }));
+  });
+});
+
+describe("conditions keep the level and mark the edge", () => {
+  const withStatements = (statements: string) => `${AWS_BASE}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = jsonencode({ Statement = [${statements}] })
+}
+`;
+  /** `source -> target: access`, with " (conditional)" when marked. */
+  const marked = (model: InfraModel) =>
+    model.edges.filter((e) => e.access && e.access !== "runs-as").map((e) => `${e.target}: ${e.access}${e.conditional ? " (conditional)" : ""}`);
+
+  it("marks a grant behind a Condition as conditional without lowering its level", () => {
+    const { model } = read(
+      withStatements(`
+      { Effect = "Allow", Action = "s3:*", Resource = aws_s3_bucket.data.arn, Condition = { StringEquals = { "aws:RequestedRegion" = "eu-west-1" } } },
+      { Effect = "Allow", Action = "sqs:SendMessage", Resource = aws_sqs_queue.jobs.arn },`),
+    );
+    assert.deepEqual(marked(model), ["object-storage: admin (conditional)", "queue: write"]);
+  });
+
+  it("marks a wildcard or NotAction grant conditional but still unscoped, and never drops it", () => {
+    const wildcard = read(withStatements(`{ Effect = "Allow", Action = "s3:GetObject", Resource = "*", Condition = { Bool = { "aws:SecureTransport" = "true" } } }`));
+    assert.deepEqual(marked(wildcard.model), [`${ANY_RESOURCE_ID}: unscoped (conditional)`]);
+    const notAction = read(withStatements(`{ Effect = "Allow", NotAction = "iam:*", Resource = aws_s3_bucket.data.arn, Condition = { Bool = { "x" = "y" } } }`));
+    assert.deepEqual(marked(notAction.model), ["object-storage: unscoped (conditional)"]);
+  });
+
+  it("is conditional only when every grant at the strongest level is", () => {
+    const cond = `Condition = { StringEquals = { "aws:RequestedRegion" = "eu-west-1" } }`;
+    const bucket = "Resource = aws_s3_bucket.data.arn";
+    const both = read(withStatements(`{ Effect = "Allow", Action = "s3:GetObject", ${bucket}, ${cond} }, { Effect = "Allow", Action = "s3:ListBucket", ${bucket} }`));
+    assert.deepEqual(marked(both.model), ["object-storage: read"], "an unconditional grant at the same level wins");
+    const stronger = read(withStatements(`{ Effect = "Allow", Action = "s3:PutObject", ${bucket}, ${cond} }, { Effect = "Allow", Action = "s3:GetObject", ${bucket} }`));
+    assert.deepEqual(marked(stronger.model), ["object-storage: write (conditional)"], "the level shown is the conditional one");
+    const unconditionalAdmin = read(withStatements(`{ Effect = "Allow", Action = "s3:*", ${bucket} }, { Effect = "Allow", Action = "s3:GetObject", ${bucket}, ${cond} }`));
+    assert.deepEqual(marked(unconditionalAdmin.model), ["object-storage: admin"]);
+  });
+
+  it("counts a condition only when it is a real one", () => {
+    for (const condition of [`Condition = {}`, `Condition = { StringEquals = {} }`, `Condition = var.condition`, `Condition = "x"`, `Condition = []`]) {
+      const { model } = read(withStatements(`{ Effect = "Allow", Action = "s3:PutObject", Resource = aws_s3_bucket.data.arn, ${condition} }`));
+      assert.deepEqual(marked(model), ["object-storage: write"], condition);
+    }
+  });
+
+  it("reads a condition in a JSON heredoc and in a policy document data source", () => {
+    const heredoc = read(`${AWS_BASE}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = <<EOT
+{"Statement":[{"Effect":"Allow","Action":"s3:PutObject","Resource":"\${aws_s3_bucket.data.arn}/*","Condition":{"IpAddress":{"aws:SourceIp":"10.0.0.0/8"}}}]}
+EOT
+}
+`);
+    assert.deepEqual(marked(heredoc.model), ["object-storage: write (conditional)"]);
+
+    const data = read(`${AWS_BASE}
+data "aws_iam_policy_document" "fn" {
+  statement {
+    actions   = ["s3:PutObject"]
+    resources = [aws_s3_bucket.data.arn]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = ["eu-west-1"]
+    }
+  }
+  statement {
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.jobs.arn]
+    dynamic "condition" {
+      for_each = var.conditions
+      content {
+        test     = condition.value.test
+        variable = condition.value.variable
+        values   = condition.value.values
+      }
+    }
+  }
+}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = data.aws_iam_policy_document.fn.json
+}
+`);
+    assert.deepEqual(marked(data.model), ["object-storage: write (conditional)", "queue: write"], "a generated condition is not counted");
+  });
+
+  it("keeps the condition's text out of the model", () => {
+    const { model } = read(withStatements(`{ Effect = "Allow", Action = "s3:PutObject", Resource = aws_s3_bucket.data.arn, Condition = { StringEquals = { "aws:PrincipalTag/team" = "secret-team-value" } } }`));
+    const json = JSON.stringify(model);
+    for (const leaked of ["secret-team-value", "PrincipalTag", "StringEquals"]) assert.equal(json.includes(leaked), false, leaked);
+    assert.match(json, /"conditional":true/);
+  });
+
+  it("merges conditions by the strongest level", () => {
+    assert.deepEqual(mergeAccess(undefined, { access: "read", conditional: true }), { access: "read", conditional: true });
+    assert.deepEqual(mergeAccess({ access: "read", conditional: true }, { access: "read" }), { access: "read" });
+    assert.deepEqual(mergeAccess({ access: "read" }, { access: "write", conditional: true }), { access: "write", conditional: true });
+    assert.deepEqual(mergeAccess({ access: "admin" }, { access: "read", conditional: true }), { access: "admin" });
+    assert.deepEqual(mergeAccess({ access: "admin", conditional: true }, { access: "read" }), { access: "admin", conditional: true });
+  });
+
+  it("draws it: the SVG, the diagram, the description and the pull request diff say conditional", () => {
+    const conditional: InfraModel = {
+      nodes: [
+        { id: "role", category: "identity", kind: "entra-id", label: "Role", flag: null },
+        { id: "bucket", category: "storage", kind: "object-storage", label: "Bucket", flag: null },
+      ],
+      edges: [{ id: "role->bucket", source: "role", target: "bucket", origin: "user", access: "admin", conditional: true }],
+      topology: "manual",
+    };
+    assert.match(modelToSvg(conditional), />admin, conditional</);
+    assert.match(explainModel(conditional, "aws", "us-east-1"), /Role has admin access to Bucket \(conditional\)/);
+    const plain: InfraModel = { ...conditional, edges: [{ id: "role->bucket", source: "role", target: "bucket", origin: "user", access: "admin" }] };
+    const diff = diffModels(plain, conditional);
+    assert.equal(diff.edges.changed.length, 1, "a condition added is a change");
+    assert.equal(diffModels(conditional, conditional).edges.unchanged.length, 1);
+    assert.match(renderDiagram(diff).mermaid ?? "", /-->\|admin, conditional\|/);
+    assert.equal(infraModelSchema.parse(conditional).edges[0]?.conditional, true);
+    assert.throws(() => infraModelSchema.parse({ ...conditional, edges: [{ ...conditional.edges[0], conditional: "yes" }] }));
   });
 });
 

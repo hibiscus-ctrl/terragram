@@ -20407,12 +20407,17 @@ var EDGE_ACCESS_META = {
   admin: { label: "admin", phrase: "has admin access to", color: "#b91c1c" },
   unscoped: { label: "unscoped", phrase: "has unscoped access to", color: "#b91c1c", dash: "6 3" }
 };
+function edgeAccessLabel(edge) {
+  return edge.conditional ? `${EDGE_ACCESS_META[edge.access].label}, conditional` : EDGE_ACCESS_META[edge.access].label;
+}
 var modelEdgeSchema = external_exports.object({
   id: external_exports.string().min(1).max(80),
   source: external_exports.string().min(1).max(80),
   target: external_exports.string().min(1).max(80),
   origin: external_exports.enum(EDGE_ORIGINS).default("derived"),
-  access: external_exports.enum(EDGE_ACCESS).optional()
+  access: external_exports.enum(EDGE_ACCESS).optional(),
+  /** Set (to true) when every grant behind a typed edge carries a condition. Absent otherwise. */
+  conditional: external_exports.boolean().optional()
 });
 var infraModelSchema = external_exports.object({
   nodes: external_exports.array(modelNodeSchema).max(300),
@@ -22895,6 +22900,7 @@ function nodeLabel(node2) {
 function connection(access) {
   return access ? EDGE_ACCESS_META[access].phrase : "connects to";
 }
+var whenConditional = (edge) => edge.access && edge.conditional ? " (conditional)" : "";
 function explainModel(model, cloud, regionLabel) {
   const resources = resourceNodes(model);
   if (resources.length === 0) {
@@ -22944,7 +22950,7 @@ function explainModel(model, cloud, regionLabel) {
     const sentences = drawn.slice(0, 8).map((edge) => {
       const source = byId2.get(edge.source);
       const target = byId2.get(edge.target);
-      return source && target ? `${nodeLabel(source)} ${connection(edge.access)} ${nodeLabel(target)}` : "";
+      return source && target ? `${nodeLabel(source)} ${connection(edge.access)} ${nodeLabel(target)}${whenConditional(edge)}` : "";
     }).filter(Boolean);
     paragraphs.push(`${humanList(sentences)}.`);
   }
@@ -24059,17 +24065,17 @@ function collect(diff, changesOnly) {
   for (const n of diff.nodes.removed) add(n, "removed");
   for (const c of diff.nodes.changed) add(c.after, "changed");
   const edges = [];
-  const push = (source, target, state, access) => {
+  const push = (source, target, state, access, conditional) => {
     if (!all.has(source) || !all.has(target)) {
       return;
     }
     if (changesOnly && state === "same") return;
-    edges.push(access ? { source, target, state, access } : { source, target, state });
+    edges.push(access ? { source, target, state, access, ...conditional ? { conditional } : {} } : { source, target, state });
   };
-  for (const e of diff.edges.unchanged) push(e.source, e.target, "same", e.access);
-  for (const e of diff.edges.added) push(e.source, e.target, "added", e.access);
-  for (const e of diff.edges.removed) push(e.source, e.target, "removed", e.access);
-  for (const c of diff.edges.changed) push(c.after.source, c.after.target, "changed", c.after.access);
+  for (const e of diff.edges.unchanged) push(e.source, e.target, "same", e.access, e.conditional);
+  for (const e of diff.edges.added) push(e.source, e.target, "added", e.access, e.conditional);
+  for (const e of diff.edges.removed) push(e.source, e.target, "removed", e.access, e.conditional);
+  for (const c of diff.edges.changed) push(c.after.source, c.after.target, "changed", c.after.access, c.after.conditional);
   let nodes = [...all.values()].sort((a, b) => a.node.id < b.node.id ? -1 : a.node.id > b.node.id ? 1 : 0);
   if (changesOnly) {
     const touched = new Set(edges.flatMap((e) => [e.source, e.target]));
@@ -24086,7 +24092,7 @@ function draw(nodes, edges) {
   const styled = { added: [], removed: [], changed: [] };
   edges.forEach((edge, index) => {
     const arrow = edge.state === "removed" ? "-.->" : "-->";
-    const typed = edge.access ? `|${EDGE_ACCESS_META[edge.access].label}|` : "";
+    const typed = edge.access ? `|${edgeAccessLabel({ access: edge.access, conditional: edge.conditional })}|` : "";
     lines2.push(`  ${ids.get(edge.source)} ${arrow}${typed} ${ids.get(edge.target)}`);
     if (edge.state !== "same") styled[edge.state].push(index);
   });
@@ -24187,7 +24193,7 @@ function diffModels(base, head) {
   for (const [key, edge] of headEdges) {
     const before = baseEdges.get(key);
     if (!before) edges.added.push(edge);
-    else if (before.origin === edge.origin && before.access === edge.access) edges.unchanged.push(edge);
+    else if (before.origin === edge.origin && before.access === edge.access && Boolean(before.conditional) === Boolean(edge.conditional)) edges.unchanged.push(edge);
     else edges.changed.push({ before, after: edge });
   }
   for (const [key, edge] of baseEdges) if (!headEdges.has(key)) edges.removed.push(edge);
@@ -24284,17 +24290,19 @@ function accessLines(diff) {
   const rows = [];
   const row = (source, target, rank, text) => rows.push({ rank, key: `${source}\0${target}`, text });
   const widest = (access) => access === "unscoped" ? 0 : access === "admin" ? 1 : 2;
+  const when = (e) => e.conditional ? " (conditional)" : "";
   for (const e of diff.edges.added) {
-    if (e.access) row(e.source, e.target, widest(e.access), `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
+    if (e.access) row(e.source, e.target, widest(e.access), `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}${when(e)}`);
   }
   for (const e of diff.edges.removed) {
-    if (e.access) row(e.source, e.target, 4, `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}`);
+    if (e.access) row(e.source, e.target, 4, `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}${when(e)}`);
   }
   for (const { before, after } of diff.edges.changed) {
-    if (before.access === after.access) continue;
-    const from = before.access ? EDGE_ACCESS_META[before.access].label : "a plain connection";
-    const to = after.access ? EDGE_ACCESS_META[after.access].label : "a plain connection";
-    const widened = after.access !== void 0 && strongerAccess(before.access, after.access) === after.access;
+    if (before.access === after.access && Boolean(before.conditional) === Boolean(after.conditional)) continue;
+    const describe3 = (e) => e.access ? edgeAccessLabel({ access: e.access, conditional: e.conditional }) : "a plain connection";
+    const from = describe3(before);
+    const to = describe3(after);
+    const widened = after.access !== void 0 && (before.access === after.access ? Boolean(before.conditional) && !after.conditional : strongerAccess(before.access, after.access) === after.access);
     row(
       after.source,
       after.target,

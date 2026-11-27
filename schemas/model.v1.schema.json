@@ -129,6 +129,9 @@
               "admin",
               "unscoped"
             ]
+          },
+          "conditional": {
+            "type": "boolean"
           }
         },
         "required": [

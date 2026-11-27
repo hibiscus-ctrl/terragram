@@ -27,6 +27,8 @@ type IamEdge = {
   /** The resource it reaches, or `ANY_RESOURCE_ID`. */
   target: string;
   access: EdgeAccess;
+  /** Every statement behind the grant carries a Condition. The level is the same; the condition may narrow when it applies. */
+  conditional?: true;
 };
 
 export type IamReading = {
@@ -40,6 +42,20 @@ const RANK: Record<EdgeAccess, number> = { "runs-as": 0, read: 1, write: 2, admi
 /** The stronger of two access types: a pair of nodes gets one edge, typed by the most it can do. */
 export function strongerAccess(a: EdgeAccess | undefined, b: EdgeAccess): EdgeAccess {
   return a !== undefined && RANK[a] >= RANK[b] ? a : b;
+}
+
+type Typed = { access?: EdgeAccess | undefined; conditional?: boolean | undefined };
+
+/**
+ * Two grants over one pair of nodes: the type is the stronger one, and the edge is
+ * conditional only when every grant at that strongest level is. A condition never lowers a
+ * level, and a grant without one is never hidden behind a conditional one.
+ */
+export function mergeAccess(a: Typed | undefined, b: { access: EdgeAccess; conditional?: boolean | undefined }): { access: EdgeAccess; conditional?: true } {
+  const access = strongerAccess(a?.access, b.access);
+  const holds = (t: Typed | undefined) => t?.access === access;
+  const conditional = [a, b].filter(holds).every((t) => t?.conditional === true);
+  return conditional ? { access, conditional: true } : { access };
 }
 
 /* ------------------------------------------------------------ value reader -- */
@@ -291,6 +307,8 @@ type Statement = {
   notActions: boolean;
   resources: Val[];
   notResources: boolean;
+  /** The statement has a Condition: some request it allows may be refused. */
+  conditional: boolean;
 };
 
 const norm = (key: string) => key.toLowerCase().replace(/_/g, "");
@@ -327,7 +345,21 @@ function statementsOfDocument(doc: Val): Statement[] | null {
   return out;
 }
 
-function statementOf(st: Val): Statement {
+/**
+ * Whether a Condition value is a real one: an object with at least one operator, each
+ * holding at least one key. An empty object, a string or anything unreadable is not
+ * counted, so a statement is only ever marked conditional on evidence.
+ */
+function isCondition(v: Val): boolean {
+  return (
+    v.t === "obj" &&
+    v.entries.length > 0 &&
+    v.entries.every((operator) => operator.value.t === "obj" && operator.value.entries.length > 0)
+  );
+}
+
+function statementOf(st: Val, conditionBlock = false): Statement {
+  const conditional = conditionBlock || valuesOf(st, "condition", "conditions").some(isCondition);
   const actions = valuesOf(st, "action", "actions");
   const notActions = valuesOf(st, "notaction", "notactions");
   const resources = valuesOf(st, "resource", "resources");
@@ -338,6 +370,7 @@ function statementOf(st: Val): Statement {
     notActions: notActions.length > 0,
     resources: resources.length + notResources.length > 0 ? [...resources, ...notResources].flatMap(listOf) : [UNREADABLE],
     notResources: notResources.length > 0,
+    conditional,
   };
 }
 
@@ -356,9 +389,14 @@ function statementsOfDataBlock(doc: HclBlock): Statement[] | null {
     // An attribute that cannot be read is kept as unreadable, not dropped: a dropped one reads as "grants nothing".
     const obj: Val = { t: "obj", entries: b.attributes.map((a) => ({ key: a.key, value: readVal(a.value) ?? UNREADABLE })) };
     if (isDeny(valuesOf(obj, "effect"))) continue;
-    out.push(statementOf(obj));
+    out.push(statementOf(obj, b.blocks.some(isConditionBlock)));
   }
   return out;
+}
+
+/** A static `condition { test, variable, values }` block; a `dynamic` one is not counted. */
+function isConditionBlock(b: HclBlock): boolean {
+  return b.type === "condition" && ["test", "variable", "values"].every((key) => attributeOf(b, key) !== undefined);
 }
 
 const READ_VERBS = ["get", "list", "describe", "head", "batchget", "query", "scan", "select", "lookup", "view", "search", "read", "receive", "decrypt", "verify"];
@@ -501,8 +539,9 @@ function edgesOfStatements(
     if (st.actions.length === 0 || st.resources.length === 0) continue;
     const reach = st.notResources ? { targets: [], broad: true } : reachOf(st.resources, owner);
     const level = levelOf(st.actions, st.notActions);
-    for (const target of reach.targets) if (target !== source) out.push({ source, target, access: level });
-    if (reach.broad) out.push({ source, target: ANY_RESOURCE_ID, access: "unscoped" });
+    const conditional = st.conditional ? ({ conditional: true } as const) : {};
+    for (const target of reach.targets) if (target !== source) out.push({ source, target, access: level, ...conditional });
+    if (reach.broad) out.push({ source, target: ANY_RESOURCE_ID, access: "unscoped", ...conditional });
   }
   return out;
 }
@@ -718,7 +757,7 @@ export function readIam(blocks: HclBlock[], owner: (address: string) => string |
   for (const edge of reading.edges) {
     const key = `${edge.source}->${edge.target}`;
     const existing = merged.get(key);
-    merged.set(key, existing ? { ...existing, access: strongerAccess(existing.access, edge.access) } : edge);
+    merged.set(key, existing ? { source: edge.source, target: edge.target, ...mergeAccess(existing, edge) } : edge);
   }
   reading.edges = [...merged.values()];
   return reading;

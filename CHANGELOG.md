@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A typed edge whose policy statement has a `Condition` (or a `condition` block in an `aws_iam_policy_document`) is
+  marked `conditional: true`: the access level is the same one the statement would grant, and the edge is never dropped
+  or lowered because of it. It stays conditional only while every grant at its strongest level is. The SVG, the
+  pull request diagram, the plain-English description and the Action's "Access changes" list say "conditional", and a
+  condition added or removed is a change of its own. `conditional` is an optional field on a model edge
+  (`diagram.model/v1`); the condition itself never reaches the model.
 - The Action's pull request comment lists the access changes in the model: edges whose access type was added, removed,
   widened or narrowed, widest and unscoped first, as component names and levels only. A changed access type counts as a
   changed edge in the diagram and the table.

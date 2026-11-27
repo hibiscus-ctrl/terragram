@@ -58,7 +58,8 @@ const EDGE_ORIGINS = ["derived", "user"] as const;
  * identity to a resource its policy names, by the strongest level the policy grants
  * there. `unscoped` is a grant that is not bounded to a drawn resource: a wildcard
  * resource, a policy that cannot be read, a role assigned over a whole subscription. An
- * edge with no access type is a plain connection.
+ * edge with no access type is a plain connection. `conditional` marks a typed edge whose
+ * grant is behind a condition; the type is what the grant would allow, never narrowed.
  */
 const EDGE_ACCESS = ["runs-as", "read", "write", "admin", "unscoped"] as const;
 export type EdgeAccess = (typeof EDGE_ACCESS)[number];
@@ -73,12 +74,19 @@ export const EDGE_ACCESS_META: Record<EdgeAccess, { label: string; phrase: strin
   unscoped: { label: "unscoped", phrase: "has unscoped access to", color: "#b91c1c", dash: "6 3" },
 };
 
+/** The word an edge's access type is drawn with: the type, and "conditional" when its grant is behind a condition. Fixed wording, never text from the file. */
+export function edgeAccessLabel(edge: { access: EdgeAccess; conditional?: boolean | undefined }): string {
+  return edge.conditional ? `${EDGE_ACCESS_META[edge.access].label}, conditional` : EDGE_ACCESS_META[edge.access].label;
+}
+
 const modelEdgeSchema = z.object({
   id: z.string().min(1).max(80),
   source: z.string().min(1).max(80),
   target: z.string().min(1).max(80),
   origin: z.enum(EDGE_ORIGINS).default("derived"),
   access: z.enum(EDGE_ACCESS).optional(),
+  /** Set (to true) when every grant behind a typed edge carries a condition. Absent otherwise. */
+  conditional: z.boolean().optional(),
 });
 export type ModelEdge = z.infer<typeof modelEdgeSchema>;
 

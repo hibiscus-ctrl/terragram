@@ -56,7 +56,9 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
   role over anything but one drawn resource). The policy is read as text, never evaluated, and never kept: the model gets edges, not
   statements. Understating access is the dangerous direction, so whatever the reader is not certain of (an attribute it cannot read, a
   template that is not one drawn reference, an action with a character it cannot match, nesting past 64 levels) is `unscoped`, never dropped.
-  Deny statements are not read. A new reader that needs the policy's words in the model is a schema decision, not a tweak.
+  Deny statements are not read. A statement with a real Condition (an object of operators, or a static `condition` block) marks its edges
+  `conditional: true`: the level is unchanged, the edge is never dropped or lowered, and it stays conditional only while every grant at its
+  strongest level is (`mergeAccess`). The condition's own text is never read into the model. A new reader that needs the policy's words in the model is a schema decision, not a tweak.
   Renderers take the wording and colour from `EDGE_ACCESS_META` (`model.ts`); an untyped edge must still draw exactly as before.
 - **Azure SKU check** (`azure-sku.ts`, data in `azure-sku-data.ts`). `generate` and the Action run `checkAzureSkus` over the
   emitted files and report its findings as warnings (CLI notes, the Action's report). It parses the HCL, reads the SKU argument of
