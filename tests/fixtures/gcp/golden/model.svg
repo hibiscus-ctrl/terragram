@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2722" height="362" viewBox="0 0 2722 362">
+<rect width="2722" height="362" fill="#faf8f4"/>
+<path d="M 758 86 C 758 116, 434 116, 434 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 434 208 C 434 238, 434 238, 434 268" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 1514 86 C 1514 116, 2084 116, 2084 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 1514 86 C 1514 116, 1652 116, 1652 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 1514 86 C 1514 116, 1868 116, 1868 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 1514 86 C 1514 116, 1436 116, 1436 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 1514 86 C 1514 116, 660 116, 660 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 1956 86 C 1956 116, 2516 116, 2516 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 1956 86 C 1956 116, 1082 116, 1082 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 1956 86 C 1956 116, 2300 116, 2300 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 1956 86 C 1956 116, 1868 116, 1868 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 974 86 C 974 116, 660 116, 660 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 974 86 C 974 116, 1082 116, 1082 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 542 86 C 542 116, 660 116, 660 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 542 86 C 542 116, 1082 116, 1082 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/><path d="M 110 86 C 110 116, 660 116, 660 146" fill="none" stroke="#dad3c4" stroke-width="1.5"/>
+<g>
+  <rect x="672" y="24" width="172" height="62" rx="9" fill="#ffffff" stroke="#665e4f" stroke-width="1.5"/>
+  <circle cx="684" cy="42" r="3" fill="#665e4f"/>
+  <text x="694" y="45" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#665e4f" letter-spacing="0.5">EDGE</text>
+  <text x="684" y="68" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Internet</text>
+</g><g>
+  <rect x="240" y="24" width="172" height="62" rx="9" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
+  <circle cx="252" cy="42" r="3" fill="#b45309"/>
+  <text x="262" y="45" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#b45309" letter-spacing="0.5">IDENTITY</text>
+  <text x="252" y="68" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Project</text>
+</g><g>
+  <rect x="574" y="146" width="172" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+  <circle cx="586" cy="164" r="3" fill="#2563eb"/>
+  <text x="596" y="167" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.5">NETWORK</text>
+  <text x="586" y="190" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Virtual Network</text>
+</g><g>
+  <rect x="348" y="146" width="172" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+  <circle cx="360" cy="164" r="3" fill="#2563eb"/>
+  <text x="370" y="167" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.5">NETWORK</text>
+  <text x="360" y="190" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">DNS Zone</text>
+</g><g>
+  <rect x="348" y="268" width="172" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+  <circle cx="360" cy="286" r="3" fill="#2563eb"/>
+  <text x="370" y="289" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.5">NETWORK</text>
+  <text x="360" y="312" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Load Balancer</text>
+</g><g>
+  <rect x="1998" y="146" width="172" height="62" rx="9" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
+  <circle cx="2010" cy="164" r="3" fill="#b45309"/>
+  <text x="2020" y="167" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#b45309" letter-spacing="0.5">IDENTITY</text>
+  <text x="2010" y="190" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Managed Identity</text>
+</g><g>
+  <rect x="996" y="146" width="172" height="62" rx="9" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
+  <circle cx="1008" cy="164" r="3" fill="#b45309"/>
+  <text x="1018" y="167" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#b45309" letter-spacing="0.5">IDENTITY</text>
+  <text x="1008" y="190" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Managed Identity</text>
+</g><g>
+  <rect x="1428" y="24" width="172" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
+  <circle cx="1440" cy="42" r="3" fill="#047857"/>
+  <text x="1450" y="45" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.5">COMPUTE</text>
+  <text x="1440" y="68" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Containers</text>
+</g><g>
+  <rect x="1870" y="24" width="172" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
+  <circle cx="1882" cy="42" r="3" fill="#047857"/>
+  <text x="1892" y="45" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.5">COMPUTE</text>
+  <text x="1882" y="68" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Functions</text>
+</g><g>
+  <rect x="888" y="24" width="172" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
+  <circle cx="900" cy="42" r="3" fill="#047857"/>
+  <text x="910" y="45" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.5">COMPUTE</text>
+  <text x="900" y="68" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Kubernetes Cluster</text>
+</g><g>
+  <rect x="456" y="24" width="172" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
+  <circle cx="468" cy="42" r="3" fill="#047857"/>
+  <text x="478" y="45" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.5">COMPUTE</text>
+  <text x="468" y="68" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Virtual Machine</text>
+</g><g>
+  <rect x="1566" y="146" width="172" height="62" rx="9" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+  <circle cx="1578" cy="164" r="3" fill="#7c3aed"/>
+  <text x="1588" y="167" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#7c3aed" letter-spacing="0.5">STORAGE</text>
+  <text x="1578" y="190" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">PostgreSQL</text>
+</g><g>
+  <rect x="24" y="24" width="172" height="62" rx="9" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+  <circle cx="36" cy="42" r="3" fill="#7c3aed"/>
+  <text x="46" y="45" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#7c3aed" letter-spacing="0.5">STORAGE</text>
+  <text x="36" y="68" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Cache for Redis</text>
+</g><g>
+  <rect x="2214" y="146" width="172" height="62" rx="9" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+  <circle cx="2226" cy="164" r="3" fill="#7c3aed"/>
+  <text x="2236" y="167" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#7c3aed" letter-spacing="0.5">STORAGE</text>
+  <text x="2226" y="190" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Object Storage</text>
+</g><g>
+  <rect x="2430" y="146" width="172" height="62" rx="9" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+  <circle cx="2442" cy="164" r="3" fill="#7c3aed"/>
+  <text x="2452" y="167" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#7c3aed" letter-spacing="0.5">STORAGE</text>
+  <text x="2442" y="190" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Object Storage</text>
+</g><g>
+  <rect x="2086" y="24" width="172" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
+  <circle cx="2098" cy="42" r="3" fill="#047857"/>
+  <text x="2108" y="45" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.5">COMPUTE</text>
+  <text x="2098" y="68" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Static Site</text>
+</g><g>
+  <rect x="1782" y="146" width="172" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+  <circle cx="1794" cy="164" r="3" fill="#2563eb"/>
+  <text x="1804" y="167" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.5">NETWORK</text>
+  <text x="1794" y="190" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Message Queue</text>
+</g><g>
+  <rect x="1350" y="146" width="172" height="62" rx="9" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
+  <circle cx="1362" cy="164" r="3" fill="#b45309"/>
+  <text x="1372" y="167" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#b45309" letter-spacing="0.5">IDENTITY</text>
+  <text x="1362" y="190" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Secret Store</text>
+</g><g>
+  <rect x="2302" y="24" width="172" height="62" rx="9" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+  <circle cx="2314" cy="42" r="3" fill="#7c3aed"/>
+  <text x="2324" y="45" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#7c3aed" letter-spacing="0.5">STORAGE</text>
+  <text x="2314" y="68" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Data Warehouse</text>
+</g><g>
+  <rect x="2518" y="24" width="172" height="62" rx="9" fill="#ffffff" stroke="#0e7490" stroke-width="1.5"/>
+  <circle cx="2530" cy="42" r="3" fill="#0e7490"/>
+  <text x="2540" y="45" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="#0e7490" letter-spacing="0.5">OBSERVABILITY</text>
+  <text x="2530" y="68" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">Monitoring</text>
+</g>
+</svg>

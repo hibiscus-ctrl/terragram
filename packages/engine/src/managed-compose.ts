@@ -16,7 +16,7 @@ import {
   type ManagedModelId,
   migrateManagedModelId,
 } from "./managed-models.ts";
-import { CLOUDS, EMPTY_MODEL, type InfraModel } from "./model.ts";
+import { EMPTY_MODEL, GENERATED_CLOUDS, type InfraModel } from "./model.ts";
 import type { MessagesRequest, ModelClient } from "./ports.ts";
 
 /**
@@ -58,7 +58,7 @@ const TOOL_NAME = "emit_infrastructure";
 const toolOutputSchema = z.object({
   reply: z.string().default(""),
   /** The cloud the brief named, when it named one. */
-  cloud: z.enum(CLOUDS).nullable().default(null),
+  cloud: z.enum(GENERATED_CLOUDS).nullable().default(null),
   components: z
     .array(
       z.object({
@@ -127,7 +127,7 @@ function buildRequest(model: string, prompt: string, prev: InfraModel) {
             reply: { type: "string", description: "One or two sentences on what changed." },
             cloud: {
               type: ["string", "null"],
-              enum: [...CLOUDS, null],
+              enum: [...GENERATED_CLOUDS, null],
               description: "The cloud the user named, or null when they did not.",
             },
             components: {

@@ -11,7 +11,7 @@ import {
   MODEL_KIND_IDS,
   resourceTypeToKind,
 } from "terragram-engine/kinds";
-import { type Cloud, CLOUDS, EMPTY_MODEL, type InfraModel } from "terragram-engine/model";
+import { type Cloud, EMPTY_MODEL, GENERATED_CLOUDS, type InfraModel } from "terragram-engine/model";
 import { parseTerraform } from "terragram-engine/parse";
 import { emitTerraform } from "terragram-engine/terraform";
 
@@ -21,7 +21,9 @@ import { emitTerraform } from "terragram-engine/terraform";
  * replaces that hope with a failing test.
  */
 
-const EMITTABLE = KIND_DEFINITIONS.filter((d) => d.role !== "conceptual" && d.role !== "external");
+const REAL = KIND_DEFINITIONS.filter((d) => d.role !== "conceptual" && d.role !== "external");
+/** The kinds Terragram builds: those with a spec on a cloud it generates for. Google Cloud's own kinds are only read. */
+const EMITTABLE = REAL.filter((d) => d.azure !== null || d.aws !== null);
 
 /** A one-node model for a kind, so each kind is exercised on its own. */
 function modelFor(kind: string): InfraModel {
@@ -44,7 +46,15 @@ describe("kind registry", () => {
     }
   });
 
-  for (const cloud of CLOUDS) {
+  it("gives every kind that is only read a Google Cloud spec, and no emit", () => {
+    for (const definition of REAL.filter((d) => !EMITTABLE.includes(d))) {
+      assert.ok(definition.gcp, `${definition.kind} has no spec on any cloud`);
+      assert.equal("emit" in definition.gcp, false);
+      assert.equal(MODEL_KIND_IDS.includes(definition.kind), false);
+    }
+  });
+
+  for (const cloud of GENERATED_CLOUDS) {
     for (const definition of EMITTABLE) {
       it(`emits valid-shaped ${cloud} HCL for ${definition.kind}`, () => {
         const out = emitTerraform(modelFor(definition.kind), cloud as Cloud);

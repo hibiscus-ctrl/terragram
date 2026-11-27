@@ -135,7 +135,7 @@ describe("parseTerraform", () => {
   });
 
   it("rejects a file whose resources are all unmappable", () => {
-    const result = parseTerraform('resource "google_storage_bucket" "b" {\n  name = "x"\n}');
+    const result = parseTerraform('resource "oci_objectstorage_bucket" "b" {\n  name = "x"\n}');
     assert.equal(result.ok, false);
   });
 });

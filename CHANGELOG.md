@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `terragram parse` reads Google Cloud. A file of `google_*` resources parses to a model whose cloud is `gcp`, where it used to be
+  refused as "none of the resources can be mapped". The new `project`, `kubernetes`, `virtual-machine` and `data-warehouse`
+  kinds and a Google Cloud spec on the existing ones (`dns`, `load-balancer`, `containers`, `functions`, `queue`, `vnet`,
+  `postgres`, `mysql`, `nosql`, `redis-cache`, `object-storage`, `static-site`, `key-vault`, `entra-id` for a service
+  account, `monitoring`, `front-door`, `app-service`) map the common resources: projects, networks and subnetworks, instances, templates
+  and instance groups, GKE clusters and node pools, Cloud Run, Cloud Functions, Cloud SQL, storage buckets (a bucket with a
+  `website` block is a static site), Pub/Sub topics and subscriptions, Secret Manager secrets, KMS key rings and keys, BigQuery
+  datasets, service accounts, load balancer pieces, DNS zones and Cloud Armor policies, plus the Google registry modules for them.
+  The references between resources are the edges, as for AWS and Azure; the `project` every resource names is where it lives, not a
+  wire to it. A file with resources of more than one cloud goes to the one of AWS and Azure most of them are on, a tie to Azure and then AWS as before; it is `gcp` only when it has no AWS or Azure resource or module in it, so a Google part of a mixed file is reported as left out of the Terraform when it has no component to build, never as "nothing left out".
+  Google Cloud is read only: it is drawn (SVG, Mermaid, draw.io, the pull request diagram), explained ("This design targets Google Cloud
+  in London (europe-west2)"), diffed and given a receipt, but no Terraform is generated for it. `emitTerraform` returns no files and
+  no provider for it, the receipt's `plan` is empty and still verifies, `terragram generate --cloud gcp` is refused, and a model
+  or a picture a managed model reads cannot choose it. `gcp` joins `azure` and `aws` in the `cloud` enum of the model and receipt
+  schemas (`diagram.model/v1`, `diagram.receipt/v3`; `diagram.receipt/v2` keeps its two). The ids do not change: adding an enum value is additive, documents for the other two clouds are unchanged, and the field's `description` in both schemas tells a consumer with a closed list to accept `gcp`. The new kinds are not offered to a
+  translator, since nothing it chose could be built. `GENERATED_CLOUDS` is the list of clouds a brief or a command can build for.
 - `terragram parse` types a policy attached by the ARN of a well-known AWS managed policy instead of leaving it `unscoped`.
   A small bundled table (about 55 policies, dated, in `aws-managed-policies.ts`) gives each policy's level per service,
   read from its document in the AWS managed policy reference with the same rule that levels an action in an inline

@@ -1,0 +1,42 @@
+flowchart LR
+  n0["Containers<br/>containers"]
+  n1["Data Warehouse<br/>data-warehouse"]
+  n2["DNS Zone<br/>dns"]
+  n3["Managed Identity<br/>entra-id"]
+  n4["Managed Identity<br/>entra-id"]
+  n5["Functions<br/>functions"]
+  n6["Internet<br/>internet"]
+  n7["Secret Store<br/>key-vault"]
+  n8["Kubernetes Cluster<br/>kubernetes"]
+  n9["Load Balancer<br/>load-balancer"]
+  n10["Monitoring<br/>monitoring"]
+  n11["Object Storage<br/>object-storage"]
+  n12["Object Storage<br/>object-storage"]
+  n13["PostgreSQL<br/>postgres"]
+  n14["Project<br/>project"]
+  n15["Message Queue<br/>queue"]
+  n16["Cache for Redis<br/>redis-cache"]
+  n17["Static Site<br/>static-site"]
+  n18["Virtual Machine<br/>virtual-machine"]
+  n19["Virtual Network<br/>vnet"]
+  n6 --> n2
+  n2 --> n9
+  n0 --> n3
+  n0 --> n13
+  n0 --> n15
+  n0 --> n7
+  n0 --> n19
+  n5 --> n12
+  n5 --> n4
+  n5 --> n11
+  n5 --> n15
+  n8 --> n19
+  n8 --> n4
+  n18 --> n19
+  n18 --> n4
+  n16 --> n19
+  classDef added fill:#d1fae5,stroke:#047857,stroke-width:2px,color:#064e3b
+  classDef removed fill:#fee2e2,stroke:#b91c1c,stroke-width:2px,stroke-dasharray:5 5,color:#7f1d1d
+  classDef changed fill:#fef3c7,stroke:#b45309,stroke-width:2px,color:#78350f
+  class n0,n1,n2,n3,n4,n5,n6,n7,n8,n9,n10,n11,n12,n13,n14,n15,n16,n17,n18,n19 added
+  linkStyle 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 stroke:#047857,stroke-width:2px

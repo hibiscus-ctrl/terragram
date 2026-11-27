@@ -69,6 +69,15 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
   unless none is drawn or there are more than `MAX_MANAGED_TARGETS`/`MAX_MANAGED_EDGES` allow. The table lists every service a policy grants on,
   drawn or not (a service with no drawn type is the `any-resource` edge alone). An ARN not in the table stays `unscoped`.
   Renderers take the wording and colour from `EDGE_ACCESS_META` (`model.ts`); an untyped edge must still draw exactly as before.
+- **Google Cloud is read, not generated** (`gcp` in `CLOUDS`, not in `GENERATED_CLOUDS`). A file is `gcp` only when it has no AWS or Azure resource or module in it (`detectCloud`); otherwise it goes to the one of those it has most of, and `assessFeasibility` says which Google parts that cloud cannot build. A kind's `gcp` entry is a `ReadSpec`
+  (`type`, `matches`, `matchBlock`, `read`, `moduleSource`): what a `google_*` resource or Google registry module reverse-maps to, never an
+  `emit`. `cloudSpec(kind, "gcp")` is always null, so anything that asks "can this be built" (`emitTerraform`, `assessFeasibility`) treats
+  the cloud as having no plan: `emitTerraform` returns no files, no provider and no modules, a receipt's `plan` is `[]` (`verifyBundle` hashes
+  the model alone), and `parseCloud` for `generate` takes only `GENERATED_CLOUDS`. Code that iterates clouds to emit (the emit gate, the
+  module-input check, the generation tests, the managed models' `cloud` enums) iterates `GENERATED_CLOUDS`, not `CLOUDS`. A kind only Google
+  Cloud has (`project`, `kubernetes`, `virtual-machine`, `data-warehouse`) is left out of `MODEL_KIND_IDS`. The `project` kind is a container:
+  `parse` draws no plain edge to it, and the entry point of the picture is never it. To add emission for Google Cloud later, give a kind an
+  `emit`, move `gcp` into `GENERATED_CLOUDS` and put it through `validate:emit`; do not half-do it.
 - **Azure SKU check** (`azure-sku.ts`, data in `azure-sku-data.ts`). `generate` and the Action run `checkAzureSkus` over the
   emitted files and report its findings as warnings (CLI notes, the Action's report). It parses the HCL, reads the SKU argument of
   the module or raw resource of each kind it knows (`BINDINGS`), and the region from `location` (a string, a variable default or
@@ -120,6 +129,10 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
   `diagram.receipt/v2` and the `terragram.receipt/v1`/`v2` ids by the original one, kept unchanged so issued
   receipts verify (`VERIFIABLE_RECEIPT_SCHEMAS`); any other id is refused. New receipts are always v3. A change to
   what the v3 hash covers needs a new schema id, never an edit. The model reader accepts only `diagram.model/v1`.
+  Adding a value to an enum (a cloud, an access level) is additive inside a version: a document without the new value is byte for byte what it was, and
+  a consumer that validates against a closed list must learn the value before it sees one, which is the fail-closed outcome. `gcp` joined `cloud` that way, and the
+  schemas say so in the field's `description` (`CLOUD_DESCRIPTION`). A new id is for a change to what a hash covers or to what an existing value means, since it would
+  otherwise force every Azure and AWS document to be reissued.
 - **Codename versus wire names.** `terragram` is the repository, package and command name for now.
   Anything that lands in a document, generated code or a customer's repository says `diagram`:
   the schema ids, the `ManagedBy = "diagram"` tag, the Action's `diagram.json`, `_diagram/` and

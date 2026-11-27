@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 
 import { composeFromPrompt } from "terragram-engine/engine";
 import { block, mapExpression, quote, renderDocument } from "terragram-engine/hcl";
-import { CLOUDS, type Cloud } from "terragram-engine/model";
+import { GENERATED_CLOUDS, type Cloud } from "terragram-engine/model";
 import { emitTerraform } from "terragram-engine/terraform";
 import { templateModel, WORKSPACE_TEMPLATES } from "terragram-engine/templates";
 
@@ -81,7 +81,7 @@ function formattingProblems(content: string): string[] {
 describe("every emitted document", () => {
   const cases: Array<{ label: string; cloud: Cloud; content: string }> = [];
   for (const template of WORKSPACE_TEMPLATES) {
-    for (const cloud of CLOUDS) {
+    for (const cloud of GENERATED_CLOUDS) {
       for (const file of emitTerraform(templateModel(template), cloud as Cloud).files) {
         cases.push({ label: `${template.id}/${file.name}`, cloud: cloud as Cloud, content: file.content });
       }

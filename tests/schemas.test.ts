@@ -52,6 +52,8 @@ const validModel = validator("model.v1.schema.json");
 const validReceipt = validator("receipt.v3.schema.json");
 const validLegacyReceipt = validator("receipt.v2.schema.json");
 
+const GCP_TERRAFORM = readFileSync(new URL("./fixtures/gcp/main.tf", import.meta.url), "utf8");
+
 describe("schemas/model.v1.schema.json", () => {
   const WEB = composeFromPrompt("A web app with a Postgres database and Redis cache").model;
   const documents: Array<[string, unknown]> = [
@@ -61,6 +63,7 @@ describe("schemas/model.v1.schema.json", () => {
     ["parsed Mermaid", (parseMermaid(SAMPLE_MERMAID) as { model: InfraModel }).model],
     ["a document with its schema id and cloud", { ...WEB, schema: MODEL_SCHEMA, cloud: "aws" }],
     ["an empty model", { nodes: [], edges: [] }],
+    ["parsed Google Cloud Terraform", { ...(parseTerraform(GCP_TERRAFORM) as { model: InfraModel }).model, schema: MODEL_SCHEMA, cloud: "gcp" }],
   ];
 
   for (const [name, doc] of documents) {
@@ -88,7 +91,7 @@ describe("schemas/model.v1.schema.json", () => {
     ],
     ["a node with an unknown category", { nodes: [{ ...node, category: "quantum" }], edges: [] }],
     ["a node id over 80 characters", { nodes: [{ ...node, id: "x".repeat(81) }], edges: [] }],
-    ["an unknown cloud", { nodes: [], edges: [], cloud: "gcp" }],
+    ["an unknown cloud", { nodes: [], edges: [], cloud: "oci" }],
     ["a different schema id", { nodes: [], edges: [], schema: "diagram.model/v9" }],
     ["a model with no edges list", { nodes: [] }],
   ];
@@ -106,6 +109,18 @@ describe("schemas/model.v1.schema.json", () => {
     };
     assert.equal(schema.properties.nodes.maxItems, 300);
     assert.equal(schema.properties.edges.maxItems, 600);
+  });
+});
+
+describe("the cloud a document names", () => {
+  it("says in both schemas that gcp joined the enum inside the same schema id, and leaves the other two as they were", () => {
+    for (const file of ["model.v1.schema.json", "receipt.v3.schema.json"]) {
+      const schema = JSON.parse(readFileSync(new URL(`../schemas/${file}`, import.meta.url), "utf8"));
+      assert.deepEqual(schema.properties.cloud.enum, ["azure", "aws", "gcp"]);
+      assert.match(schema.properties.cloud.description, /closed list must accept `gcp`/);
+    }
+    const legacy = JSON.parse(readFileSync(new URL("../schemas/receipt.v2.schema.json", import.meta.url), "utf8"));
+    assert.deepEqual(legacy.properties.cloud.enum, ["azure", "aws"]);
   });
 });
 
@@ -141,6 +156,19 @@ describe("schemas/receipt.v3.schema.json", () => {
       assert.equal(evidenceReceiptSchema.safeParse(receipt).success, true);
     }
     assert.equal(signed.receipt.signed, true);
+  });
+
+  it("accepts the receipt of a Google Cloud model, which has no plan", async () => {
+    const parsed = parseTerraform(GCP_TERRAFORM);
+    assert.ok(parsed.ok);
+    const { receipt } = await buildEvidenceReceipt(parsed.model, "gcp", "deterministic", "alice", "2026-11-27T00:00:00Z", {
+      nodeVersion: "v24.0.0",
+    });
+    assert.equal(receipt.cloud, "gcp");
+    assert.equal(validReceipt(receipt), true, JSON.stringify(validReceipt.errors));
+    assert.equal(evidenceReceiptSchema.safeParse(receipt).success, true);
+    // A v2 receipt was issued before Google Cloud was read.
+    assert.equal(validLegacyReceipt({ ...receipt, schema: "diagram.receipt/v2" }), false);
   });
 
   it("rejects a receipt that is not one", async () => {

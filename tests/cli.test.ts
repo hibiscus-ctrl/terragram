@@ -17,7 +17,7 @@ import { modelToSvg } from "terragram-engine/diagram-svg";
 import { composeFromPrompt } from "terragram-engine/engine";
 import { explainModel } from "terragram-engine/explain";
 import { parseMermaid } from "terragram-engine/interchange";
-import { CLOUDS, type InfraModel } from "terragram-engine/model";
+import { GENERATED_CLOUDS, type InfraModel } from "terragram-engine/model";
 import { parseTerraform } from "terragram-engine/parse";
 import type { Signer } from "terragram-engine/ports";
 import { buildBundle } from "terragram-engine/receipt";
@@ -86,7 +86,7 @@ const BRIEF_API = BRIEFS[2] ?? "";
 
 describe("terragram generate matches the engine's emit path", () => {
   for (const [i, brief] of BRIEFS.entries()) {
-    for (const cloud of CLOUDS) {
+    for (const cloud of GENERATED_CLOUDS) {
       it(`brief ${i + 1} on ${cloud}`, async () => {
         const out = fresh("gen");
         const result = await cli(["generate", "--prompt", brief, "--cloud", cloud, "-o", out]);
@@ -175,7 +175,7 @@ describe("terragram generate matches the engine's emit path", () => {
     { skip: !terraformInstalled && "terraform is not installed" },
     async () => {
       for (const brief of BRIEFS) {
-        for (const cloud of CLOUDS) {
+        for (const cloud of GENERATED_CLOUDS) {
           const out = fresh("fmt");
           assert.equal((await cli(["generate", "--prompt", brief, "--cloud", cloud, "-o", out])).code, 0);
           const fmt = spawnSync("terraform", ["fmt", "-check", "-recursive", "-diff", out], {
@@ -253,6 +253,28 @@ describe("terragram parse, render and explain", () => {
       assert.equal(result.code, 0, result.stderr);
       assert.equal(result.stdout, `${explainModel(model, "aws", emitTerraform(model, "aws").regionLabel)}\n`);
     }
+  });
+
+  it("parses, renders and explains a Google Cloud file, and builds nothing from it", async () => {
+    const dir = fresh("gcp");
+    const out = join(dir, "model.json");
+    const parse = await cli(["parse", join(import.meta.dirname, "fixtures/gcp/main.tf"), "-o", out]);
+    assert.equal(parse.code, 0, parse.stderr);
+    const document = JSON.parse(readFileSync(out, "utf8")) as InfraModel & { cloud: string };
+    assert.equal(document.cloud, "gcp");
+    assert.equal(validModel(document), true, JSON.stringify(validModel.errors));
+
+    const explained = await cli(["explain", out]);
+    assert.equal(explained.code, 0, explained.stderr);
+    assert.match(explained.stdout, /^This design targets Google Cloud in London \(europe-west2\)/);
+
+    const rendered = await cli(["render", out, "-o", join(dir, "diagram.svg")]);
+    assert.equal(rendered.code, 0, rendered.stderr);
+    assert.match(readFileSync(join(dir, "diagram.svg"), "utf8"), /^<svg /);
+
+    const generated = await cli(["generate", "--prompt", "a postgres database", "--cloud", "gcp", "-o", join(dir, "tf")]);
+    assert.equal(generated.code, 2);
+    assert.match(generated.stderr, /--cloud gcp is not available here/);
   });
 
   it("refuses a file that is not a model, and says why", async () => {

@@ -63,7 +63,7 @@ import { dirname, join } from "node:path";
 import { errorMessage, retry, spawn } from "./lib/runtime.ts";
 
 import { composeFromPrompt } from "terragram-engine/engine";
-import { type Cloud, CLOUDS, type InfraModel } from "terragram-engine/model";
+import { type Cloud, GENERATED_CLOUDS, type InfraModel } from "terragram-engine/model";
 import { emitTerraform } from "terragram-engine/terraform";
 import { templateModel, WORKSPACE_TEMPLATES } from "terragram-engine/templates";
 import { BRIEFS } from "./emit-briefs.ts";
@@ -332,12 +332,12 @@ type Case = { label: string; slug: string; cloud: Cloud; model: InfraModel };
 
 const cases: Case[] = [];
 for (const [i, brief] of BRIEFS.entries()) {
-  for (const cloud of CLOUDS) {
+  for (const cloud of GENERATED_CLOUDS) {
     cases.push({ label: brief, slug: `brief-${i + 1}`, cloud, model: composeFromPrompt(brief).model });
   }
 }
 for (const template of WORKSPACE_TEMPLATES) {
-  for (const cloud of CLOUDS) {
+  for (const cloud of GENERATED_CLOUDS) {
     cases.push({ label: `template:${template.id}`, slug: template.id, cloud, model: templateModel(template) });
   }
 }

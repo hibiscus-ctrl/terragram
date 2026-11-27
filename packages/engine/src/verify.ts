@@ -160,7 +160,7 @@ export async function verifyBundle(entries: BundleEntry[], options: VerifyOption
   const planFiles = bundlePlanFiles(entries);
   let hash: VerifyReport["hash"];
 
-  if (!modelEntry || planFiles.length === 0) {
+  if (!modelEntry || (planFiles.length === 0 && receipt.plan.length > 0)) {
     hash = {
       status: "unavailable",
       expected: receipt.contentHash,

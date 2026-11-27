@@ -167,8 +167,10 @@
       "type": "string",
       "enum": [
         "azure",
-        "aws"
-      ]
+        "aws",
+        "gcp"
+      ],
+      "description": "The cloud the document describes. `gcp` is read only: such a model is drawn and explained, no Terraform is generated for it and its receipt has an empty plan. A reader that validates this field against a closed list must accept `gcp`; documents for `azure` and `aws` are unchanged."
     }
   },
   "required": [

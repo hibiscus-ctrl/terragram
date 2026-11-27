@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import { checkAzureSkus } from "terragram-engine/azure-sku";
 import { assessFeasibility } from "terragram-engine/feasibility";
 import { parseMermaid } from "terragram-engine/interchange";
-import { type Cloud, type InfraModel, resourceNodes } from "terragram-engine/model";
+import { type Cloud, GENERATED_CLOUDS, type InfraModel, resourceNodes } from "terragram-engine/model";
 import { emitTerraform } from "terragram-engine/terraform";
 
 import { composerFor } from "../inference.ts";
@@ -50,7 +50,7 @@ export async function generate(argv: string[], io: Io): Promise<number> {
     throw new UsageError("give exactly one of --prompt <text> or --mermaid <file>");
   }
   if (values.output === undefined) throw new UsageError("-o <dir> is required");
-  const chosenCloud = parseCloud(values.cloud);
+  const chosenCloud = parseCloud(values.cloud, GENERATED_CLOUDS);
 
   let model: InfraModel;
   let detectedCloud: Cloud | undefined;

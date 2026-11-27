@@ -74,6 +74,7 @@ export type TerraformOutput = {
 const CLOUD_CONFIG: Record<Cloud, { region: string; regionLabel: string; label: string }> = {
   azure: { region: "uksouth", regionLabel: "UK South", label: "Azure" },
   aws: { region: "eu-west-2", regionLabel: "London (eu-west-2)", label: "AWS" },
+  gcp: { region: "europe-west2", regionLabel: "London (europe-west2)", label: "Google Cloud" },
 };
 
 const TOOL_LABEL: Record<TerraformTool, string> = {
@@ -499,6 +500,10 @@ export function emitTerraform(
   const problems = attributeProblems(resourceNodes(model));
   if (problems.length > 0) throw new ModelAttributeError(problems);
   const config = CLOUD_CONFIG[cloud];
+  // Google Cloud is read, drawn and explained, not generated: no provider, no files, nothing to compare or write.
+  if (cloud === "gcp") {
+    return { provider: "", providerVersion: "", region: config.region, regionLabel: config.regionLabel, tool, files: [], modules: [] };
+  }
   const provider = providerFor(cloud);
 
   const emitted: Emitted[] = [];

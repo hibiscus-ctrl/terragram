@@ -8,10 +8,14 @@ import { CommandError, type Io, readText, UsageError } from "./io.ts";
 /** The cloud a command targets when nothing says otherwise. */
 export const DEFAULT_CLOUD: Cloud = "azure";
 
-export function parseCloud(value: string | undefined): Cloud | undefined {
+/** `--cloud`, limited to `allowed` (every cloud a model can describe unless a command only builds for some). */
+export function parseCloud(value: string | undefined, allowed: readonly Cloud[] = CLOUDS): Cloud | undefined {
   if (value === undefined) return undefined;
   const cloud = CLOUDS.find((c) => c === value);
-  if (!cloud) throw new UsageError(`--cloud must be one of ${CLOUDS.join(", ")} (got "${value}")`);
+  if (cloud && !allowed.includes(cloud)) {
+    throw new UsageError(`--cloud ${cloud} is not available here: ${cloud} is read, drawn and explained, but Terraform is not generated for it`);
+  }
+  if (!cloud) throw new UsageError(`--cloud must be one of ${allowed.join(", ")} (got "${value}")`);
   return cloud;
 }
 
