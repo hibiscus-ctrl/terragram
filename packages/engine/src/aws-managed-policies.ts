@@ -43,7 +43,7 @@
  * the policy.
  */
 
-export type ManagedLevel = "read" | "write" | "admin";
+type ManagedLevel = "read" | "write" | "admin";
 
 /** A service prefix (or `*` for every service), the level the policy grants there, and `true` when every action at that level has a Condition. */
 export type ManagedGrant = readonly [service: string, level: ManagedLevel, conditional?: true];
