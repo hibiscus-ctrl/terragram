@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `terragram parse` types the Google Cloud IAM in a file as edges, the way it does AWS policies and Azure role assignments.
+  `google_project_iam_member`, `_binding` and `_policy` (and the folder, organisation and billing account ones) give the principal an edge to
+  "Any resource (*)" at the role's level; the same three on a storage bucket, Pub/Sub topic or subscription, Secret Manager secret, KMS key
+  ring or key, BigQuery dataset, service account, Cloud Run service or Cloud Function give it an edge to the drawn resource they name (a
+  target it cannot pin down, such as a name, a variable or a module output, is `unscoped` over any resource, and one that is not drawn
+  adds nothing). A role is read by its name alone: `roles/owner` is `admin`, `roles/editor` `write`, `roles/viewer` `read`; a
+  predefined role by the last word of its name where that is unambiguous (`...Admin` is `admin`, `...Viewer` and `...Reader` are
+  `read`, `...Writer`, `...Editor` and `...Publisher` are `write`); a custom role, a role that is a variable and every other
+  predefined role (`secretAccessor`, `run.invoker`) are `unscoped`. `roles/iam.serviceAccountUser` and `serviceAccountTokenCreator` on a drawn service
+  account are `runs-as` it, and `unscoped` anywhere wider. A `condition` block with an expression that is text and not just `true` marks the
+  edge conditional by the same rules as an AWS `Condition`, with the level it gives without one. The principal is the drawn service account a
+  member points at (`serviceAccount:${google_service_account.x.email}` or its `member` attribute); any other member starts at a stand-in
+  node for its kind (a person, a group, a domain, a service account that is not drawn, `allUsers`, `allAuthenticatedUsers`, a
+  federated identity, another principal) in fixed words, so no address, group or domain from the file reaches the model, and there are
+  never more than eight such nodes. An authoritative policy that cannot be read, a file with more than 2000 grants and a grant
+  that would draw more than 2000 edges add an unscoped edge from "Another principal" instead of drawing less. A Cloud Run service,
+  Cloud Function, GKE node pool or Compute instance that names a service account in `service_account`, `service_account_email` or its
+  `service_account` block `runs-as` it. Google Cloud grants are read in any file, whichever cloud it goes to. The Action's
+  "Access changes" list shows them like any other.
 - `terragram parse` reads Google Cloud. A file of `google_*` resources parses to a model whose cloud is `gcp`, where it used to be
   refused as "none of the resources can be mapped". The new `project`, `kubernetes`, `virtual-machine` and `data-warehouse`
   kinds and a Google Cloud spec on the existing ones (`dns`, `load-balancer`, `containers`, `functions`, `queue`, `vnet`,

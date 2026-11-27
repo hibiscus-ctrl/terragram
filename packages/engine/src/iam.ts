@@ -39,6 +39,8 @@ export type IamReading = {
   edges: IamEdge[];
   /** Blocks whose meaning is now drawn as an edge, so they are not "untranslated". */
   consumed: Set<HclBlock>;
+  /** The stand-ins for principals the picture does not draw that an edge starts at, by node id (see `GCP_PRINCIPALS`). The reader adds a node for each. */
+  principals: Map<string, string>;
 };
 
 const RANK: Record<EdgeAccess, number> = { "runs-as": 0, read: 1, write: 2, admin: 3, unscoped: 4 };
@@ -854,6 +856,311 @@ function readAzure(blocks: HclBlock[], owner: (address: string) => string | unde
   }
 }
 
+/* ----------------------------------------------------------------- Google -- */
+
+/**
+ * The principals a Google Cloud grant can name that the picture does not draw, one stand-in
+ * per kind of principal, in fixed words. A grant to `user:alice@example.com` is an edge from
+ * "A person (user)": the address, the group, the domain and the member text never reach the
+ * model, and however many a file names there are never more nodes than these. Several people with
+ * a grant on one resource are one edge, typed by the strongest of their roles. A principal the
+ * reader cannot classify is `other`: an edge is never dropped for want of a name.
+ */
+const GCP_PRINCIPALS = {
+  user: "A person (user)",
+  group: "A group",
+  domain: "A whole domain",
+  serviceAccount: "A service account (not drawn)",
+  allUsers: "Anyone on the internet (allUsers)",
+  allAuthenticatedUsers: "Any Google account (allAuthenticatedUsers)",
+  federated: "A federated identity",
+  other: "Another principal",
+} as const;
+
+type GcpPrincipal = keyof typeof GCP_PRINCIPALS;
+
+const gcpPrincipalId = (kind: GcpPrincipal) => `principal-${kind.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
+
+/** What a member string's text before its first colon says it is. Matched by equality: nothing from the string is kept. */
+const GCP_MEMBER_PREFIXES = new Map<string, GcpPrincipal>([
+  ["user", "user"],
+  ["group", "group"],
+  ["domain", "domain"],
+  ["serviceAccount", "serviceAccount"],
+  ["principal", "federated"],
+  ["principalSet", "federated"],
+]);
+
+/** The most resources, members, bindings and targets one file or grant is read for; past them the grant is unscoped, never dropped. */
+const MAX_GCP_RESOURCES = 2000;
+const MAX_GCP_MEMBERS = 500;
+const MAX_GCP_BINDINGS = 1000;
+const MAX_GCP_TARGETS = 50;
+/** The most edges Google Cloud grants add to one file. Past it nothing more is drawn, and one unscoped edge says there was more. */
+const MAX_GCP_EDGES = 2000;
+/** A member's text up to its first colon is a short word; a longer one is not a prefix this reader knows. */
+const MAX_GCP_MEMBER_PREFIX = 32;
+/** A resource type or a policy reference longer than this is not one this reader reads. */
+const MAX_GCP_NAME = 200;
+/** A role is a short name; a longer string is not one this reader can be sure of. */
+const MAX_GCP_ROLE = 200;
+
+const GCP_IAM_TYPE = /^google_([a-z0-9_]{1,80})_iam_(member|binding|policy)$/;
+
+/** The attribute that names what a resource-level grant is on, by the service in its type. */
+const GCP_TARGET_ATTRIBUTES = new Map<string, readonly string[]>([
+  ["storage_bucket", ["bucket"]],
+  ["pubsub_topic", ["topic"]],
+  ["pubsub_subscription", ["subscription"]],
+  ["secret_manager_secret", ["secret_id"]],
+  ["service_account", ["service_account_id"]],
+  ["kms_key_ring", ["key_ring_id"]],
+  ["kms_crypto_key", ["crypto_key_id"]],
+  ["bigquery_dataset", ["dataset_id"]],
+  ["cloud_run_service", ["service"]],
+  ["cloud_run_v2_service", ["name"]],
+  ["cloudfunctions_function", ["cloud_function"]],
+  ["cloudfunctions2_function", ["cloud_function"]],
+]);
+
+/** Grants on a scope that holds many resources: they reach "Any resource" at their level, and nothing narrower is drawn. */
+const GCP_BROAD_SCOPES = new Set(["project", "folder", "organization", "billing_account"]);
+
+/** Attributes of a grant that are not what it is on. */
+const GCP_NOT_A_TARGET = new Set(["role", "member", "members", "project", "etag", "policy_data"]);
+
+/** The roles that let a principal act as a service account. */
+const GCP_IMPERSONATION_ROLES = new Set(["roles/iam.serviceAccountUser", "roles/iam.serviceAccountTokenCreator"]);
+
+type GcpLevel = "read" | "write" | "admin" | "unscoped" | "impersonate";
+
+/**
+ * The level a role grants, from its name alone. The basic roles are `owner` (admin), `editor`
+ * (write) and `viewer` (read). A predefined role (`roles/<service>.<name>`) is read by the last
+ * word of its name where that is unambiguous: `...Admin` is admin, `...Viewer` and `...Reader` are
+ * read, `...Writer`, `...Editor` and `...Publisher` are write. A custom role, a role that is a
+ * variable or a template, and every predefined role whose name is anything else is unscoped.
+ */
+function gcpRoleLevel(role: Val | undefined): GcpLevel {
+  if (role?.t !== "str" || role.interpolated || role.text.length > MAX_GCP_ROLE) return "unscoped";
+  const text = role.text;
+  if (!/^roles\/[A-Za-z0-9_.]+$/.test(text)) return "unscoped";
+  if (text === "roles/owner") return "admin";
+  if (text === "roles/editor") return "write";
+  if (text === "roles/viewer") return "read";
+  if (GCP_IMPERSONATION_ROLES.has(text)) return "impersonate";
+  const name = text.slice(text.indexOf(".") + 1);
+  if (!text.includes(".") || name === "") return "unscoped";
+  // The last word of a camelCase name: `networkAdmin` is `admin`, `securityReviewer` is not `viewer`.
+  const last = (name.match(/[A-Z]?[a-z0-9]+$/)?.[0] ?? "").toLowerCase();
+  if (last === "admin") return "admin";
+  if (last === "viewer" || last === "reader") return "read";
+  if (last === "writer" || last === "editor" || last === "publisher") return "write";
+  return "unscoped";
+}
+
+/** Whether a `condition` block can rule a request out: it has an `expression` that is text, is not just `true` and is not only a template. */
+function isGcpCondition(b: HclBlock): boolean {
+  if (b.type !== "condition") return false;
+  const raw = attributeOf(b, "expression");
+  if (raw === undefined) return false;
+  const text = raw.trim().startsWith("<<") ? heredocBody(raw) : stringValue(raw);
+  if (text === undefined || text === null) return false;
+  const expression = text.trim();
+  if (expression === "" || expression.toLowerCase() === "true") return false;
+  // One `${...}` and nothing else is a value this reader cannot see: in doubt it is not counted.
+  return !(expression.startsWith("${") && expression.endsWith("}") && !expression.slice(2).includes("${"));
+}
+
+type GcpGrant = {
+  /** The block holding it, consumed once it has drawn an edge. */
+  holder: HclBlock;
+  principals: Val[];
+  role: Val | undefined;
+  conditional: boolean;
+};
+
+function readGcp(blocks: HclBlock[], owner: (address: string) => string | undefined, out: IamReading): void {
+  const documents = new Map<string, HclBlock>();
+  for (const b of blocks) {
+    if (b.type === "data" && b.labels[0] === "google_iam_policy" && b.labels[1]) documents.set(b.labels[1], b);
+  }
+
+  const principal = (kind: GcpPrincipal): string => {
+    const id = gcpPrincipalId(kind);
+    out.principals.set(id, GCP_PRINCIPALS[kind]);
+    return id;
+  };
+
+  /** The nodes one member names: the drawn identities it points at, else the stand-in for its kind of principal. */
+  const principalsOf = (member: Val): string[] => {
+    const drawn = [...new Set(member.t === "list" || member.t === "obj" ? [] : member.refs.flatMap((address) => owner(address) ?? []))];
+    if (drawn.length > 0) return drawn;
+    if (member.t !== "str") return [principal("other")];
+    const text = member.text;
+    if (text === "allUsers" || text === "allAuthenticatedUsers") return [principal(text)];
+    const colon = text.indexOf(":");
+    const kind = colon === -1 || colon > MAX_GCP_MEMBER_PREFIX ? undefined : GCP_MEMBER_PREFIXES.get(text.slice(0, colon));
+    return [principal(kind ?? "other")];
+  };
+
+  /** Every principal a `member` or `members` value names. A list, `toset([...])` and `tolist([...])` are read; anything else is one principal that cannot be named. */
+  const membersOf = (expr: string | undefined): Val[] => {
+    if (expr === undefined) return [];
+    let text = expr.trim();
+    for (const wrapper of ["toset", "tolist"]) {
+      const inner = text.startsWith(`${wrapper}(`) ? callArgument(text, wrapper) : null;
+      if (inner !== null) text = inner.trim();
+    }
+    const read = readVal(text);
+    if (read === null) return [UNREADABLE];
+    return listOf(read).flatMap((item) => (item.t === "list" ? item.items : [item]));
+  };
+
+  /** What a resource-level grant is on: the drawn nodes its target attribute points at, and whether it also reaches something this reader cannot pin down. */
+  const reachOfTarget = (b: HclBlock, service: string): { ids: string[]; broad: boolean } => {
+    const named = GCP_TARGET_ATTRIBUTES.get(service);
+    const expressions = named
+      ? named.flatMap((key) => attributeOf(b, key) ?? [])
+      : b.attributes.filter((a) => !GCP_NOT_A_TARGET.has(a.key)).map((a) => a.value);
+    const ids: string[] = [];
+    let broad = expressions.length === 0;
+    let anyAddress = false;
+    for (const expression of expressions) {
+      const addresses = extractReferences(expression);
+      // A literal name, a variable or a local could be any resource.
+      if (addresses.length === 0 && named) broad = true;
+      if (addresses.length > 0) anyAddress = true;
+      for (const address of addresses) {
+        const id = owner(address);
+        if (id) {
+          if (!ids.includes(id)) ids.push(id);
+        } else if (address.startsWith("module.")) {
+          broad = true;
+        }
+      }
+    }
+    // A type this reader has no target attribute for: it is on something if any attribute points at a resource (a zone or a location is not one).
+    if (!named && !anyAddress) broad = true;
+    if (ids.length > MAX_GCP_TARGETS) {
+      ids.length = MAX_GCP_TARGETS;
+      broad = true;
+    }
+    return { ids, broad };
+  };
+
+  const started = out.edges.length;
+  let overflowed = false;
+  const edge = (source: string, target: string, access: EdgeAccess, conditional: boolean) => {
+    if (out.edges.length - started >= MAX_GCP_EDGES) {
+      overflowed = true;
+      return;
+    }
+    out.edges.push({ source, target, access, ...(conditional ? ({ conditional: true } as const) : {}) });
+  };
+
+  /** The edges of one grant. `service` is the service in the type of the resource it is on (`project`, `storage_bucket`). */
+  const grant = (g: GcpGrant, service: string, targetBlock: HclBlock): number => {
+    const before = out.edges.length;
+    const level = gcpRoleLevel(g.role);
+    const members = g.principals.slice(0, MAX_GCP_MEMBERS);
+    const sources = [...new Set(members.flatMap(principalsOf))];
+    if (g.principals.length > MAX_GCP_MEMBERS) sources.push(principal("other"));
+
+    if (GCP_BROAD_SCOPES.has(service)) {
+      // Every resource in the project (or folder, or organisation): "Any resource", at the role's level. A role to act as a service account is unscoped here, as it reaches all of them.
+      const access: EdgeAccess = level === "impersonate" ? "unscoped" : level;
+      for (const source of sources) edge(source, ANY_RESOURCE_ID, access, g.conditional);
+    } else {
+      const reach = reachOfTarget(targetBlock, service);
+      for (const source of sources) {
+        for (const id of reach.ids) {
+          if (id === source) continue;
+          const access: EdgeAccess = level === "impersonate" ? (service === "service_account" ? "runs-as" : "unscoped") : level;
+          edge(source, id, access, g.conditional);
+        }
+        // A target that cannot be pinned down is unscoped, whatever the role says.
+        if (reach.broad) edge(source, ANY_RESOURCE_ID, "unscoped", g.conditional);
+      }
+    }
+    return out.edges.length - before;
+  };
+
+  /** Fails closed: a grant that cannot be read, or makes the reader throw, is an unscoped grant from a principal that cannot be named. */
+  const guarded = (holder: HclBlock, read: () => number): void => {
+    let drawn = 0;
+    try {
+      drawn = read();
+    } catch {
+      edge(principal("other"), ANY_RESOURCE_ID, "unscoped", false);
+      drawn = 1;
+    }
+    if (drawn > 0) out.consumed.add(holder);
+  };
+
+  let seen = 0;
+  for (const b of blocks) {
+    if (b.type !== "resource") continue;
+    const type = b.labels[0] ?? "";
+    const match = type.length > MAX_GCP_NAME ? null : GCP_IAM_TYPE.exec(type);
+    const service = match?.[1];
+    const form = match?.[2];
+    if (!service || !form) continue;
+    if (++seen > MAX_GCP_RESOURCES) {
+      // Past the cap nothing more is read, and what is left is one unscoped grant: understating would be worse than a plain one.
+      overflowed = true;
+      break;
+    }
+
+    if (form === "member") {
+      guarded(b, () =>
+        grant(
+          { holder: b, principals: membersOf(attributeOf(b, "member")), role: readVal(attributeOf(b, "role") ?? "") ?? UNREADABLE, conditional: b.blocks.some(isGcpCondition) },
+          service,
+          b,
+        ),
+      );
+    } else if (form === "binding") {
+      guarded(b, () =>
+        grant(
+          { holder: b, principals: membersOf(attributeOf(b, "members")), role: readVal(attributeOf(b, "role") ?? "") ?? UNREADABLE, conditional: b.blocks.some(isGcpCondition) },
+          service,
+          b,
+        ),
+      );
+    } else {
+      // An authoritative policy: the bindings of the `google_iam_policy` it names, or, when it is not one this reader can see, an unscoped grant from a principal it cannot name.
+      guarded(b, () => {
+        const reference = (attributeOf(b, "policy_data") ?? "").trim();
+        const ref = reference.length > MAX_GCP_NAME ? null : /^data\.google_iam_policy\.([A-Za-z_][\w-]*)\.policy_data$/.exec(reference);
+        const document = ref?.[1] ? documents.get(ref[1]) : undefined;
+        if (!document) {
+          edge(principal("other"), ANY_RESOURCE_ID, "unscoped", false);
+          return 1;
+        }
+        out.consumed.add(document);
+        const bindings = document.blocks.filter((x) => x.type === "binding");
+        let drawn = 0;
+        for (const binding of bindings.slice(0, MAX_GCP_BINDINGS)) {
+          drawn += grant(
+            { holder: b, principals: membersOf(attributeOf(binding, "members")), role: readVal(attributeOf(binding, "role") ?? "") ?? UNREADABLE, conditional: binding.blocks.some(isGcpCondition) },
+            service,
+            b,
+          );
+        }
+        // Bindings past the cap, or a document with an attribute this reader does not know, may grant more than was read.
+        if (bindings.length > MAX_GCP_BINDINGS || document.blocks.some((x) => x.type !== "binding" && x.type !== "audit_config")) {
+          edge(principal("other"), ANY_RESOURCE_ID, "unscoped", false);
+          drawn++;
+        }
+        return drawn;
+      });
+    }
+  }
+  // Past a cap, grants went unread or undrawn: say so with the widest edge there is, never by drawing less.
+  if (overflowed) out.edges.push({ source: principal("other"), target: ANY_RESOURCE_ID, access: "unscoped" });
+}
+
 /* ------------------------------------------------------------------- read -- */
 
 /**
@@ -861,9 +1168,11 @@ function readAzure(blocks: HclBlock[], owner: (address: string) => string | unde
  * (`aws_s3_bucket.data`, `module.api`) to the id of the node that block belongs to.
  */
 export function readIam(blocks: HclBlock[], owner: (address: string) => string | undefined, cloud: Cloud): IamReading {
-  const reading: IamReading = { edges: [], consumed: new Set() };
+  const reading: IamReading = { edges: [], consumed: new Set(), principals: new Map() };
   if (cloud === "aws") readAws(blocks, owner, reading);
-  else readAzure(blocks, owner, reading);
+  else if (cloud === "azure") readAzure(blocks, owner, reading);
+  // Whatever the file is mostly on, a Google Cloud grant in it is read: it is typed by its own resource types and nothing else reads them.
+  readGcp(blocks, owner, reading);
 
   // One edge per pair, typed by the strongest grant.
   const merged = new Map<string, IamEdge>();
@@ -885,6 +1194,10 @@ const RUNS_AS_KEYS = new Set([
   "identity_ids",
   "user_assigned_identity_id",
   "user_assigned_identity_ids",
+  // Google Cloud: a Cloud Run revision, a function, a node pool and a Compute instance's `service_account` block.
+  "service_account",
+  "service_account_email",
+  "service_account_name",
 ]);
 
 /**
@@ -902,7 +1215,8 @@ export function runsAsAddresses(workload: HclBlock[], all: HclBlock[]): string[]
   const found: string[] = [];
   const visit = (block: HclBlock) => {
     for (const a of block.attributes) {
-      if (!RUNS_AS_KEYS.has(a.key)) continue;
+      // A Compute instance names its service account in the `email` of a `service_account` block.
+      if (!RUNS_AS_KEYS.has(a.key) && !(a.key === "email" && block.type === "service_account")) continue;
       for (const address of extractReferences(a.value)) {
         for (const resolved of profiles.get(address) ?? [address]) if (!found.includes(resolved)) found.push(resolved);
       }

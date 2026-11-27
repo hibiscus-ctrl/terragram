@@ -68,6 +68,14 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
   is on Resource `*`, so every grant always has an `any-resource` edge at its level, plus an edge to each drawn resource of its service (`SERVICE_RESOURCE_TYPES`)
   unless none is drawn or there are more than `MAX_MANAGED_TARGETS`/`MAX_MANAGED_EDGES` allow. The table lists every service a policy grants on,
   drawn or not (a service with no drawn type is the `any-resource` edge alone). An ARN not in the table stays `unscoped`.
+  **Google Cloud IAM** (`readGcp` in `iam.ts`, run on every file) reads `google_<service>_iam_member|binding|policy` the same way: the role by its name
+  alone (`gcpRoleLevel`: basic roles, then the last camelCase word of a predefined one, else `unscoped`), a `condition` block that is text and
+  not `true` as conditional, the target by the attribute of its service (`GCP_TARGET_ATTRIBUTES`), and a project, folder, organisation or billing
+  account grant as an edge to `any-resource` at the role's level, never a narrower edge instead. A principal that is not a drawn node is one of a fixed set
+  of stand-in nodes (`GCP_PRINCIPALS`, ids `principal-*`, category `edge`, wording fixed here), never named from the member's text, so there are
+  at most eight and no address reaches the model. Whatever it cannot read (a role, a member, a target, a policy document, past the caps) is
+  `unscoped` or `principal-other`, never dropped; a grant to a resource that is not drawn adds nothing, as for AWS. A new Google resource type that
+  grants access goes in `GCP_TARGET_ATTRIBUTES` with a test; an unlisted one is read by whatever its attributes point at.
   Renderers take the wording and colour from `EDGE_ACCESS_META` (`model.ts`); an untyped edge must still draw exactly as before.
 - **Google Cloud is read, not generated** (`gcp` in `CLOUDS`, not in `GENERATED_CLOUDS`). A file is `gcp` only when it has no AWS or Azure resource or module in it (`detectCloud`); otherwise it goes to the one of those it has most of, and `assessFeasibility` says which Google parts that cloud cannot build. A kind's `gcp` entry is a `ReadSpec`
   (`type`, `matches`, `matchBlock`, `read`, `moduleSource`): what a `google_*` resource or Google registry module reverse-maps to, never an
