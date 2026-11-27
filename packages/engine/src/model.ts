@@ -28,6 +28,10 @@ export type Cloud = (typeof CLOUDS)[number];
 export const GENERATED_CLOUDS = ["azure", "aws"] as const;
 export type GeneratedCloud = (typeof GENERATED_CLOUDS)[number];
 
+/** The schemas' words for a document's `cloud`: `gcp` joined the enum inside `diagram.model/v1` and `diagram.receipt/v3`. */
+export const CLOUD_DESCRIPTION =
+  "The cloud the document describes. `gcp` is read only: such a model is drawn and explained, no Terraform is generated for it and its receipt has an empty plan. A reader that validates this field against a closed list must accept `gcp`; documents for `azure` and `aws` are unchanged.";
+
 /** A low-confidence attribute the model surfaces at the review gate. */
 const reviewFlagSchema = z.object({
   reason: z.string().max(400),
@@ -127,7 +131,10 @@ export const MODEL_SCHEMA = "diagram.model/v1" as const;
  */
 export const modelDocumentSchema = infraModelSchema.extend({
   schema: z.literal(MODEL_SCHEMA).optional(),
-  cloud: z.enum(CLOUDS).optional(),
+  cloud: z
+    .enum(CLOUDS)
+    .describe(CLOUD_DESCRIPTION)
+    .optional(),
 });
 
 export const EMPTY_MODEL: InfraModel = { nodes: [], edges: [], topology: "derived" };

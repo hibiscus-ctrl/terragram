@@ -240,7 +240,26 @@ resource "google_pubsub_topic" "events" { name = "e" }
 resource "google_service_account" "a" { account_id = "a" }
 resource "google_dns_managed_zone" "z" { name = "z" }
 `;
-    assert.equal(read(AWS + moreGoogle).cloud, "gcp");
+    // Google Cloud is read only: it never outvotes a cloud Terragram generates for.
+    assert.equal(read(AWS + moreGoogle).cloud, "aws");
+    assert.equal(read(`${AWS}${moreGoogle}${moreGoogle.replaceAll('"a"', '"b"').replaceAll('"z"', '"y"')}`).cloud, "aws");
+    assert.equal(read(`resource "azurerm_redis_cache" "c" {}\n${moreGoogle}`).cloud, "azure");
+    assert.equal(read(moreGoogle).cloud, "gcp");
+  });
+
+  it("says what a file that has AWS in it leaves out of the Terraform, instead of nothing", () => {
+    const mixed = read(`${AWS}resource "google_project" "p" { name = "p" project_id = "p" }
+resource "google_service_account" "a" { account_id = "a" }
+resource "google_dns_managed_zone" "z" { name = "z" }
+`);
+    assert.equal(mixed.cloud, "aws");
+    const feasibility = assessFeasibility(mixed.model, mixed.cloud);
+    assert.equal(feasibility.verdict, "partial");
+    assert.deepEqual(feasibility.omitted, ["Project"]);
+    assert.doesNotMatch(feasibility.summary, /nothing is left out/);
+    const emitted = emitTerraform(mixed.model, mixed.cloud, "terraform");
+    assert.ok(emitted.files.length > 0);
+    assert.doesNotMatch(emitted.files.map((f) => f.content).join("\n"), /google_/);
   });
 
   it("breaks a tie toward Azure, then AWS, as it did before Google Cloud", () => {

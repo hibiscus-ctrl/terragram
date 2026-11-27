@@ -20378,6 +20378,7 @@ var NODE_CATEGORIES = [
   "edge"
 ];
 var CLOUDS = ["azure", "aws", "gcp"];
+var CLOUD_DESCRIPTION = "The cloud the document describes. `gcp` is read only: such a model is drawn and explained, no Terraform is generated for it and its receipt has an empty plan. A reader that validates this field against a closed list must accept `gcp`; documents for `azure` and `aws` are unchanged.";
 var reviewFlagSchema = external_exports.object({
   reason: external_exports.string().max(400)
 });
@@ -20434,7 +20435,7 @@ var infraModelSchema = external_exports.object({
 var MODEL_SCHEMA = "diagram.model/v1";
 var modelDocumentSchema = infraModelSchema.extend({
   schema: external_exports.literal(MODEL_SCHEMA).optional(),
-  cloud: external_exports.enum(CLOUDS).optional()
+  cloud: external_exports.enum(CLOUDS).describe(CLOUD_DESCRIPTION).optional()
 });
 var CATEGORY_META = {
   compute: {

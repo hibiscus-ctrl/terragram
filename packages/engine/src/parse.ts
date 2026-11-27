@@ -54,7 +54,8 @@ function moduleSource(block: HclBlock): string {
 }
 
 /** Majority vote on provider prefix (and module namespace), so a mixed file still
- *  picks a target. A tie goes to Azure, then AWS. */
+ *  picks a target. A tie goes to Azure, then AWS. Google Cloud is read only, so it is the
+ *  cloud only for a file with no AWS or Azure in it: a file that has any is for the one of those it has most of. */
 function detectCloud(types: string[], sources: string[]): Cloud {
   let azure = 0;
   let aws = 0;
@@ -69,7 +70,7 @@ function detectCloud(types: string[], sources: string[]): Cloud {
     if (source.startsWith("terraform-aws-modules/")) aws++;
     if (source.startsWith("terraform-google-modules/") || source.startsWith("GoogleCloudPlatform/")) gcp++;
   }
-  if (gcp > Math.max(azure, aws)) return "gcp";
+  if (azure + aws === 0 && gcp > 0) return "gcp";
   return aws > azure ? "aws" : "azure";
 }
 

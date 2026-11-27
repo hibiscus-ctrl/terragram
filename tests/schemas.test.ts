@@ -112,6 +112,18 @@ describe("schemas/model.v1.schema.json", () => {
   });
 });
 
+describe("the cloud a document names", () => {
+  it("says in both schemas that gcp joined the enum inside the same schema id, and leaves the other two as they were", () => {
+    for (const file of ["model.v1.schema.json", "receipt.v3.schema.json"]) {
+      const schema = JSON.parse(readFileSync(new URL(`../schemas/${file}`, import.meta.url), "utf8"));
+      assert.deepEqual(schema.properties.cloud.enum, ["azure", "aws", "gcp"]);
+      assert.match(schema.properties.cloud.description, /closed list must accept `gcp`/);
+    }
+    const legacy = JSON.parse(readFileSync(new URL("../schemas/receipt.v2.schema.json", import.meta.url), "utf8"));
+    assert.deepEqual(legacy.properties.cloud.enum, ["azure", "aws"]);
+  });
+});
+
 describe("schemas/receipt.v3.schema.json", () => {
   it("accepts the receipts the engine writes, signed or not", async () => {
     const { model } = composeFromPrompt("A web app with a Postgres database and Redis cache");
