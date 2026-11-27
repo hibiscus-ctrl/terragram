@@ -264,7 +264,7 @@ export function parseTerraform(source: string): ParseResult {
       if (identity && kindOf.get(identity) === "entra-id") typeEdge(instance.node.id, identity, "runs-as");
     }
   }
-  const iam = readIam(blocks, (address) => ownerByAddress.get(address), cloud);
+  const iam = readIam(blocks, (address) => ownerByAddress.get(address));
   for (const edge of iam.edges) typeEdge(edge.source, edge.target, edge.access, edge);
   for (let i = untranslated.length - 1; i >= 0; i--) {
     const [type, name] = (untranslated[i] ?? "").split(".");

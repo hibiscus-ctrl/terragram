@@ -200,9 +200,11 @@ resource "google_storage_bucket_iam_member" "admin" {
 describe("the level of a role", () => {
   const level = (role: string) => accessOf(member(`role = ${role}`), ANY_RESOURCE_ID);
 
-  it("reads the basic roles: owner is admin, editor is write, viewer is read", () => {
+  it("reads the basic roles: owner and editor are admin, viewer is read", () => {
     assert.equal(level('"roles/owner"'), "admin");
-    assert.equal(level('"roles/editor"'), "write");
+    // The editor can mint a key for, and act as, any service account in the project: it is not just write.
+    assert.equal(level('"roles/editor"'), "admin");
+    assert.equal(level('"roles/cloudbuild.builds.editor"'), "admin");
     assert.equal(level('"roles/viewer"'), "read");
   });
 
@@ -332,7 +334,9 @@ resource "google_project_iam_binding" "grant" {
   members = [${members}]
 }`).model;
     assert.deepEqual(model.nodes.filter((n) => n.id.startsWith("principal-")).map((n) => n.id).sort(), ["principal-other", "principal-user"]);
-    assert.equal(model.edges.find((e) => e.source === "principal-other")?.access, "admin");
+    // The members past the cap could be anyone, so they are unscoped, not the role's level.
+    assert.equal(model.edges.find((e) => e.source === "principal-other")?.access, "unscoped");
+    assert.equal(model.edges.find((e) => e.source === "principal-user")?.access, "admin");
     assert.equal(model.edges.length < 10, true);
   });
 
@@ -398,15 +402,15 @@ resource "google_storage_bucket_iam_member" "g" {
     }
   });
 
-  it("adds nothing for a resource the picture does not draw, and leaves its block untranslated", () => {
+  it("is any resource, at the role's level, for a resource the picture does not draw", () => {
     const result = read(`${BASE}
 resource "google_storage_bucket_iam_member" "elsewhere" {
   bucket = google_storage_bucket.not_drawn.name
   role   = "roles/storage.admin"
   member = "serviceAccount:\${google_service_account.api.email}"
 }`);
-    assert.deepEqual(typed(result.model), []);
-    assert.ok(result.untranslated.includes("google_storage_bucket_iam_member.elsewhere"));
+    assert.deepEqual(typed(result.model), ["entra-id -> any-resource: admin"]);
+    assert.equal(result.untranslated.includes("google_storage_bucket_iam_member.elsewhere"), false);
   });
 
   it("reads a type it has no target attribute for by what its attributes point at", () => {
@@ -446,7 +450,7 @@ resource "google_compute_instance_iam_member" "g" {
       assert.deepEqual(
         edges(`
 resource "google_${scope}_iam_member" "g" {
-  role   = "roles/editor"
+  role   = "roles/logging.logWriter"
   member = "serviceAccount:\${google_service_account.api.email}"
 }`),
         ["entra-id -> any-resource: write"],
@@ -463,7 +467,7 @@ describe("authoritative grants never understate", () => {
         read(`${BASE}
 resource "google_project_iam_binding" "g" {
   project = google_project.app.project_id
-  role    = "roles/editor"
+  role    = "roles/logging.logWriter"
   members = ["serviceAccount:\${google_service_account.api.email}", "group:eng@example.com"]
 }`).model,
       ),
@@ -553,7 +557,7 @@ describe("conditions", () => {
     typed(
       read(`${BASE}
 resource "google_project_iam_member" "g" {
-  role   = "roles/editor"
+  role   = "roles/logging.logWriter"
   member = "serviceAccount:\${google_service_account.api.email}"
 ${condition}
 }`).model,
@@ -603,7 +607,7 @@ resource "google_project_iam_member" "b" {
   member = "serviceAccount:\${google_service_account.api.email}"
 }`).model,
       );
-    assert.deepEqual(two("roles/editor"), ["entra-id -> any-resource: admin, conditional (write unconditional)"]);
+    assert.deepEqual(two("roles/logging.logWriter"), ["entra-id -> any-resource: admin, conditional (write unconditional)"]);
     assert.deepEqual(two("roles/owner"), ["entra-id -> any-resource: admin"]);
   });
 
@@ -769,7 +773,8 @@ resource "google_project_iam_binding" "g" {
   role    = "roles/viewer"
   members = ${nested}
 }`).model;
-    assert.deepEqual(typed(model), ["principal-other -> any-resource: read"]);
+    // Members nobody could read could be anyone, so the grant is unscoped rather than the role's level.
+    assert.deepEqual(typed(model), ["principal-other -> any-resource: unscoped"]);
   });
 
   it("falls back to an unscoped grant when the reader itself throws", () => {
@@ -779,7 +784,7 @@ resource "google_project_iam_member" "g" {
   member = "user:a@example.com"
 }`);
     const hostile = blocks.map((b) => ({ ...b, get attributes(): never { throw new Error("hostile"); } }));
-    const reading = readIam(hostile as typeof blocks, () => undefined, "gcp");
+    const reading = readIam(hostile as typeof blocks, () => undefined);
     assert.deepEqual(reading.edges.map((e) => `${e.source} -> ${e.target}: ${e.access}`), ["principal-other -> any-resource: unscoped"]);
   });
 });
@@ -821,5 +826,438 @@ resource "google_project_iam_member" "g" {
       assert.equal(edges.filter((e) => e.endsWith("-> any-resource: read")).length, 1, edges.join("\n"));
       assert.equal(edges.filter((e) => e.endsWith("-> object-storage: read")).length, 1, edges.join("\n"));
     }
+  });
+});
+
+describe("Google Cloud grants never understate", () => {
+  const edges = (grant: string) => typed(read(BASE + grant).model).sort();
+  const iamMember = (type: string, attributes: string, role: string, who: string) => `
+resource "google_${type}_iam_member" "g" {
+${attributes}
+  role   = "${role}"
+  member = ${who}
+}
+`;
+
+  describe("in a file that goes to another cloud", () => {
+    const aws = `
+resource "aws_s3_bucket" "data" {
+  bucket = "x"
+}
+
+resource "aws_iam_role" "fn" {
+  name               = "fn"
+  assume_role_policy = "{}"
+}
+
+resource "aws_iam_role_policy" "p" {
+  role   = aws_iam_role.fn.id
+  policy = jsonencode({ Statement = [{ Effect = "Allow", Action = "s3:GetObject", Resource = aws_s3_bucket.data.arn }] })
+}
+`;
+    const azure = `
+resource "azurerm_storage_account" "data" {
+  name = "data"
+}
+
+resource "azurerm_user_assigned_identity" "app" {
+  name = "app"
+}
+
+resource "azurerm_role_assignment" "blob" {
+  scope                = azurerm_storage_account.data.id
+  role_definition_name = "Storage Blob Data Reader"
+  principal_id         = azurerm_user_assigned_identity.app.principal_id
+}
+`;
+    const google = `
+resource "google_service_account" "api" {
+  account_id = "api"
+}
+
+resource "google_project_iam_member" "g" {
+  role   = "roles/viewer"
+  member = "serviceAccount:\${google_service_account.api.email}"
+}
+`;
+
+    it("reads the AWS, Azure and Google Cloud grants of one file whichever cloud it goes to", () => {
+      for (const source of [azure + aws + google, aws + azure + google, `${azure}\n${azure.replaceAll('"data"', '"d2"').replaceAll('"app"', '"a2"').replaceAll('"blob"', '"b2"')}${aws}${google}`]) {
+        const parsed = read(source);
+        const found = typed(parsed.model);
+        assert.equal(found.filter((e) => e.endsWith("-> any-resource: read")).length, 1, found.join("\n"));
+        assert.equal(found.filter((e) => e.endsWith("-> object-storage: read")).length >= 1, true, found.join("\n"));
+        assert.deepEqual(parsed.untranslated.filter((u) => u.includes("role") || u.includes("iam")), []);
+      }
+      // The AWS policy is read in a file that has more Azure in it.
+      assert.equal(read(azure + aws + google).cloud, "azure");
+      assert.equal(typed(read(azure + aws + google).model).some((e) => e === "entra-id -> object-storage: read"), true);
+    });
+  });
+
+  describe("a role to act as a service account", () => {
+    const on = (role: string, who: string) =>
+      edges(`
+resource "google_service_account" "other" {
+  account_id = "other"
+}
+
+resource "google_service_account_iam_member" "g" {
+  service_account_id = google_service_account.other.name
+  role               = "${role}"
+  member             = ${who}
+}
+`).filter((e) => e.includes("entra-id-2"));
+
+    it("is runs-as only for a drawn service account", () => {
+      for (const role of ["roles/iam.serviceAccountUser", "roles/iam.serviceAccountTokenCreator"]) {
+        assert.deepEqual(on(role, '"serviceAccount:${google_service_account.api.email}"'), ["entra-id -> entra-id-2: runs-as"], role);
+      }
+    });
+
+    it("is admin for a person, a service account that is not drawn, a federated identity or a principal it cannot name", () => {
+      for (const role of ["roles/iam.serviceAccountUser", "roles/iam.serviceAccountTokenCreator"]) {
+        for (const [who, source] of [
+          ['"user:a@example.com"', "principal-user"],
+          ['"serviceAccount:x@other.iam.gserviceaccount.com"', "principal-service-account"],
+          ['"principalSet://iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/p/*"', "principal-federated"],
+          ['"deleted:user:a@example.com"', "principal-other"],
+        ] as const) {
+          assert.deepEqual(on(role, who), [`${source} -> entra-id-2: admin`], `${role} ${who}`);
+        }
+      }
+    });
+
+    it("is unscoped, never runs-as, for the public, a group or a domain", () => {
+      for (const role of ["roles/iam.serviceAccountUser", "roles/iam.serviceAccountTokenCreator"]) {
+        for (const [who, source] of [
+          ['"allUsers"', "principal-all-users"],
+          ['"allAuthenticatedUsers"', "principal-all-authenticated-users"],
+          ['"group:eng@example.com"', "principal-group"],
+          ['"domain:example.com"', "principal-domain"],
+        ] as const) {
+          assert.deepEqual(on(role, who), [`${source} -> entra-id-2: unscoped`], `${role} ${who}`);
+        }
+      }
+    });
+
+    it("is unscoped on anything that is not a service account", () => {
+      assert.deepEqual(
+        edges(iamMember("storage_bucket", "  bucket = google_storage_bucket.data.name", "roles/iam.serviceAccountUser", '"user:a@example.com"')),
+        ["principal-user -> object-storage: unscoped"],
+      );
+    });
+  });
+
+  describe("who may read or write through an ACL", () => {
+    const acl = (type: string, attributes: string) =>
+      edges(`
+resource "google_storage_${type}" "g" {
+  bucket = google_storage_bucket.data.name
+${attributes}
+}
+`);
+
+    it("is an unscoped edge from the entity of every storage ACL resource", () => {
+      for (const type of ["bucket_access_control", "default_object_access_control", "object_access_control"]) {
+        assert.deepEqual(acl(type, '  role   = "READER"\n  entity = "allUsers"'), ["principal-all-users -> object-storage: unscoped"], type);
+        assert.deepEqual(acl(type, '  role   = "READER"\n  entity = "allAuthenticatedUsers"'), ["principal-all-authenticated-users -> object-storage: unscoped"], type);
+        assert.deepEqual(acl(type, '  role   = "OWNER"\n  entity = "user-a@example.com"'), ["principal-user -> object-storage: unscoped"], type);
+        assert.deepEqual(acl(type, '  role   = "OWNER"\n  entity = "group-eng@example.com"'), ["principal-group -> object-storage: unscoped"], type);
+        assert.deepEqual(acl(type, '  role   = "OWNER"\n  entity = "domain-example.com"'), ["principal-domain -> object-storage: unscoped"], type);
+        assert.deepEqual(acl(type, '  role   = "OWNER"\n  entity = var.entity'), ["principal-other -> object-storage: unscoped"], type);
+      }
+    });
+
+    it("is an unscoped edge from each entity in role_entity and from a canned ACL", () => {
+      for (const type of ["bucket_acl", "default_object_acl", "object_acl"]) {
+        assert.deepEqual(
+          acl(type, '  role_entity = ["READER:allUsers", "WRITER:user-a@example.com", "OWNER:group-eng@example.com"]'),
+          ["principal-all-users -> object-storage: unscoped", "principal-group -> object-storage: unscoped", "principal-user -> object-storage: unscoped"].sort(),
+          type,
+        );
+        assert.deepEqual(acl(type, "  role_entity = var.entities"), ["principal-other -> object-storage: unscoped"], type);
+      }
+      assert.deepEqual(acl("bucket_acl", '  predefined_acl = "publicRead"'), ["principal-all-users -> object-storage: unscoped"]);
+      assert.deepEqual(acl("object_acl", '  predefined_acl = "publicReadWrite"\n  object = "x"'), ["principal-all-users -> object-storage: unscoped"]);
+      assert.deepEqual(acl("bucket_acl", '  predefined_acl = "authenticatedRead"'), ["principal-all-authenticated-users -> object-storage: unscoped"]);
+      assert.deepEqual(acl("bucket_acl", "  predefined_acl = var.acl"), ["principal-other -> object-storage: unscoped"]);
+    });
+
+    it("is the drawn service account an entity refers to, and any resource when the bucket is not one it can see", () => {
+      assert.deepEqual(acl("bucket_access_control", '  role = "OWNER"\n  entity = "user-${google_service_account.api.email}"'), ["entra-id -> object-storage: unscoped"]);
+      assert.deepEqual(
+        edges(`
+resource "google_storage_bucket_acl" "g" {
+  bucket      = "somewhere"
+  role_entity = ["READER:allUsers"]
+}
+`),
+        ["principal-all-users -> any-resource: unscoped"],
+      );
+    });
+
+    it("does not leave the resource as an untranslated block", () => {
+      const result = read(`${BASE}
+resource "google_storage_bucket_acl" "g" {
+  bucket      = google_storage_bucket.data.name
+  role_entity = ["READER:allUsers"]
+}
+resource "google_bigquery_dataset_access" "a" {
+  dataset_id = "x"
+  iam_member = "allUsers"
+}
+`);
+      assert.deepEqual(result.untranslated, []);
+    });
+  });
+
+  describe("who may read a BigQuery dataset without a role", () => {
+    const dataset = (access: string) => `
+resource "google_bigquery_dataset" "d" {
+  dataset_id = "d"
+${access}
+}
+`;
+
+    it("is an unscoped edge to the dataset from each access block", () => {
+      assert.deepEqual(
+        edges(dataset('  access {\n    role          = "READER"\n    special_group = "allAuthenticatedUsers"\n  }')),
+        ["principal-all-authenticated-users -> data-warehouse: unscoped"],
+      );
+      assert.deepEqual(
+        edges(dataset('  access {\n    role       = "READER"\n    iam_member = "allUsers"\n  }')),
+        ["principal-all-users -> data-warehouse: unscoped"],
+      );
+      assert.deepEqual(
+        edges(dataset('  access {\n    role          = "OWNER"\n    user_by_email = "a@example.com"\n  }\n  access {\n    role           = "READER"\n    group_by_email = "eng@example.com"\n  }\n  access {\n    role   = "READER"\n    domain = "example.com"\n  }')),
+        ["principal-domain -> data-warehouse: unscoped", "principal-group -> data-warehouse: unscoped", "principal-user -> data-warehouse: unscoped"],
+      );
+      assert.deepEqual(
+        edges(dataset('  access {\n    role          = "OWNER"\n    special_group = "projectOwners"\n  }')),
+        ["principal-other -> data-warehouse: unscoped"],
+      );
+      assert.deepEqual(
+        edges(dataset('  access {\n    view {\n      project_id = "p"\n      dataset_id = "d"\n      table_id   = "t"\n    }\n  }')),
+        ["principal-other -> data-warehouse: unscoped"],
+      );
+      assert.deepEqual(
+        edges(dataset('  dynamic "access" {\n    for_each = var.access\n    content {\n      role = access.value.role\n    }\n  }')),
+        ["principal-other -> data-warehouse: unscoped"],
+      );
+    });
+
+    it("is the drawn service account an access block names, and does not consume the dataset", () => {
+      const result = read(BASE + dataset('  access {\n    role          = "READER"\n    user_by_email = google_service_account.api.email\n  }'));
+      assert.deepEqual(typed(result.model), ["entra-id -> data-warehouse: unscoped"]);
+      assert.deepEqual(result.untranslated, []);
+      assert.equal(result.model.nodes.some((n) => n.kind === "data-warehouse"), true);
+    });
+
+    it("is an unscoped edge to the dataset a google_bigquery_dataset_access names", () => {
+      assert.deepEqual(
+        edges(`${dataset("")}
+resource "google_bigquery_dataset_access" "a" {
+  dataset_id = google_bigquery_dataset.d.dataset_id
+  role       = "READER"
+  iam_member = "allUsers"
+}
+`),
+        ["principal-all-users -> data-warehouse: unscoped"],
+      );
+      assert.deepEqual(
+        edges(`
+resource "google_bigquery_dataset_access" "a" {
+  dataset_id = "elsewhere"
+  role       = "READER"
+  special_group = "allAuthenticatedUsers"
+}
+`),
+        ["principal-all-authenticated-users -> any-resource: unscoped"],
+      );
+    });
+  });
+
+  describe("a grant on a resource that is not drawn", () => {
+    it("is any resource at the role's level, not nothing", () => {
+      assert.deepEqual(
+        edges(`
+resource "google_artifact_registry_repository" "repo" {
+  repository_id = "r"
+}
+
+resource "google_artifact_registry_repository_iam_member" "g" {
+  repository = google_artifact_registry_repository.repo.name
+  role       = "roles/artifactregistry.admin"
+  member     = "allUsers"
+}
+`),
+        ["principal-all-users -> any-resource: admin"],
+      );
+      assert.deepEqual(
+        edges(`
+resource "google_spanner_database_iam_member" "g" {
+  instance = google_spanner_instance.i.name
+  database = google_spanner_database.d.name
+  role     = "roles/spanner.databaseReader"
+  member   = "user:a@example.com"
+}
+`),
+        ["principal-user -> any-resource: read"],
+      );
+    });
+
+    it("is unscoped when the role is not one it can level", () => {
+      assert.deepEqual(
+        edges(iamMember("artifact_registry_repository", "  repository = google_artifact_registry_repository.repo.name", "roles/artifactregistry.reader", '"allUsers"')),
+        ["principal-all-users -> any-resource: read"],
+      );
+      assert.deepEqual(
+        edges(iamMember("artifact_registry_repository", "  repository = google_artifact_registry_repository.repo.name", "roles/artifactregistry.serviceAgent", '"allUsers"')),
+        ["principal-all-users -> any-resource: unscoped"],
+      );
+    });
+
+    it("targets a type it has no attribute for only by an attribute that is not a place", () => {
+      const vm = `
+resource "google_compute_instance" "vm" {
+  name = "vm"
+}
+`;
+      const on = (attributes: string) =>
+        edges(`${vm}
+resource "google_compute_instance_iam_member" "g" {
+${attributes}
+  role   = "roles/compute.admin"
+  member = "allUsers"
+}
+`);
+      // The zone points at the drawn instance, but the instance named is not that one.
+      assert.deepEqual(on('  instance_name = "other"\n  zone          = google_compute_instance.vm.zone'), ["principal-all-users -> any-resource: unscoped"]);
+      assert.deepEqual(on('  instance_name = google_compute_instance.vm.name\n  zone          = "europe-west2-a"'), ["principal-all-users -> virtual-machine: admin"]);
+      assert.deepEqual(on('  instance_name = var.instance\n  zone          = google_compute_instance.vm.zone'), ["principal-all-users -> any-resource: unscoped"]);
+    });
+  });
+
+  describe("members that may be anyone", () => {
+    const on = (members: string) =>
+      edges(`
+resource "google_storage_bucket_iam_binding" "g" {
+  bucket  = google_storage_bucket.data.name
+  role    = "roles/storage.objectViewer"
+  members = ${members}
+}
+`);
+
+    it("is unscoped for members built by concat, a for expression or a variable", () => {
+      assert.deepEqual(on('concat(["allUsers"], var.more)'), ["principal-other -> object-storage: unscoped"]);
+      assert.deepEqual(on('[for u in var.users : "user:${u}"]'), ["principal-other -> object-storage: unscoped"]);
+      assert.deepEqual(on("var.members"), ["principal-other -> object-storage: unscoped"]);
+      assert.deepEqual(on('["${var.member}"]'), ["principal-other -> object-storage: unscoped"]);
+    });
+
+    it("is unscoped beside a drawn service account when a concat names one, and plain for a plain list", () => {
+      assert.deepEqual(on('concat(["allUsers"], [google_service_account.api.member])'), ["entra-id -> object-storage: read", "principal-other -> object-storage: unscoped"]);
+      assert.deepEqual(on('[google_service_account.api.member, "user:a@example.com"]'), ["entra-id -> object-storage: read", "principal-user -> object-storage: read"]);
+      assert.deepEqual(on('["user:${var.email}"]'), ["principal-user -> object-storage: read"]);
+    });
+  });
+
+  describe("the editor roles", () => {
+    it("are admin: they can mint a key for a service account or act as it", () => {
+      for (const role of ["roles/editor", "roles/cloudbuild.builds.editor"]) {
+        assert.deepEqual(edges(iamMember("project", "  project = google_project.app.project_id", role, '"user:a@example.com"')), ["principal-user -> any-resource: admin"], role);
+      }
+    });
+  });
+
+  describe("a condition", () => {
+    const edge = (expression: string) =>
+      typed(
+        read(`${BASE}
+resource "google_project_iam_member" "g" {
+  role   = "roles/owner"
+  member = "user:a@example.com"
+  condition {
+    title      = "t"
+    expression = "${expression.replaceAll('"', '\\"')}"
+  }
+}`).model,
+      );
+
+    it("is not counted when it is a constant or cannot narrow", () => {
+      for (const expression of [
+        "true",
+        "TRUE",
+        "1 == 1",
+        "2 > 1",
+        '"a" == "a"',
+        "!false",
+        "(true)",
+        "true && true",
+        'resource.name == "a" || true',
+        "request.time == request.time",
+        // The words of a literal are not the variables of the expression.
+        '"request.time" == "request.time"',
+        '"resource.name" != ""',
+        // A date that has passed never narrows again.
+        'request.time > timestamp("2000-01-01T00:00:00Z")',
+        'request.time >= timestamp("2000-01-01T00:00:00Z")',
+        'timestamp("2000-01-01T00:00:00Z") < request.time',
+        'request.time > timestamp("2000-01-01T00:00:00Z") && request.time > timestamp("2001-01-01T00:00:00Z")',
+        // Unsure: too long or a literal that is not closed.
+        `resource.name.startsWith("${"a".repeat(5000)}")`,
+        'resource.name.startsWith("a',
+      ]) {
+        assert.deepEqual(edge(expression), ["principal-user -> any-resource: admin"], expression);
+      }
+    });
+
+    it("is counted when it looks at the request or the resource", () => {
+      for (const expression of [
+        'resource.name.startsWith("projects/_/buckets/x")',
+        'resource.type == "storage.googleapis.com/Object"',
+        'request.time < timestamp("2030-01-01T00:00:00Z")',
+        'request.time > timestamp("2000-01-01T00:00:00Z") && request.time < timestamp("2030-01-01T00:00:00Z")',
+        'request.time > timestamp("2000-01-01T00:00:00Z") && resource.name.startsWith("a")',
+        'request.time.getHours("Europe/London") >= 9',
+        'api.getAttribute("iam.googleapis.com/modifiedGrantsByRole", []).hasOnly(["roles/x"])',
+        'destination.ip == "10.0.0.1"',
+        "resource.name.startsWith('a') || resource.name.startsWith('b')",
+      ]) {
+        assert.deepEqual(edge(expression), ["principal-user -> any-resource: admin, conditional"], expression);
+      }
+    });
+
+    it("reads a condition quickly however it is written", () => {
+      const started = Date.now();
+      for (const expression of [`${"a == ".repeat(700)}request.time`, `${"a".repeat(3900)} == request.time`, `${'"'.repeat(3000)}request.time`, `${"(".repeat(3000)}request.time`]) edge(expression);
+      assert.ok(Date.now() - started < 2000);
+    });
+  });
+
+  describe("hostile policy documents", () => {
+    it("reads one used by 2000 policies of 1000 bindings quickly, and says there was more", () => {
+      const started = Date.now();
+      let source = `${BASE}\ndata "google_iam_policy" "d" {\n`;
+      for (let i = 0; i < 1000; i++) source += `  binding {\n    role    = "roles/viewer"\n    members = ["user:u${i}@example.com"]\n  }\n`;
+      source += "}\n";
+      for (let i = 0; i < 2000; i++) source += `resource "google_project_iam_policy" "p${i}" {\n  project     = google_project.app.project_id\n  policy_data = data.google_iam_policy.d.policy_data\n}\n`;
+      source += `resource "google_project_iam_member" "last" {\n  role   = "roles/owner"\n  member = "allUsers"\n}\n`;
+      const model = read(source).model;
+      assert.ok(Date.now() - started < 5000, `${Date.now() - started}ms`);
+      // Not drawn less: what was past the budget is an unscoped grant from a principal it cannot name.
+      assert.deepEqual(
+        typed(model).filter((e) => e.startsWith("principal-other")),
+        ["principal-other -> any-resource: unscoped"],
+      );
+      assert.equal(typed(model).some((e) => e === "principal-user -> any-resource: read"), true);
+    });
+
+    it("reads a document once however many resources use it", () => {
+      const doc = `data "google_iam_policy" "d" {\n  binding {\n    role    = "roles/storage.admin"\n    members = ["allUsers"]\n  }\n}\n`;
+      const users = Array.from({ length: 3 }, (_, i) => `resource "google_storage_bucket_iam_policy" "p${i}" {\n  bucket      = google_storage_bucket.data.name\n  policy_data = data.google_iam_policy.d.policy_data\n}\n`).join("\n");
+      assert.deepEqual(typed(read(`${BASE}${doc}${users}`).model), ["principal-all-users -> object-storage: admin"]);
+    });
   });
 });

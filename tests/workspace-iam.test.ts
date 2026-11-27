@@ -391,7 +391,7 @@ resource "aws_iam_role_policy" "p" {
 }
 `);
     const owner = (address: string) => ({ "aws_iam_role.r": "role", "aws_s3_bucket.b": "bucket" })[address];
-    assert.deepEqual(readIam(blocks, owner, "aws").edges, [{ source: "role", target: ANY_RESOURCE_ID, access: "unscoped" }]);
+    assert.deepEqual(readIam(blocks, owner).edges, [{ source: "role", target: ANY_RESOURCE_ID, access: "unscoped" }]);
   });
 
   it("finds the identities a workload runs under, through a profile", () => {
@@ -719,7 +719,7 @@ resource "aws_iam_role_policy_attachment" "a" {
 }
 `;
     const blocks = parseHcl(own);
-    const owned = readIam(blocks, (address) => (address === "aws_iam_role.fn" ? "fn" : undefined), "aws");
+    const owned = readIam(blocks, (address) => (address === "aws_iam_role.fn" ? "fn" : undefined));
     assert.ok(owned.edges.some((e) => e.source === "fn" && e.target === "fn" && e.access === "admin"), "a policy that covers IAM may rewrite the role it is attached to");
     assert.ok(owned.edges.some((e) => e.source === "fn" && e.target === ANY_RESOURCE_ID && e.access === "admin"));
     assert.ok(grants(own).includes(`${ANY}: admin`), "a self edge cannot be drawn, so the model carries it as any resource");
@@ -1040,7 +1040,7 @@ resource "aws_iam_role_policy" "p" {
       if (address === "aws_iam_role.r") return "role";
       throw new RangeError("boom");
     };
-    assert.deepEqual(readIam(blocks, owner, "aws").edges, [{ source: "role", target: ANY_RESOURCE_ID, access: "unscoped" }]);
+    assert.deepEqual(readIam(blocks, owner).edges, [{ source: "role", target: ANY_RESOURCE_ID, access: "unscoped" }]);
   });
 });
 
@@ -1123,10 +1123,10 @@ resource "aws_iam_role_policy" "fn" {
 
   it("reads a long heredoc in linear time and still finds its terminator", () => {
     const hostile = `<<EOT\n${"\n".repeat(80_000)}x\nEOT`;
-    assert.equal(timed(() => readIam(parseHcl(withPolicy(hostile)), () => "role", "aws").edges.length, 2000), 1);
+    assert.equal(timed(() => readIam(parseHcl(withPolicy(hostile)), () => "role").edges.length, 2000), 1);
 
     const spaces = `<<EOT\n${" \n".repeat(40_000)}`;
-    timed(() => readIam(parseHcl(withPolicy(spaces)), () => "role", "aws"), 2000);
+    timed(() => readIam(parseHcl(withPolicy(spaces)), () => "role"), 2000);
 
     const real = `<<-EOT
     {"Statement": [{ "Effect": "Allow", "Action": "s3:GetObject", "Resource": "${"$"}{aws_s3_bucket.data.arn}" }]}
@@ -1152,7 +1152,7 @@ resource "aws_iam_role_policy" "fn" {
     };
     for (const [name, policy] of Object.entries(cases)) {
       const blocks = parseHcl(withPolicy(policy));
-      const edges = timed(() => readIam(blocks, (a) => (a === "aws_iam_role.fn" ? "entra-id" : undefined), "aws").edges, 3000);
+      const edges = timed(() => readIam(blocks, (a) => (a === "aws_iam_role.fn" ? "entra-id" : undefined)).edges, 3000);
       assert.deepEqual(edges, [{ source: "entra-id", target: ANY_RESOURCE_ID, access: "unscoped" }], name);
     }
   });
