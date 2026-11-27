@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `terragram parse` types a policy attached by the ARN of a well-known AWS managed policy instead of leaving it `unscoped`.
+  A small bundled table (about 55 policies, dated, in `aws-managed-policies.ts`) gives each policy's level per service,
+  read from its document in the AWS managed policy reference with the same rule that levels an action in an inline
+  policy: `AdministratorAccess` and `PowerUserAccess` are `admin`, `ReadOnlyAccess`, `ViewOnlyAccess` and
+  `SecurityAudit` are `read`, `AmazonS3ReadOnlyAccess` is `read` and `AmazonS3FullAccess` is `admin` on the
+  drawn buckets, `AWSLambdaBasicExecutionRole` is `write` on logs. A grant goes to each drawn resource of its service,
+  or to "Any resource (*)" at the same level when none is drawn or there are more than the caps allow. Any other ARN
+  (another partition or account, a customer-managed or unlisted policy, a variable or a data source) is still
+  `unscoped`. The table holds levels and service names only, never policy text.
 - A typed edge whose policy statement has a `Condition` (or a `condition` block in an `aws_iam_policy_document`) is
   marked `conditional: true`: the access level is the same one the statement would grant, and the edge is never dropped
   or lowered because of it. It stays conditional only while every grant at its strongest level is. The SVG, the

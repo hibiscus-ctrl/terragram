@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import { modelToSvg } from "terragram-engine/diagram-svg";
 import { explainModel } from "terragram-engine/explain";
 import { parseHcl } from "terragram-engine/hcl";
+import { AWS_MANAGED_POLICIES_VERSION, MAX_MANAGED_EDGES, MAX_MANAGED_TARGETS, managedPolicyGrants, managedPolicyKeys, SERVICE_RESOURCE_TYPES } from "../packages/engine/src/aws-managed-policies.ts";
 import { ANY_RESOURCE_ID, mergeAccess, readIam, runsAsAddresses, strongerAccess } from "terragram-engine/iam";
 import type { InfraModel } from "terragram-engine/model";
 import { infraModelSchema } from "terragram-engine/model";
@@ -100,7 +101,7 @@ resource "aws_iam_role_policy" "fn" {
     }
   });
 
-  it("types a wildcard resource, NotResource, an unreadable policy and AdministratorAccess as unscoped", () => {
+  it("types a wildcard resource, NotResource, an unreadable policy and a managed policy it does not know as unscoped", () => {
     const wildcard = read(withPolicy(`jsonencode({ Statement = [{ Effect = "Allow", Action = "s3:GetObject", Resource = "*" }] })`));
     assert.deepEqual(typed(wildcard.model), ["functions -> entra-id: runs-as", `entra-id -> ${ANY_RESOURCE_ID}: unscoped`]);
     assert.equal(wildcard.model.nodes.find((n) => n.id === ANY_RESOURCE_ID)?.label, "Any resource (*)");
@@ -119,7 +120,7 @@ resource "aws_iam_role_policy" "fn" {
     const admin = read(`${AWS_BASE}
 resource "aws_iam_role_policy_attachment" "admin" {
   role       = aws_iam_role.fn.name
-  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+  policy_arn = "arn:aws:iam::aws:policy/SomeNewManagedPolicy"
 }
 `);
     assert.deepEqual(typed(admin.model).slice(1), [`entra-id -> ${ANY_RESOURCE_ID}: unscoped`]);
@@ -591,6 +592,133 @@ resource "aws_iam_role_policy" "fn" {
   });
 });
 
+describe("well-known AWS managed policies", () => {
+  const attach = (arn: string, extra = "") => `${AWS_BASE}${extra}
+resource "aws_iam_role_policy_attachment" "a" {
+  role       = aws_iam_role.fn.name
+  policy_arn = ${arn}
+}
+`;
+  /** The edges past the workload's own runs-as edge, with " (conditional)" where marked. */
+  const grants = (tf: string) =>
+    read(tf).model.edges.filter((e) => e.access && e.access !== "runs-as").map((e) => `${e.target}: ${e.access}${e.conditional ? " (conditional)" : ""}`);
+  const ANY = ANY_RESOURCE_ID;
+
+  it("types a policy that covers every service at its level over any resource", () => {
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AdministratorAccess"')), [`${ANY}: admin`]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/PowerUserAccess"')), [`${ANY}: admin`]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/ReadOnlyAccess"')), [`${ANY}: read`]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/job-function/ViewOnlyAccess"')), [`${ANY}: read`]);
+  });
+
+  it("types a service policy at its level on each drawn resource of that service", () => {
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"')), ["object-storage: read"]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonS3FullAccess"')), ["object-storage: admin"]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonSQSReadOnlyAccess"')), ["queue: read"]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonSQSFullAccess"')), ["queue: admin"]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess"')).filter((g) => g.startsWith("nosql")), ["nosql: read"]);
+  });
+
+  it("ends a grant at any resource when the policy's service has nothing drawn, keeping its level", () => {
+    // Logs are not drawn here: the Lambda basic execution role still writes somewhere the picture does not show.
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"')), [`${ANY}: write`]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/IAMFullAccess"')), [`${ANY}: admin`]);
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/IAMReadOnlyAccess"')), [`${ANY}: read`]);
+  });
+
+  it("keeps a policy's strongest grant per resource and its conditions", () => {
+    // Lambda full access: admin on the drawn function, and a conditional iam:PassRole that ends at any resource.
+    // The helpers on services that are not drawn (logs, states, xray) are lower, so they do not change the pair's level.
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AWSLambda_FullAccess"')).sort(), [`${ANY}: admin (conditional)`, "functions: admin"]);
+    // DynamoDB full access: the same conditional PassRole, but DAX is admin without one, so the pair is not conditional.
+    assert.deepEqual(grants(attach('"arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"')).sort(), [`${ANY}: admin`, "functions: write", "nosql: admin"]);
+  });
+
+  it("reads the ARN written with the partition from a data source, and nothing else templated", () => {
+    const partition = '"arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonS3ReadOnlyAccess"';
+    assert.deepEqual(grants(attach(partition)), ["object-storage: read"]);
+    assert.deepEqual(grants(attach(`[${partition}]`.slice(1, -1))), ["object-storage: read"]);
+  });
+
+  it("attaches through managed_policy_arns and the other attachment resource too, and consumes the block", () => {
+    const onRole = AWS_BASE.replace('name = "fn"', 'name = "fn"\n  managed_policy_arns = ["arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess", "arn:aws:iam::aws:policy/AmazonSQSFullAccess"]');
+    assert.deepEqual(grants(onRole), ["object-storage: read", "queue: admin"]);
+    const shared = `${AWS_BASE}
+resource "aws_iam_policy_attachment" "a" {
+  name       = "a"
+  roles      = [aws_iam_role.fn.name]
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+}
+`;
+    const result = read(shared);
+    assert.deepEqual(grants(shared), ["object-storage: read"]);
+    assert.deepEqual(result.untranslated, [], "a recognised attachment is understood, not left as a block");
+  });
+
+  it("draws one edge to any resource, not one per resource, once a service has more drawn than the cap", () => {
+    const buckets = Array.from({ length: MAX_MANAGED_TARGETS + 1 }, (_, i) => `resource "aws_s3_bucket" "b${i}" {\n  bucket = "b${i}"\n}\n`).join("");
+    const many = grants(attach('"arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"', buckets));
+    assert.deepEqual(many, [`${ANY}: read`]);
+    const few = Array.from({ length: 3 }, (_, i) => `resource "aws_s3_bucket" "c${i}" {\n  bucket = "c${i}"\n}\n`).join("");
+    assert.equal(grants(attach('"arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"', few)).length, 4, "the base bucket and the three new ones, an edge to each");
+  });
+
+  it("bounds the edges one attachment adds, whatever it covers", () => {
+    // Route 53 full access reads EC2, load balancers and S3: with 25 of the first two drawn, the bucket no longer fits.
+    const drawn = Array.from({ length: MAX_MANAGED_TARGETS }, (_, i) => `resource "aws_vpc" "v${i}" {\n  cidr_block = "10.${i}.0.0/16"\n}\nresource "aws_lb" "l${i}" {\n  name = "l${i}"\n}\n`).join("");
+    const { model } = read(attach('"arn:aws:iam::aws:policy/AmazonRoute53FullAccess"', drawn));
+    const typedEdges = model.edges.filter((e) => e.access && e.access !== "runs-as");
+    const kindOf = (id: string) => model.nodes.find((n) => n.id === id)?.kind;
+    assert.equal(typedEdges.filter((e) => e.target !== ANY_RESOURCE_ID).length, MAX_MANAGED_EDGES);
+    assert.equal(typedEdges.some((e) => kindOf(e.target) === "object-storage"), false, "the bucket is past the cap");
+    assert.equal(typedEdges.find((e) => e.target === ANY_RESOURCE_ID)?.access, "admin", "route53 itself has nothing drawn");
+  });
+
+  it("never keeps the policy's name or any text in the model", () => {
+    const json = JSON.stringify(read(attach('"arn:aws:iam::aws:policy/AmazonS3FullAccess"')).model);
+    for (const leaked of ["AmazonS3FullAccess", "arn:aws", "s3:", "policy"]) assert.equal(json.includes(leaked), false, leaked);
+  });
+
+  it("holds a small, valid, versioned table whose levels follow the policies' published purpose", () => {
+    const keys = managedPolicyKeys();
+    assert.ok(keys.length >= 30 && keys.length <= 80, `${keys.length} policies`);
+    assert.match(AWS_MANAGED_POLICIES_VERSION, /^\d{4}-\d{2}-\d{2}$/);
+    for (const key of keys) {
+      assert.match(key, /^(?:[a-z-]+\/)?[A-Za-z0-9_+=,.@-]{1,128}$/, key);
+      const grants = managedPolicyGrants(`arn:aws:iam::aws:policy/${key}`);
+      assert.ok(grants && grants.length > 0, key);
+      for (const [service, level, conditional] of grants ?? []) {
+        assert.ok(service === "*" || Object.hasOwn(SERVICE_RESOURCE_TYPES, service), `${key}: ${service}`);
+        assert.ok(["read", "write", "admin"].includes(level), `${key}: ${level}`);
+        assert.ok(conditional === undefined || conditional === true, key);
+      }
+      // A policy published as read-only grants nothing above read.
+      if (/ReadOnly|ViewOnly|SecurityAudit/.test(key)) assert.ok((grants ?? []).every(([, level]) => level === "read"), key);
+      // A full-access policy to one service reaches admin there.
+      if (/FullAccess$/.test(key) && !/^(?:AmazonRDS|AmazonEC2Container|AmazonAPIGatewayInvoke)/.test(key) && (grants ?? []).length === 1) assert.equal(grants?.[0]?.[1], "admin", key);
+    }
+    for (const [arn, level] of [["AdministratorAccess", "admin"], ["PowerUserAccess", "admin"], ["ReadOnlyAccess", "read"]] as const) {
+      assert.deepEqual(managedPolicyGrants(`arn:aws:iam::aws:policy/${arn}`), [["*", level]]);
+    }
+    assert.equal(managedPolicyGrants("arn:aws:iam::aws:policy/NotInTheTable"), undefined);
+    assert.equal(managedPolicyGrants(`arn:aws:iam::aws:policy/${"A".repeat(5000)}`), undefined);
+  });
+
+  it("does not look up a hostile ARN: long, escaped or nested text is unscoped, quickly", () => {
+    const start = performance.now();
+    for (const arn of [
+      `"${"arn:aws:iam::aws:policy/".repeat(20_000)}"`,
+      `"arn:\${data.aws_partition.${"a".repeat(200_000)}.partition}:iam::aws:policy/AdministratorAccess"`,
+      '"arn:aws:iam::aws:policy/Administrator\\u0041ccess"',
+      '"arn:aws:iam::aws:policy/AdministratorAccess%{ if true }"',
+      `"arn:\${data.aws_partition.\${data.aws_partition.x.partition}.partition}:iam::aws:policy/AdministratorAccess"`,
+    ]) {
+      assert.deepEqual(grants(attach(arn)), [`${ANY}: unscoped`], arn.slice(0, 60));
+    }
+    assert.ok(performance.now() - start < 2000);
+  });
+});
+
 /* ------------------------------------------------------------ hostile input -- */
 
 describe("what the reader is not sure of is unscoped, never dropped", () => {
@@ -732,18 +860,23 @@ resource "aws_iam_role_policy_attachment" "a" {
 }
 `;
     for (const arn of [
-      `"arn:aws:iam::aws:policy/AdministratorAccess"`,
-      `"arn:aws:iam::aws:policy/PowerUserAccess"`,
-      `"arn:aws:iam::aws:policy/IAMFullAccess"`,
-      `"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"`,
+      `"arn:aws:iam::aws:policy/SomeNewManagedPolicy"`,
+      `"arn:aws:iam::aws:policy/service-role/AdministratorAccess"`,
+      `"arn:aws:iam::aws:policy/administratoraccess"`,
+      `"arn:aws-cn:iam::aws:policy/AdministratorAccess"`,
+      `"arn:aws:iam::123456789012:policy/AdministratorAccess"`,
       `"arn:aws:iam::\${data.aws_caller_identity.me.account_id}:policy/x"`,
+      `"arn:\${var.partition}:iam::aws:policy/AdministratorAccess"`,
+      `"arn:\${data.aws_partition.current.partition}:iam::aws:policy/AdministratorAccess\${var.suffix}"`,
+      `"arn:aws:iam::aws:policy/__proto__"`,
+      `"arn:aws:iam::aws:policy/constructor"`,
       "var.policy_arn",
       "data.aws_iam_policy.p.arn",
       "aws_iam_policy.not_in_this_file.arn",
     ]) {
       assert.deepEqual(grants(attach(arn)), [ANY], arn);
     }
-    const onRole = `${AWS_BASE.replace('name = "fn"', 'name = "fn"\n  managed_policy_arns = ["arn:aws:iam::aws:policy/IAMFullAccess", aws_iam_policy.q.arn]')}
+    const onRole = `${AWS_BASE.replace('name = "fn"', 'name = "fn"\n  managed_policy_arns = ["arn:aws:iam::aws:policy/SomeNewManagedPolicy", aws_iam_policy.q.arn]')}
 resource "aws_iam_policy" "q" {
   name   = "q"
   policy = jsonencode({ Statement = [{ Effect = "Allow", Action = "sqs:SendMessage", Resource = aws_sqs_queue.jobs.arn }] })

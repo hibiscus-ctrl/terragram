@@ -1,6 +1,7 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { MAX_MANAGED_EDGES, MAX_MANAGED_TARGETS, managedPolicyGrants, SERVICE_RESOURCE_TYPES } from "./aws-managed-policies.ts";
 import { attributeOf, extractReferences, type HclBlock, stringValue } from "./hcl.ts";
 import type { Cloud, EdgeAccess } from "./model.ts";
 
@@ -15,7 +16,8 @@ import type { Cloud, EdgeAccess } from "./model.ts";
  *
  * What the text cannot bound is typed `unscoped` rather than guessed at: a wildcard
  * resource, a policy that is a variable, a file or a template, an action that is not a
- * plain string, a role assigned over a subscription.
+ * plain string, a role assigned over a subscription, a managed policy that is neither
+ * defined in the file nor in the bundled table of well-known AWS ones.
  */
 
 /** The conceptual node an `unscoped` edge ends at. */
@@ -611,10 +613,51 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     return edges.length;
   };
 
+  /** The resource types of one service the file draws, as node ids, found once. */
+  const drawnByService = new Map<string, string[]>();
+  const drawnOf = (service: string): string[] => {
+    const known = drawnByService.get(service);
+    if (known) return known;
+    const prefixes = Object.hasOwn(SERVICE_RESOURCE_TYPES, service) ? (SERVICE_RESOURCE_TYPES[service] ?? []) : [];
+    const ids: string[] = [];
+    for (const b of blocks) {
+      const [type, name] = b.labels;
+      if (b.type !== "resource" || !type || !name || !prefixes.some((p) => type.startsWith(p))) continue;
+      const id = owner(`${type}.${name}`);
+      if (id && !ids.includes(id)) ids.push(id);
+    }
+    drawnByService.set(service, ids);
+    return ids;
+  };
+
   /**
-   * A managed policy attached to `source`. Only a policy defined in this file is read; an
-   * ARN, a data source, a variable or anything else is a policy this reader cannot see
-   * (AdministratorAccess, PowerUserAccess, IAMFullAccess and the rest), so it is unscoped.
+   * The edges of a well-known managed policy: its level on each drawn resource of each
+   * service it covers, or at "Any resource (*)" where it covers none that is drawn (or too many
+   * to draw one edge each), or everywhere for a policy that covers every service.
+   */
+  const managedEdges = (source: string, arn: string): IamEdge[] | undefined => {
+    const grants = managedPolicyGrants(arn);
+    if (!grants) return undefined;
+    const out: IamEdge[] = [];
+    let drawn = 0;
+    for (const [service, access, conditional] of grants) {
+      const flag = conditional ? ({ conditional: true } as const) : {};
+      const targets = service === "*" ? [] : drawnOf(service).filter((id) => id !== source);
+      if (targets.length === 0 || targets.length > MAX_MANAGED_TARGETS || drawn + targets.length > MAX_MANAGED_EDGES) {
+        out.push({ source, target: ANY_RESOURCE_ID, access, ...flag });
+      } else {
+        for (const target of targets) out.push({ source, target, access, ...flag });
+        drawn += targets.length;
+      }
+    }
+    return out;
+  };
+
+  /**
+   * A managed policy attached to `source`. A policy defined in this file is read. An ARN in
+   * the bundled table of well-known AWS policies (AdministratorAccess, AmazonS3ReadOnlyAccess
+   * and the like) gets the level and services the table gives it. Anything else (another ARN,
+   * a data source, a variable) is a policy this reader cannot see, so it is unscoped.
    */
   const attach = (source: string, expr: string | undefined, holder: HclBlock | null): void => {
     const unscoped = () => {
@@ -635,6 +678,18 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     for (const item of items) {
       const policy = item.t === "list" || item.t === "obj" ? undefined : policies.get(policyAddress(item));
       if (!policy) {
+        const arn = managedArn(item);
+        let known: IamEdge[] | undefined;
+        try {
+          known = arn === null ? undefined : managedEdges(source, arn);
+        } catch {
+          known = undefined; // fails closed: the policy is then unscoped
+        }
+        if (known) {
+          out.edges.push(...known);
+          if (holder) out.consumed.add(holder);
+          continue;
+        }
         unscoped();
         continue;
       }
@@ -660,6 +715,24 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
       out.consumed.add(b);
     }
   }
+}
+
+/**
+ * The ARN text of a managed policy attached by a string: a literal in the `aws` partition, or
+ * that with its partition taken from `data.aws_partition.<name>.partition`. Null for anything
+ * else (a reference, a function, another template, another partition, a long string, an escape).
+ */
+function managedArn(item: Val): string | null {
+  if (item.t !== "str" || item.text.length > 240 || item.text.includes("\\")) return null;
+  const text = item.text;
+  if (!item.interpolated) return text.startsWith("arn:aws:") ? text : null;
+  // Only `arn:${data.aws_partition.<name>.partition}:...`: cut at the first brace instead of running a pattern over the rest.
+  const open = "arn:${";
+  if (!text.startsWith(open)) return null;
+  const close = text.indexOf("}", open.length);
+  if (close === -1 || text.indexOf("${", close) !== -1 || text.indexOf("%{") !== -1) return null;
+  const reference = text.slice(open.length, close);
+  return /^data\.aws_partition\.[A-Za-z_][\w-]*\.partition$/.test(reference) ? `arn:aws${text.slice(close + 1)}` : null;
 }
 
 /** The address of the local policy an ARN expression names (`aws_iam_policy.x.arn` or its template), or "" for anything else. */
