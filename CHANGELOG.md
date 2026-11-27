@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The bundled AWS managed policy table now holds the `iam:Get*`/`iam:List*` reads the published policy documents grant (`AWSLambda_ReadOnlyAccess` and
+  `AWSLambda_FullAccess`, `AmazonDynamoDBReadOnlyAccess` and `FullAccess`, `AmazonCognitoPowerUser`, `CloudFrontFullAccess`, `CloudWatchFullAccess`,
+  `AWSKeyManagementServicePowerUser`), so IAM shows as `read` where a policy grants it. Beside a conditional `iam:PassRole` row the read stays visible as the
+  unconditional level. Reads of one named AWS service-linked role are still not counted.
 - `terragram parse` types the Google Cloud IAM in a file as edges, the way it does AWS policies and Azure role assignments.
   `google_project_iam_member`, `_binding` and `_policy` (and the folder, organisation and billing account ones) give the principal an edge to
   "Any resource (*)" at the role's level; the same three on a storage bucket, Pub/Sub topic or subscription, Secret Manager secret, KMS key
