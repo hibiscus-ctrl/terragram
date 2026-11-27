@@ -68,6 +68,24 @@ surface) and ships TypeScript source. The CLI and the Action import it in-proces
   is on Resource `*`, so every grant always has an `any-resource` edge at its level, plus an edge to each drawn resource of its service (`SERVICE_RESOURCE_TYPES`)
   unless none is drawn or there are more than `MAX_MANAGED_TARGETS`/`MAX_MANAGED_EDGES` allow. The table lists every service a policy grants on,
   drawn or not (a service with no drawn type is the `any-resource` edge alone). An ARN not in the table stays `unscoped`.
+  **Every cloud's grants are read in every file** (`readIam` runs `readAws`, `readAzure` and `readGcp` whichever cloud the file goes to): a grant no reader read is a grant the picture understates.
+  **Google Cloud IAM** (`readGcp` in `iam.ts`) reads `google_<service>_iam_member|binding|policy` the same way: the role by its name
+  alone (`gcpRoleLevel`: `roles/owner`, `roles/editor` and `roles/cloudbuild.builds.editor` are `admin` since they mint keys for or act as any service account, then the last
+  camelCase word of a predefined one, else `unscoped`), a `condition` block as conditional only when its CEL expression looks at the request or the resource
+  (`gcpExpressionNarrows`: not a constant or a tautology, not an `||` beside a literal, not only a lower bound on `request.time`, not past 4000 characters; when unsure it is not counted),
+  the target by the attribute of its service (`GCP_TARGET_ATTRIBUTES`), and a project, folder, organisation or billing
+  account grant as an edge to `any-resource` at the role's level, never a narrower edge instead. A principal that is not a drawn node is one of a fixed set
+  of stand-in nodes (`GCP_PRINCIPALS`, ids `principal-*`, category `edge`, wording fixed here), never named from the member's text, so there are
+  at most eight and no address reaches the model. Whatever it cannot read (a role, a member, a target, a policy document, past the caps) is
+  `unscoped` or `principal-other`, never dropped. A member that may be anyone (a `concat()`, a `for` expression, a variable, a template that starts with one) is an `unscoped`
+  edge from `principal-other`. A grant on a resource the picture does not draw (an Artifact Registry repository, a Spanner database) is an edge to `any-resource` at the role's level,
+  not nothing; a type with no target attribute is on a drawn node only when an attribute that is not a place (`zone`, `location`, ...) points at it. A role to act as a service account
+  (`roles/iam.serviceAccountUser`, `serviceAccountTokenCreator`) is `runs-as` only from a drawn workload or account, `admin` from a person, an account that is not drawn, a
+  federated identity or another principal, `unscoped` from a group, a domain or the public, and `unscoped` on anything that is not a service account.
+  Access that is not a role is read too, as `unscoped` edges from the principals it names: the storage ACL resources (`GCP_ACL_TYPES`: `role_entity`, `entity`, `predefined_acl`), `google_bigquery_dataset_access`
+  and the `access` blocks of a `google_bigquery_dataset`. A document read by many policies is read once (`readDocument`), and a file's Google Cloud grants cost at most `MAX_GCP_WORK`
+  units; past that, or past any other cap, one unscoped edge from `principal-other` stands for the rest. A new Google resource type that
+  grants access goes in `GCP_TARGET_ATTRIBUTES` with a test; an unlisted one is read by whatever its attributes point at.
   Renderers take the wording and colour from `EDGE_ACCESS_META` (`model.ts`); an untyped edge must still draw exactly as before.
 - **Google Cloud is read, not generated** (`gcp` in `CLOUDS`, not in `GENERATED_CLOUDS`). A file is `gcp` only when it has no AWS or Azure resource or module in it (`detectCloud`); otherwise it goes to the one of those it has most of, and `assessFeasibility` says which Google parts that cloud cannot build. A kind's `gcp` entry is a `ReadSpec`
   (`type`, `matches`, `matchBlock`, `read`, `moduleSource`): what a `google_*` resource or Google registry module reverse-maps to, never an

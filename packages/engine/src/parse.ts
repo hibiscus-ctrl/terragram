@@ -264,7 +264,7 @@ export function parseTerraform(source: string): ParseResult {
       if (identity && kindOf.get(identity) === "entra-id") typeEdge(instance.node.id, identity, "runs-as");
     }
   }
-  const iam = readIam(blocks, (address) => ownerByAddress.get(address), cloud);
+  const iam = readIam(blocks, (address) => ownerByAddress.get(address));
   for (const edge of iam.edges) typeEdge(edge.source, edge.target, edge.access, edge);
   for (let i = untranslated.length - 1; i >= 0; i--) {
     const [type, name] = (untranslated[i] ?? "").split(".");
@@ -287,6 +287,10 @@ export function parseTerraform(source: string): ParseResult {
   // An unscoped grant has to end somewhere on the picture: one conceptual node for "any resource".
   if (edges.some((e) => e.target === ANY_RESOURCE_ID)) {
     nodes.push({ id: ANY_RESOURCE_ID, category: "edge", kind: "external", label: "Any resource (*)", flag: null });
+  }
+  // A grant from a principal the picture does not draw starts at a stand-in for its kind, in fixed words.
+  for (const [id, label] of iam.principals) {
+    if (edges.some((e) => e.source === id)) nodes.push({ id, category: "edge", kind: "external", label, flag: null });
   }
   for (const block of blocks) {
     if (block.type === "module" ? !unreadModules.includes(block) : block.type !== "data") continue;
