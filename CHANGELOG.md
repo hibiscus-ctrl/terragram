@@ -194,6 +194,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `virtual-machine-2` under a long prefix collided and the second apply failed with a 409. An id that fits is unchanged; one that does not keeps its first 23
   characters and ends in six characters of the SHA-256 of the whole, the same on every run. `name_prefix` now has a validation (1 to 20 lowercase letters, digits and
   hyphens, starting with a letter).
+- A Google Cloud plan now refuses a label Google would refuse, at plan time. `var.labels` has a validation over every key and value (a key starts with a lowercase
+  letter; keys and values hold lowercase letters, digits, hyphens and underscores and are at most 63 characters), where a bad label used to pass `terraform plan` and fail at apply.
 
 ## [0.2.0] - 2026-11-23
 
