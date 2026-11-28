@@ -75,8 +75,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `data-warehouse` a BigQuery dataset; `project` a project with no default network and data-access audit logs. A database or a cache reaches its network through
   one private service connection per plan. Reading a Google plan back does not draw what the plan adds around a component, but only when a block is exactly what the generator writes and is tied to the component that uses it (a log bucket another bucket logs into, a source bucket a function is deployed from, the one `roles/storage.objectCreator` grant to Cloud Storage's own group on such a log bucket); a bucket that only carries the label or the name, or a grant to anyone else, is drawn. The Environment choice moves what costs money or blocks a `destroy` (availability, backup retention, deletion
   protection) and nothing that is security. The kinds only Google Cloud has (`project`, `kubernetes`, `virtual-machine`, `data-warehouse`) are now offered to a
-  translator, and are reported as not buildable on AWS and Azure. Not yet built on Google Cloud, and reported as such: the load balancer, the CDN and WAF, the
-  app service and the static site. The emit gate (`npm run validate:emit`, and the Generated Terraform job) now runs every brief and template for Google Cloud too,
+  translator, and are reported as not buildable on AWS and Azure. `load-balancer` an external Application Load Balancer (an address, a URL map, a proxy and a rule on port 80) whose backends are what its
+  edges add: a serverless network endpoint group for Cloud Run (whose ingress is then set to the balancer, and which may be invoked without an identity, as
+  a balancer calls it with none), a Cloud Function or App Engine, a backend bucket for a site (served from its index document, the bucket kept private and
+  read only by the balancer's service agent) or an internet endpoint group for another balancer; with nothing behind it, it redirects to a hostname it asks for.
+  `front-door` Cloud Armor (the OWASP SQL injection, cross-site scripting and remote code execution rules, Log4Shell, and adaptive DDoS protection) and Cloud CDN in
+  front of an application, as a balancer of its own whose resources are named `cdn-...` so reading a plan back tells it from a load balancer. `app-service` App Engine
+  standard on its own service account, deployed from a directory written beside the plan, HTTPS only. `static-site` a private, versioned, logged bucket with an index
+  document and an error page. A DNS zone wired to a balancer or a CDN publishes an A record for its address and gives it the zone's name over HTTPS: a Google-managed
+  certificate, a TLS 1.2 floor, and port 80 redirecting to it. The emit gate (`npm run validate:emit`, and the Generated Terraform job) now runs every brief and template for Google Cloud too,
   through `terraform fmt`, `init` and `validate`, `tflint` with the google ruleset (`--cloud=gcp` runs that cloud alone), `trivy` and `checkov`, with the exceptions
   in `scripts/scanner-skips.ts`, each with its reason.
   A plan with a `key-vault` puts every bucket (the log and source buckets the plan adds too), Pub/Sub topic and BigQuery dataset under that key, with one grant of

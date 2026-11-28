@@ -214,6 +214,14 @@ export const SCANNER_SKIPS: readonly ScannerSkip[] = [
       "nodes that never serve.",
   },
   {
+    checkov: "CKV_GCP_102",
+    reason:
+      "A load balancer calls Cloud Run with no identity of its own, so the service has to admit allUsers to be " +
+      "reachable through it at all. What it admits is bounded the other way: ingress is set to the load balancer " +
+      "(INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER, or ALLOW_INTERNAL_AND_GCLB for a function), so the service's own " +
+      "run.app address refuses everyone else, and a CDN in front of it passes Cloud Armor first.",
+  },
+  {
     trivy: "GCP-0072",
     reason:
       "The one rule that admits traffic inside the network, from the subnetwork's own ip_cidr_range and nothing else " +

@@ -1,6 +1,12 @@
 # Generated from the diagram model
 # Target: Google Cloud · London (europe-west2) · Terraform
-# 0 module calls and 64 resources from 17 components
+# 0 module calls and 73 resources from 19 components
+#
+# Before you apply: www.orders.example.com is served over HTTPS on a certificate validated through
+# the orders.example.com zone this plan creates, which works only once the zone is delegated.
+# Create the zone first (terraform apply -target=google_dns_managed_zone.dns), set the domain's
+# name servers at your registrar to the dns_name_servers output, then apply the rest.
+# Until the zone is delegated, Google cannot provision the managed certificate, and the name does not serve HTTPS.
 
 terraform {
   required_version = ">= 1.6, < 2.0"
@@ -157,6 +163,38 @@ resource "google_dns_managed_zone" "dns" {
   }
 }
 
+resource "google_compute_global_forwarding_rule" "load_balancer" {
+  name                  = "lb-http-${var.name_prefix}-load-balancer"
+  target                = google_compute_target_http_proxy.load_balancer.id
+  ip_address            = google_compute_global_address.load_balancer.id
+  port_range            = "80"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+}
+
+resource "google_compute_url_map" "load_balancer" {
+  name       = "lb-${var.name_prefix}-load-balancer"
+  depends_on = [google_project_service.enabled]
+
+  default_url_redirect {
+    host_redirect          = var.origin_domain_name
+    https_redirect         = true
+    strip_query            = false
+    redirect_response_code = "TEMPORARY_REDIRECT"
+  }
+}
+
+resource "google_compute_target_http_proxy" "load_balancer" {
+  name       = "lb-http-${var.name_prefix}-load-balancer"
+  url_map    = google_compute_url_map.load_balancer_redirect.id
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_compute_global_address" "load_balancer" {
+  name       = "lb-${var.name_prefix}-load-balancer"
+  ip_version = "IPV4"
+  depends_on = [google_project_service.enabled]
+}
+
 resource "google_service_account" "entra_id" {
   account_id   = trim(substr("sa-${var.name_prefix}-entra-id", 0, 30), "-")
   display_name = "Identity for entra-id"
@@ -305,7 +343,6 @@ resource "google_storage_bucket" "functions_source" {
   labels = {
     purpose = "function-source"
   }
-  depends_on = [google_kms_crypto_key_iam_member.key_vault_storage]
 
   versioning {
     enabled = true
@@ -314,10 +351,6 @@ resource "google_storage_bucket" "functions_source" {
   logging {
     log_bucket        = google_storage_bucket.functions_source_logs.name
     log_object_prefix = "access/"
-  }
-
-  encryption {
-    default_kms_key_name = google_kms_crypto_key.key_vault.id
   }
 }
 
@@ -331,7 +364,7 @@ resource "google_storage_bucket" "functions_source_logs" {
   labels = {
     purpose = "access-logs"
   }
-  depends_on = [google_kms_crypto_key_iam_member.key_vault_storage, google_project_service.enabled]
+  depends_on = [google_project_service.enabled]
 
   versioning {
     enabled = true
@@ -345,10 +378,6 @@ resource "google_storage_bucket" "functions_source_logs" {
     action {
       type = "Delete"
     }
-  }
-
-  encryption {
-    default_kms_key_name = google_kms_crypto_key.key_vault.id
   }
 }
 
@@ -370,8 +399,7 @@ resource "google_container_cluster" "kubernetes" {
   network                     = google_compute_network.vnet.id
   subnetwork                  = google_compute_subnetwork.vnet.id
   networking_mode             = "VPC_NATIVE"
-  remove_default_node_pool    = true
-  initial_node_count          = 1
+  initial_node_count          = 0
   enable_shielded_nodes       = true
   enable_intranode_visibility = true
   enable_legacy_abac          = false
@@ -385,12 +413,10 @@ resource "google_container_cluster" "kubernetes" {
   private_cluster_config {
     enable_private_nodes    = true
     enable_private_endpoint = false
-    master_ipv4_cidr_block  = var.kubernetes_master_cidr
+    master_ipv4_cidr_block  = "172.16.0.0/28"
   }
 
   master_authorized_networks_config {
-    gcp_public_cidrs_access_enabled = false
-
     cidr_blocks {
       cidr_block   = var.gke_authorized_cidr
       display_name = "administrators"
@@ -703,7 +729,6 @@ resource "google_storage_bucket" "object_storage" {
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
   force_destroy               = true
-  depends_on                  = [google_kms_crypto_key_iam_member.key_vault_storage]
 
   versioning {
     enabled = true
@@ -712,10 +737,6 @@ resource "google_storage_bucket" "object_storage" {
   logging {
     log_bucket        = google_storage_bucket.object_storage_logs.name
     log_object_prefix = "access/"
-  }
-
-  encryption {
-    default_kms_key_name = google_kms_crypto_key.key_vault.id
   }
 }
 
@@ -729,7 +750,7 @@ resource "google_storage_bucket" "object_storage_logs" {
   labels = {
     purpose = "access-logs"
   }
-  depends_on = [google_kms_crypto_key_iam_member.key_vault_storage, google_project_service.enabled]
+  depends_on = [google_project_service.enabled]
 
   versioning {
     enabled = true
@@ -743,10 +764,6 @@ resource "google_storage_bucket" "object_storage_logs" {
     action {
       type = "Delete"
     }
-  }
-
-  encryption {
-    default_kms_key_name = google_kms_crypto_key.key_vault.id
   }
 }
 
@@ -763,7 +780,6 @@ resource "google_storage_bucket" "object_storage_2" {
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
   force_destroy               = true
-  depends_on                  = [google_kms_crypto_key_iam_member.key_vault_storage]
 
   versioning {
     enabled = true
@@ -772,10 +788,6 @@ resource "google_storage_bucket" "object_storage_2" {
   logging {
     log_bucket        = google_storage_bucket.object_storage_2_logs.name
     log_object_prefix = "access/"
-  }
-
-  encryption {
-    default_kms_key_name = google_kms_crypto_key.key_vault.id
   }
 }
 
@@ -789,7 +801,7 @@ resource "google_storage_bucket" "object_storage_2_logs" {
   labels = {
     purpose = "access-logs"
   }
-  depends_on = [google_kms_crypto_key_iam_member.key_vault_storage, google_project_service.enabled]
+  depends_on = [google_project_service.enabled]
 
   versioning {
     enabled = true
@@ -804,10 +816,6 @@ resource "google_storage_bucket" "object_storage_2_logs" {
       type = "Delete"
     }
   }
-
-  encryption {
-    default_kms_key_name = google_kms_crypto_key.key_vault.id
-  }
 }
 
 resource "google_storage_bucket_iam_member" "object_storage_2_logs_delivery" {
@@ -816,18 +824,72 @@ resource "google_storage_bucket_iam_member" "object_storage_2_logs_delivery" {
   member = "group:cloud-storage-analytics@google.com"
 }
 
+resource "google_storage_bucket" "static_site" {
+  name                        = "${var.project_id}-site-${var.name_prefix}-static-site"
+  location                    = var.region
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  force_destroy               = true
+
+  versioning {
+    enabled = true
+  }
+
+  logging {
+    log_bucket        = google_storage_bucket.static_site_logs.name
+    log_object_prefix = "access/"
+  }
+
+  website {
+    main_page_suffix = "index.html"
+    not_found_page   = "error.html"
+  }
+}
+
+resource "google_storage_bucket" "static_site_logs" {
+  name                        = "${var.project_id}-logs-${var.name_prefix}-static-site"
+  location                    = var.region
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  force_destroy               = true
+  labels = {
+    purpose = "access-logs"
+  }
+  depends_on = [google_project_service.enabled]
+
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    condition {
+      age = 365
+    }
+
+    action {
+      type = "Delete"
+    }
+  }
+}
+
+resource "google_storage_bucket_iam_member" "static_site_logs_delivery" {
+  bucket = google_storage_bucket.static_site_logs.name
+  role   = "roles/storage.objectCreator"
+  member = "group:cloud-storage-analytics@google.com"
+}
+
 resource "google_pubsub_topic" "queue" {
   name                       = "topic-${var.name_prefix}-queue"
   message_retention_duration = "604800s"
-  kms_key_name               = google_kms_crypto_key.key_vault.id
-  depends_on                 = [google_kms_crypto_key_iam_member.key_vault_pubsub, google_project_service.enabled]
+  depends_on                 = [google_project_service.enabled]
 }
 
 resource "google_pubsub_topic" "queue_dead_letter" {
   name                       = "dlq-${var.name_prefix}-queue"
   message_retention_duration = "604800s"
-  kms_key_name               = google_kms_crypto_key.key_vault.id
-  depends_on                 = [google_kms_crypto_key_iam_member.key_vault_pubsub, google_project_service.enabled]
+  depends_on                 = [google_project_service.enabled]
 }
 
 resource "google_pubsub_subscription" "queue" {
@@ -898,11 +960,7 @@ resource "google_bigquery_dataset" "data_warehouse" {
   dataset_id                 = replace("dw-${var.name_prefix}-data-warehouse", "-", "_")
   location                   = var.region
   delete_contents_on_destroy = true
-  depends_on                 = [google_kms_crypto_key_iam_member.key_vault_bigquery, google_project_service.enabled]
-
-  default_encryption_configuration {
-    kms_key_name = google_kms_crypto_key.key_vault.id
-  }
+  depends_on                 = [google_project_service.enabled]
 }
 
 resource "google_monitoring_notification_channel" "monitoring" {
@@ -965,34 +1023,49 @@ resource "google_service_networking_connection" "private_services" {
   deletion_policy         = "ABANDON"
 }
 
-data "google_storage_project_service_account" "key_vault_storage" {
-  depends_on = [google_project_service.enabled]
+resource "google_dns_record_set" "dns_to_load_balancer" {
+  managed_zone = google_dns_managed_zone.dns.name
+  name         = "www.${google_dns_managed_zone.dns.dns_name}"
+  type         = "A"
+  ttl          = 300
+  rrdatas      = [google_compute_global_address.load_balancer.address]
 }
 
-resource "google_kms_crypto_key_iam_member" "key_vault_storage" {
-  crypto_key_id = google_kms_crypto_key.key_vault.id
-  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
-  member        = "serviceAccount:${data.google_storage_project_service_account.key_vault_storage.email_address}"
+resource "google_compute_url_map" "load_balancer_redirect" {
+  name = "lb-redirect-${var.name_prefix}-load-balancer"
+
+  default_url_redirect {
+    https_redirect         = true
+    strip_query            = false
+    redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
+  }
 }
 
-resource "google_project_service_identity" "key_vault_pubsub" {
-  provider   = google-beta
-  service    = "pubsub.googleapis.com"
-  depends_on = [google_project_service.enabled]
+resource "google_compute_managed_ssl_certificate" "dns_to_load_balancer" {
+  name = "lb-cert-${var.name_prefix}-load-balancer"
+
+  managed {
+    domains = ["www.orders.example.com"]
+  }
 }
 
-resource "google_kms_crypto_key_iam_member" "key_vault_pubsub" {
-  crypto_key_id = google_kms_crypto_key.key_vault.id
-  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
-  member        = "serviceAccount:${google_project_service_identity.key_vault_pubsub.email}"
+resource "google_compute_ssl_policy" "load_balancer" {
+  name            = "lb-tls-${var.name_prefix}-load-balancer"
+  profile         = "MODERN"
+  min_tls_version = "TLS_1_2"
 }
 
-data "google_bigquery_default_service_account" "key_vault_bigquery" {
-  depends_on = [google_project_service.enabled]
+resource "google_compute_target_https_proxy" "load_balancer" {
+  name             = "lb-https-${var.name_prefix}-load-balancer"
+  url_map          = google_compute_url_map.load_balancer.id
+  ssl_certificates = [google_compute_managed_ssl_certificate.dns_to_load_balancer.id]
+  ssl_policy       = google_compute_ssl_policy.load_balancer.id
 }
 
-resource "google_kms_crypto_key_iam_member" "key_vault_bigquery" {
-  crypto_key_id = google_kms_crypto_key.key_vault.id
-  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
-  member        = "serviceAccount:${data.google_bigquery_default_service_account.key_vault_bigquery.email}"
+resource "google_compute_global_forwarding_rule" "load_balancer_https" {
+  name                  = "lb-https-${var.name_prefix}-load-balancer"
+  target                = google_compute_target_https_proxy.load_balancer.id
+  ip_address            = google_compute_global_address.load_balancer.id
+  port_range            = "443"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
 }

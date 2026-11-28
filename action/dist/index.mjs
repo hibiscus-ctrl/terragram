@@ -20640,7 +20640,13 @@ function bucketWithLogs(c, opts) {
     block("logging", [], [
       { key: "log_bucket", value: `google_storage_bucket.${logs}.name` },
       { key: "log_object_prefix", value: quote("access/") }
-    ])
+    ]),
+    ...opts.website ? [
+      block("website", [], [
+        { key: "main_page_suffix", value: quote("index.html") },
+        { key: "not_found_page", value: quote("error.html") }
+      ])
+    ] : []
   ]);
   const logBucket = block("resource", ["google_storage_bucket", logs], [
     { key: "name", value: `"\${var.project_id}-logs-\${var.name_prefix}-${c.slug}"` },
@@ -20851,6 +20857,261 @@ var FUNCTION_RUNTIME = {
 };
 function functionRuntimeFrom(runtime) {
   return Object.entries(FUNCTION_RUNTIME).find(([, v]) => v.runtime === runtime)?.[0];
+}
+function frontend(f) {
+  return {
+    rule: block("resource", ["google_compute_global_forwarding_rule", f.name], [
+      { key: "name", value: cloudName(`${f.prefix}-http`, f.slug) },
+      { key: "target", value: `google_compute_target_http_proxy.${f.name}.id` },
+      { key: "ip_address", value: `google_compute_global_address.${f.name}.id` },
+      { key: "port_range", value: quote("80") },
+      { key: "load_balancing_scheme", value: quote("EXTERNAL_MANAGED") }
+    ]),
+    urlMap: block("resource", ["google_compute_url_map", f.name], [{ key: "name", value: cloudName(f.prefix, f.slug) }]),
+    proxy: block("resource", ["google_compute_target_http_proxy", f.name], [
+      { key: "name", value: cloudName(`${f.prefix}-http`, f.slug) },
+      { key: "url_map", value: `google_compute_url_map.${f.name}.id` }
+    ]),
+    address: block("resource", ["google_compute_global_address", f.name], [
+      { key: "name", value: cloudName(f.prefix, f.slug) },
+      { key: "ip_version", value: quote("IPV4") }
+    ])
+  };
+}
+function domainFrontend(f, domain2, blocks) {
+  const proxy = blocks.find((b) => b.labels[0] === "google_compute_target_http_proxy" && b.labels[1] === f.name);
+  if (proxy) {
+    const redirect = attributeOf(proxy, "url_map");
+    proxy.attributes = proxy.attributes.map((a) => a.key === "url_map" ? { key: "url_map", value: `google_compute_url_map.${f.name}_redirect.id` } : a);
+    void redirect;
+  }
+  return [
+    block("resource", ["google_compute_url_map", `${f.name}_redirect`], [{ key: "name", value: cloudName(`${f.prefix}-redirect`, f.slug) }], [
+      block("default_url_redirect", [], [
+        { key: "https_redirect", value: "true" },
+        { key: "strip_query", value: "false" },
+        { key: "redirect_response_code", value: quote("MOVED_PERMANENTLY_DEFAULT") }
+      ])
+    ]),
+    block("resource", ["google_compute_managed_ssl_certificate", domain2.name], [
+      { key: "name", value: cloudName(`${f.prefix}-cert`, f.slug) }
+    ], [block("managed", [], [{ key: "domains", value: `[${quote(domain2.fqdn)}]` }])]),
+    block("resource", ["google_compute_ssl_policy", f.name], [
+      { key: "name", value: cloudName(`${f.prefix}-tls`, f.slug) },
+      { key: "profile", value: quote("MODERN") },
+      { key: "min_tls_version", value: quote("TLS_1_2") }
+    ]),
+    block("resource", ["google_compute_target_https_proxy", f.name], [
+      { key: "name", value: cloudName(`${f.prefix}-https`, f.slug) },
+      { key: "url_map", value: `google_compute_url_map.${f.name}.id` },
+      { key: "ssl_certificates", value: `[google_compute_managed_ssl_certificate.${domain2.name}.id]` },
+      { key: "ssl_policy", value: `google_compute_ssl_policy.${f.name}.id` }
+    ]),
+    block("resource", ["google_compute_global_forwarding_rule", `${f.name}_https`], [
+      { key: "name", value: cloudName(`${f.prefix}-https`, f.slug) },
+      { key: "target", value: `google_compute_target_https_proxy.${f.name}.id` },
+      { key: "ip_address", value: `google_compute_global_address.${f.name}.id` },
+      { key: "port_range", value: quote("443") },
+      { key: "load_balancing_scheme", value: quote("EXTERNAL_MANAGED") }
+    ])
+  ];
+}
+function gcpBackend(edge, target) {
+  const { name } = edge;
+  const policy = edge.policy ? [{ key: "security_policy", value: edge.policy }] : [];
+  const logging = block("log_config", [], [
+    { key: "enable", value: "true" },
+    { key: "sample_rate", value: "1" }
+  ]);
+  const service = (protocol, group) => block("resource", ["google_compute_backend_service", name], [
+    { key: "name", value: cloudName(`${edge.prefix}-be`, `${edge.slug}-${target.name}`.replace(/_/g, "-")) },
+    { key: "protocol", value: quote(protocol) },
+    { key: "load_balancing_scheme", value: quote("EXTERNAL_MANAGED") },
+    { key: "enable_cdn", value: String(edge.cdn) },
+    ...policy
+  ], [block("backend", [], [{ key: "group", value: group }]), logging]);
+  const neg = (blockOf) => blockOf;
+  const serverless = (kind, attributes, extra) => ({
+    blocks: [
+      neg(block("resource", ["google_compute_region_network_endpoint_group", name], [
+        { key: "name", value: cloudName(`${edge.prefix}-neg`, `${edge.slug}-${target.name}`.replace(/_/g, "-")) },
+        { key: "region", value: "var.region" },
+        { key: "network_endpoint_type", value: quote("SERVERLESS") }
+      ], [block(kind, [], attributes)])),
+      service("HTTPS", `google_compute_region_network_endpoint_group.${name}.id`),
+      ...extra
+    ],
+    service: `google_compute_backend_service.${name}.id`,
+    routes: []
+  });
+  if (target.kind === "containers") {
+    const run2 = `google_cloud_run_v2_service.${target.name}`;
+    return {
+      ...serverless("cloud_run", [{ key: "service", value: `${run2}.name` }], [
+        // Cloud Run admits what the balancer sends only if it may be invoked without an identity.
+        block("resource", ["google_cloud_run_v2_service_iam_member", name], [
+          { key: "name", value: `${run2}.name` },
+          { key: "location", value: `${run2}.location` },
+          { key: "role", value: quote("roles/run.invoker") },
+          { key: "member", value: quote("allUsers") }
+        ])
+      ]),
+      admit: { attribute: "ingress", value: quote("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER") }
+    };
+  }
+  if (target.kind === "functions") {
+    const fn = `google_cloudfunctions2_function.${target.name}`;
+    return serverless("cloud_run", [{ key: "service", value: `${fn}.service_config[0].service` }], [
+      block("resource", ["google_cloud_run_service_iam_member", name], [
+        { key: "service", value: `${fn}.service_config[0].service` },
+        { key: "location", value: `${fn}.location` },
+        { key: "role", value: quote("roles/run.invoker") },
+        { key: "member", value: quote("allUsers") }
+      ])
+    ]);
+  }
+  if (target.kind === "app-service") {
+    return serverless("app_engine", [{ key: "service", value: `google_app_engine_standard_app_version.${target.name}.service` }], []);
+  }
+  if (target.kind === "load-balancer") {
+    const group = `google_compute_global_network_endpoint_group.${name}`;
+    const named = target.domain !== void 0;
+    return {
+      blocks: [
+        block("resource", ["google_compute_global_network_endpoint_group", name], [
+          { key: "name", value: cloudName(`${edge.prefix}-neg`, `${edge.slug}-${target.name}`.replace(/_/g, "-")) },
+          { key: "network_endpoint_type", value: quote(named ? "INTERNET_FQDN_PORT" : "INTERNET_IP_PORT") },
+          { key: "default_port", value: named ? "443" : "80" }
+        ]),
+        block("resource", ["google_compute_global_network_endpoint", name], [
+          { key: "global_network_endpoint_group", value: `${group}.id` },
+          named ? { key: "fqdn", value: quote(target.domain ?? "") } : { key: "ip_address", value: `google_compute_global_address.${target.name}.address` },
+          { key: "port", value: named ? "443" : "80" }
+        ]),
+        service(named ? "HTTPS" : "HTTP", `${group}.id`)
+      ],
+      service: `google_compute_backend_service.${name}.id`,
+      routes: []
+    };
+  }
+  if (target.kind === "static-site") {
+    const bucket = `google_storage_bucket.${target.name}`;
+    const backend = `google_compute_backend_bucket.${name}`;
+    return {
+      blocks: [
+        block("resource", ["google_compute_backend_bucket", name], [
+          { key: "name", value: cloudName(`${edge.prefix}-bucket`, `${edge.slug}-${target.name}`.replace(/_/g, "-")) },
+          { key: "bucket_name", value: `${bucket}.name` },
+          { key: "enable_cdn", value: String(edge.cdn) }
+        ]),
+        // The bucket stays private: only the load balancer's own service agent reads it.
+        block("data", ["google_project", name], []),
+        block("resource", ["google_storage_bucket_iam_member", name], [
+          { key: "bucket", value: `${bucket}.name` },
+          { key: "role", value: quote("roles/storage.objectViewer") },
+          { key: "member", value: `"serviceAccount:service-\${data.google_project.${name}.number}@https-lb.iam.gserviceaccount.com"` }
+        ])
+      ],
+      service: `${backend}.id`,
+      // A site is served from its index document: "/" asks the bucket for an object of that name.
+      routes: [
+        block("host_rule", [], [
+          { key: "hosts", value: `["*"]` },
+          { key: "path_matcher", value: quote("site") }
+        ]),
+        block("path_matcher", [], [
+          { key: "name", value: quote("site") },
+          { key: "default_service", value: `${backend}.id` }
+        ], [
+          block("route_rules", [], [
+            { key: "priority", value: "1" },
+            { key: "service", value: `${backend}.id` }
+          ], [
+            block("match_rules", [], [{ key: "full_path_match", value: quote("/") }]),
+            block("route_action", [], [], [block("url_rewrite", [], [{ key: "path_prefix_rewrite", value: quote("/index.html") }])])
+          ])
+        ])
+      ]
+    };
+  }
+  return null;
+}
+function armorPolicy(c) {
+  const deny = (priority, description, expression) => block("rule", [], [
+    { key: "action", value: quote("deny(403)") },
+    { key: "priority", value: String(priority) },
+    { key: "description", value: quote(description) }
+  ], [block("match", [], [], [block("expr", [], [{ key: "expression", value: quote(expression) }])])]);
+  return block("resource", ["google_compute_security_policy", c.name], [
+    { key: "name", value: cloudName("waf", c.slug) },
+    { key: "description", value: quote("Blocks the OWASP top ten request patterns and the Log4Shell probe") }
+  ], [
+    deny(1e3, "SQL injection", "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1})"),
+    deny(1001, "Cross-site scripting", "evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})"),
+    deny(1002, "Remote code execution", "evaluatePreconfiguredWaf('rce-v33-stable', {'sensitivity': 1})"),
+    deny(1003, "Log4Shell (CVE-2021-44228)", "evaluatePreconfiguredWaf('cve-canary')"),
+    block("rule", [], [
+      { key: "action", value: quote("allow") },
+      { key: "priority", value: "2147483647" },
+      { key: "description", value: quote("Allow what no rule above denies") }
+    ], [
+      block("match", [], [{ key: "versioned_expr", value: quote("SRC_IPS_V1") }], [
+        block("config", [], [{ key: "src_ip_ranges", value: `["*"]` }])
+      ])
+    ]),
+    block("adaptive_protection_config", [], [], [
+      block("layer_7_ddos_defense_config", [], [{ key: "enable", value: "true" }])
+    ])
+  ]);
+}
+var GCP_EDGE_PREFIX = "cdn";
+var APP_ENGINE_FILES = [
+  {
+    file: "index.js",
+    content: [
+      "// Placeholder application \u2014 replace it with your own.",
+      'const http = require("node:http");',
+      "",
+      "http",
+      "  .createServer((req, res) => {",
+      '    res.writeHead(200, { "content-type": "application/json" });',
+      '    res.end(JSON.stringify({ ok: true, message: "Replace this placeholder with your application." }));',
+      "  })",
+      "  .listen(process.env.PORT || 8080);",
+      ""
+    ].join("\n")
+  },
+  {
+    file: "package.json",
+    content: `${JSON.stringify({ name: "app", version: "1.0.0", main: "index.js", scripts: { start: "node index.js" } }, null, 2)}
+`
+  }
+];
+var APP_ENGINE_CLASS = { "Dev / Test": "F1", "Standard (P1v3)": "F2", "Production (P3v3)": "F4" };
+function appEngineClassFrom(value) {
+  return Object.entries(APP_ENGINE_CLASS).find(([, v]) => v === value)?.[0];
+}
+function finalizeFrontend(host) {
+  if (host.attributes.some((a) => a.key === "default_service")) return [];
+  host.blocks.push(
+    block("default_url_redirect", [], [
+      { key: "host_redirect", value: "var.origin_domain_name" },
+      { key: "https_redirect", value: "true" },
+      { key: "strip_query", value: "false" },
+      { key: "redirect_response_code", value: quote("TEMPORARY_REDIRECT") }
+    ])
+  );
+  return [
+    {
+      name: "origin_domain_name",
+      type: "string",
+      description: "Hostname the load balancer sends traffic to: nothing in the model sits behind it yet.",
+      default: quote("example.com")
+    }
+  ];
+}
+function isEdgeBlock(b) {
+  return b.labels[0] === "google_compute_security_policy" || (attributeOf(b, "name") ?? "").startsWith(`"${GCP_EDGE_PREFIX}-`);
 }
 var GCP = {
   /** A public DNS zone with DNSSEC on and query logging. */
@@ -21482,6 +21743,107 @@ var GCP = {
         outputs: [{ name: `${c.name}_number`, value: `google_project.${c.name}.number` }]
       };
     }
+  },
+  /** A bucket that serves a site: private, versioned and logged, with an index document and an error page. */
+  staticSite: {
+    emit: (c) => {
+      c.gcp.api("storage.googleapis.com");
+      const { bucket, blocks } = bucketWithLogs(c, { prefix: "site", website: true });
+      return {
+        blocks,
+        referent: blocks.indexOf(bucket),
+        consumer: blocks.indexOf(bucket),
+        variables: [NAME_PREFIX],
+        outputs: [{ name: `${c.name}_bucket`, value: `google_storage_bucket.${c.name}.name` }]
+      };
+    }
+  },
+  /** App Engine standard on its own service account, deployed from a directory written beside the plan. */
+  appService: {
+    emit: (c) => {
+      c.gcp.api("appengine.googleapis.com", "cloudbuild.googleapis.com", "storage.googleapis.com");
+      const source = `${c.name}_source`;
+      const sourceBucket = bucketWithLogs({ ...c, name: source }, { prefix: "app", purpose: "app-source" });
+      const instanceClass = APP_ENGINE_CLASS[c.attr("Compute tier")] ?? "F2";
+      return {
+        blocks: [
+          block("resource", ["google_app_engine_standard_app_version", c.name], [
+            { key: "service", value: quote("default") },
+            { key: "version_id", value: quote("v1") },
+            { key: "runtime", value: quote("nodejs22") },
+            { key: "instance_class", value: quote(instanceClass) },
+            { key: "service_account", value: `google_service_account.${c.name}.email` },
+            { key: "delete_service_on_destroy", value: "true" },
+            { key: "depends_on", value: `[google_app_engine_application.${c.name}]` }
+          ], [
+            block("entrypoint", [], [{ key: "shell", value: quote("node index.js") }]),
+            block("deployment", [], [], [
+              block("zip", [], [
+                { key: "source_url", value: `"https://storage.googleapis.com/\${google_storage_bucket.${source}.name}/\${google_storage_bucket_object.${source}.name}"` }
+              ])
+            ]),
+            block("handlers", [], [
+              { key: "url_regex", value: quote(".*") },
+              { key: "security_level", value: quote("SECURE_ALWAYS") }
+            ], [block("script", [], [{ key: "script_path", value: quote("auto") }])])
+          ]),
+          block("resource", ["google_app_engine_application", c.name], [
+            { key: "location_id", value: "var.region" },
+            { key: "database_type", value: quote("CLOUD_FIRESTORE") }
+          ]),
+          serviceAccount(c.name, c.slug, `Runs the ${c.slug} application`),
+          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
+          projectRole(`${c.name}_object_viewer`, "roles/storage.objectViewer", `google_service_account.${c.name}`),
+          block("data", ["archive_file", c.name], [
+            { key: "type", value: quote("zip") },
+            { key: "source_dir", value: quoteTemplate`\${path.module}/src/${c.slug}` },
+            { key: "output_path", value: quoteTemplate`\${path.module}/.terraform/${c.slug}.zip` }
+          ]),
+          ...sourceBucket.blocks,
+          block("resource", ["google_storage_bucket_object", source], [
+            { key: "name", value: `"\${data.archive_file.${c.name}.output_md5}.zip"` },
+            { key: "bucket", value: `google_storage_bucket.${source}.name` },
+            { key: "source", value: `data.archive_file.${c.name}.output_path` }
+          ])
+        ],
+        variables: [NAME_PREFIX],
+        outputs: [{ name: `${c.name}_hostname`, value: `google_app_engine_application.${c.name}.default_hostname` }],
+        files: APP_ENGINE_FILES.map((f) => ({ name: `src/${c.slug}/${f.file}`, content: f.content }))
+      };
+    }
+  },
+  /** An external Application Load Balancer; its backends are what the edges to it add. */
+  loadBalancer: {
+    emit: (c) => {
+      c.gcp.api("compute.googleapis.com");
+      const f = frontend({ prefix: "lb", slug: c.slug, name: c.name });
+      return {
+        blocks: [f.rule, f.urlMap, f.proxy, f.address],
+        referent: 0,
+        consumer: 1,
+        variables: [NAME_PREFIX],
+        outputs: [{ name: `${c.name}_address`, value: `google_compute_global_address.${c.name}.address` }]
+      };
+    },
+    domain: (c, domain2, blocks) => domainFrontend({ prefix: "lb", slug: c.slug, name: c.name }, domain2, blocks)
+  },
+  /**
+   * Cloud CDN and Cloud Armor in front of an application: a policy of the OWASP and Log4Shell rules, and a
+   * load balancer of its own whose backends cache what they serve and pass the policy first.
+   */
+  frontDoor: {
+    emit: (c) => {
+      c.gcp.api("compute.googleapis.com");
+      const f = frontend({ prefix: GCP_EDGE_PREFIX, slug: c.slug, name: c.name });
+      return {
+        blocks: [armorPolicy(c), f.rule, f.urlMap, f.proxy, f.address],
+        referent: 1,
+        consumer: 2,
+        variables: [NAME_PREFIX],
+        outputs: [{ name: `${c.name}_address`, value: `google_compute_global_address.${c.name}.address` }]
+      };
+    },
+    domain: (c, domain2, blocks) => domainFrontend({ prefix: GCP_EDGE_PREFIX, slug: c.slug, name: c.name }, domain2, blocks)
   }
 };
 function privateServicesBlocks(networkId) {
@@ -22118,6 +22480,19 @@ var GCP_MODULES = {
   bigquery: "terraform-google-modules/bigquery/google",
   project: "terraform-google-modules/project-factory/google"
 };
+var GCP_FRONTEND_TYPES = [
+  "google_compute_global_forwarding_rule",
+  "google_compute_global_address",
+  "google_compute_url_map",
+  "google_compute_target_http_proxy",
+  "google_compute_target_https_proxy",
+  "google_compute_backend_service",
+  "google_compute_backend_bucket",
+  "google_compute_managed_ssl_certificate",
+  "google_compute_ssl_policy",
+  "google_compute_region_network_endpoint_group",
+  "google_compute_global_network_endpoint_group"
+];
 function hasWebsite(b) {
   return b.blocks.some((x) => x.type === "website") || attr(b, "website") !== void 0;
 }
@@ -22495,7 +22870,13 @@ var KIND_DEFINITIONS = [
       hostname: (ref) => `aws_cloudfront_distribution.${ref.name}.domain_name`
     },
     gcp: {
-      type: "google_compute_security_policy"
+      type: "google_compute_security_policy",
+      matches: GCP_FRONTEND_TYPES,
+      matchBlock: isEdgeBlock,
+      emit: (c) => GCP.frontDoor.emit({ ...c, gcp: gcpPlan(c) }),
+      finalize: (host) => finalizeFrontend(host),
+      customDomain: (host, domain2, blocks) => GCP.frontDoor.domain({ name: host.labels[1] ?? "", slug: (host.labels[1] ?? "").replace(/_/g, "-") }, domain2, blocks),
+      addressResource: (ref) => `google_compute_global_address.${ref.name}.address`
     }
   },
   {
@@ -22622,17 +23003,19 @@ var KIND_DEFINITIONS = [
     gcp: {
       type: "google_compute_global_forwarding_rule",
       matches: [
+        ...GCP_FRONTEND_TYPES,
         "google_compute_forwarding_rule",
-        "google_compute_url_map",
         "google_compute_region_url_map",
-        "google_compute_target_http_proxy",
-        "google_compute_target_https_proxy",
-        "google_compute_backend_service",
         "google_compute_region_backend_service",
         "google_compute_health_check",
         "google_compute_region_health_check"
       ],
-      moduleSource: GCP_MODULES.loadBalancer
+      // What the front door claims (its own balancer is named apart, see `isEdgeBlock`) is decided before this kind sees a block.
+      moduleSource: GCP_MODULES.loadBalancer,
+      emit: (c) => GCP.loadBalancer.emit({ ...c, gcp: gcpPlan(c) }),
+      finalize: (host) => finalizeFrontend(host),
+      customDomain: (host, domain2, blocks) => GCP.loadBalancer.domain({ name: host.labels[1] ?? "", slug: (host.labels[1] ?? "").replace(/_/g, "-") }, domain2, blocks),
+      addressResource: (ref) => `google_compute_global_address.${ref.name}.address`
     }
   },
   {
@@ -22757,7 +23140,11 @@ var KIND_DEFINITIONS = [
     },
     gcp: {
       type: "google_app_engine_standard_app_version",
-      matches: ["google_app_engine_flexible_app_version", "google_app_engine_application"]
+      matches: ["google_app_engine_flexible_app_version", "google_app_engine_application"],
+      emit: (c) => GCP.appService.emit({ ...c, gcp: gcpPlan(c) }),
+      read: (b) => readOne(b, "instance_class", "Compute tier", (v) => appEngineClassFrom(v)),
+      settings: { attribute: "env_variables" },
+      hostname: (ref) => `google_app_engine_application.${ref.name}.default_hostname`
     }
   },
   {
@@ -23120,7 +23507,9 @@ var KIND_DEFINITIONS = [
     gcp: {
       type: "google_storage_bucket",
       matchBlock: (b) => hasWebsite(b),
-      moduleSource: GCP_MODULES.bucket
+      moduleSource: GCP_MODULES.bucket,
+      emit: (c) => GCP.staticSite.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "SITE_BUCKET", value: refAddress(ref, "name") })
     }
   },
   {
@@ -24393,6 +24782,30 @@ function wireEdge(source, target, cloud, plan) {
   const hostname3 = target.spec.hostname?.(target.referent);
   const originName = `${source.name}_to_${target.name}`;
   const originCloudName = quote(originName.replace(/_/g, "-"));
+  if (cloud === "gcp" && (source.node.kind === "front-door" || source.node.kind === "load-balancer")) {
+    const edge = source.node.kind === "front-door";
+    const backend = gcpBackend(
+      {
+        name: originName,
+        slug: tfSlug(source.node.id),
+        prefix: edge ? GCP_EDGE_PREFIX : "lb",
+        cdn: edge,
+        ...edge ? { policy: `google_compute_security_policy.${source.name}.id` } : {}
+      },
+      { kind: target.node.kind, name: target.name, domain: plan.domains.get(target.node.id) }
+    );
+    if (backend) {
+      if (!source.consumer.attributes.some((a) => a.key === "default_service")) {
+        source.consumer.attributes.push({ key: "default_service", value: backend.service });
+        source.consumer.blocks.push(...backend.routes);
+      }
+      if (backend.admit) {
+        const admitted = target.consumer.attributes.find((a) => a.key === backend.admit?.attribute);
+        if (admitted) admitted.value = backend.admit.value;
+      }
+      return backend.blocks;
+    }
+  }
   if (source.node.kind === "front-door" && hostname3) {
     if (cloud === "azure") {
       frontDoorOrigin(source.consumer, originName.replace(/_/g, "-"), originCloudName, hostname3);
@@ -24459,7 +24872,8 @@ function wireEdge(source, target, cloud, plan) {
       ];
     }
   }
-  if (source.node.kind === "dns" && hostname3) {
+  const address = cloud === "gcp" ? target.spec.addressResource?.(target.referent) : void 0;
+  if (source.node.kind === "dns" && (hostname3 || address)) {
     const zoneName = source.context.attr("Zone name");
     const domain2 = {
       name: originName,
@@ -24469,27 +24883,26 @@ function wireEdge(source, target, cloud, plan) {
       zoneId: cloud === "azure" ? refAddress(source.referent, "resource_id") : refAddress(source.referent, source.referent.type === "module" ? "id" : "zone_id"),
       zone: source.consumer
     };
-    const served = target.spec.customDomain?.(target.consumer, domain2) ?? [];
+    const served = target.spec.customDomain?.(target.consumer, domain2, target.blocks) ?? [];
     if (target.spec.customDomain) {
       plan.domains.set(target.node.id, domain2.fqdn);
       plan.notes.push(customDomainNote(domain2, cloud, refAddress(source.referent), `${source.name}_name_servers`));
     }
     if (cloud === "gcp") {
-      const address = target.spec.addressResource?.(target.referent);
       return [
         block("resource", ["google_dns_record_set", originName], [
           { key: "managed_zone", value: refAddress(source.referent, "name") },
           { key: "name", value: `"${domain2.record}.\${${refAddress(source.referent, "dns_name")}}"` },
           { key: "type", value: quote(address ? "A" : "CNAME") },
           { key: "ttl", value: "300" },
-          { key: "rrdatas", value: address ? `[${address}]` : `["\${${hostname3}}."]` }
+          { key: "rrdatas", value: address ? `[${address}]` : `["\${${hostname3 ?? ""}}."]` }
         ]),
         ...served
       ];
     }
     if (cloud === "azure") {
-      const address = target.spec.addressResource?.(target.referent);
-      if (address) {
+      const alias = target.spec.addressResource?.(target.referent);
+      if (alias) {
         addMapEntry(source.consumer, "a_records", {
           key: domain2.record,
           value: mapExpression([
@@ -24497,7 +24910,7 @@ function wireEdge(source, target, cloud, plan) {
             { key: "resource_group_name", value: "module.resource_group.name" },
             { key: "zone_name", value: quote(zoneName) },
             { key: "ttl", value: "300" },
-            { key: "target_resource_id", value: address }
+            { key: "target_resource_id", value: alias }
           ])
         });
         return served;
@@ -24509,7 +24922,7 @@ function wireEdge(source, target, cloud, plan) {
           { key: "resource_group_name", value: "module.resource_group.name" },
           { key: "zone_name", value: quote(zoneName) },
           { key: "ttl", value: "300" },
-          { key: "record", value: hostname3 }
+          { key: "record", value: hostname3 ?? "" }
         ])
       });
       return served;
@@ -24643,7 +25056,7 @@ function siteOrigin(source, target, originName, hostname3) {
   return [access];
 }
 function customDomainNote(domain2, cloud, zoneAddress, nameServersOutput) {
-  const waits = cloud === "aws" ? "Until the zone is delegated, apply waits on the certificate's validation (aws_acm_certificate_validation)." : "Until the zone is delegated, Front Door cannot validate the domain or issue its managed certificate.";
+  const waits = cloud === "aws" ? "Until the zone is delegated, apply waits on the certificate's validation (aws_acm_certificate_validation)." : cloud === "gcp" ? "Until the zone is delegated, Google cannot provision the managed certificate, and the name does not serve HTTPS." : "Until the zone is delegated, Front Door cannot validate the domain or issue its managed certificate.";
   return [
     `Before you apply: ${domain2.fqdn} is served over HTTPS on a certificate validated through`,
     `the ${domain2.zoneName} zone this plan creates, which works only once the zone is delegated.`,

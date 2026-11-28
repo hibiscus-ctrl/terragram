@@ -251,6 +251,21 @@ const EXPECTED: Array<{ kind: string; cloud: Cloud; facts: RegExp[] }> = [
     facts: [/state\s+= "on"/, /enable_logging\s+= true/],
   },
   {
+    kind: "static-site",
+    cloud: "gcp",
+    facts: [/public_access_prevention\s+= "enforced"/, /uniform_bucket_level_access\s+= true/, /main_page_suffix\s+= "index\.html"/],
+  },
+  {
+    kind: "app-service",
+    cloud: "gcp",
+    facts: [/security_level\s+= "SECURE_ALWAYS"/, /service_account\s+= google_service_account\.app_service\.email/],
+  },
+  {
+    kind: "front-door",
+    cloud: "gcp",
+    facts: [/layer_7_ddos_defense_config/, /cve-canary/, /load_balancing_scheme\s+= "EXTERNAL_MANAGED"/],
+  },
+  {
     kind: "redis-cache",
     cloud: "gcp",
     facts: [/auth_enabled\s+= true/, /transit_encryption_mode\s+= "SERVER_AUTHENTICATION"/],

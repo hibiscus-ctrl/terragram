@@ -712,3 +712,123 @@ ${extra}}
     ].map((a) => a.replace(/^data\./, "")).sort());
   });
 });
+
+describe("load balancing, the CDN and the sites in front of them", () => {
+  const chain = (...kinds: string[]) => {
+    const { model, ids } = modelOf(...kinds);
+    let wired = model;
+    for (let i = 0; i + 1 < ids.length; i++) wired = addEdge(wired, ids[i] ?? "", ids[i + 1] ?? "");
+    return plan(wired);
+  };
+
+  it("a load balancer has an address, a URL map, a proxy and a rule on port 80, and says where it answers", () => {
+    const { main, outputs } = plan(modelOf("load-balancer").model);
+    for (const type of ["google_compute_global_address", "google_compute_url_map", "google_compute_target_http_proxy", "google_compute_global_forwarding_rule"]) {
+      assert.match(main, new RegExp(`resource "${type}" "load_balancer"`), type);
+    }
+    assert.match(main, /load_balancing_scheme\s+= "EXTERNAL_MANAGED"/);
+    assert.match(main, /port_range\s+= "80"/);
+    assert.match(outputs, /output "load_balancer_address"/);
+  });
+
+  it("with nothing behind it, redirects to a hostname it asks for rather than inventing one", () => {
+    const { main, variables } = plan(modelOf("load-balancer").model);
+    assert.match(main, /default_url_redirect \{\n\s+host_redirect\s+= var\.origin_domain_name/);
+    assert.match(variables, /variable "origin_domain_name"/);
+    assert.doesNotMatch(main, /default_service/);
+  });
+
+  it("sends traffic to Cloud Run through a serverless group, admits only the balancer, and lets it invoke the service", () => {
+    const { main } = chain("load-balancer", "containers");
+    assert.match(main, /default_service\s+= google_compute_backend_service\.load_balancer_to_containers\.id/);
+    assert.match(main, /network_endpoint_type\s+= "SERVERLESS"[\s\S]*?cloud_run \{\n\s+service = google_cloud_run_v2_service\.containers\.name/);
+    assert.match(main, /ingress\s+= "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"/);
+    assert.match(main, /resource "google_cloud_run_v2_service_iam_member" "load_balancer_to_containers" \{[\s\S]*?role\s+= "roles\/run\.invoker"[\s\S]*?member\s+= "allUsers"/);
+    assert.match(main, /enable_cdn\s+= false/);
+    assert.doesNotMatch(main, /default_url_redirect/);
+  });
+
+  it("reaches a function and an App Engine application the same way", () => {
+    const fn = chain("load-balancer", "functions").main;
+    assert.match(fn, /service = google_cloudfunctions2_function\.functions\.service_config\[0\]\.service/);
+    assert.match(fn, /resource "google_cloud_run_service_iam_member" "load_balancer_to_functions"/);
+    const app = chain("load-balancer", "app-service").main;
+    assert.match(app, /app_engine \{\n\s+service = google_app_engine_standard_app_version\.app_service\.service/);
+  });
+
+  it("serves a site from a private bucket through a backend bucket, with its index document at the root", () => {
+    const { main } = chain("load-balancer", "static-site");
+    assert.match(main, /resource "google_compute_backend_bucket" "load_balancer_to_static_site"/);
+    assert.match(main, /bucket_name\s+= google_storage_bucket\.static_site\.name/);
+    assert.match(main, /full_path_match = "\/"/);
+    assert.match(main, /path_prefix_rewrite = "\/index\.html"/);
+    assert.match(main, /member\s+= "serviceAccount:service-\$\{data\.google_project\.load_balancer_to_static_site\.number\}@https-lb\.iam\.gserviceaccount\.com"/);
+    assert.match(main, /website \{\n\s+main_page_suffix = "index\.html"/);
+    assert.match(main, /public_access_prevention\s+= "enforced"/);
+  });
+
+  it("puts the CDN and the policy in front of a balancer by its address, with Cloud Armor's rules", () => {
+    const { main } = chain("front-door", "load-balancer");
+    assert.match(main, /resource "google_compute_security_policy" "front_door"/);
+    for (const rule of ["sqli-v33-stable", "xss-v33-stable", "rce-v33-stable"]) assert.match(main, new RegExp(`evaluatePreconfiguredWaf\\('${rule}'`));
+    assert.match(main, /expression = "evaluatePreconfiguredWaf\('cve-canary'\)"/);
+    assert.match(main, /layer_7_ddos_defense_config \{\n\s+enable = true/);
+    assert.match(main, /network_endpoint_type\s+= "INTERNET_IP_PORT"/);
+    assert.match(main, /ip_address\s+= google_compute_global_address\.load_balancer\.address/);
+    assert.match(main, /security_policy\s+= google_compute_security_policy\.front_door\.id/);
+    assert.match(main, /enable_cdn\s+= true/);
+  });
+
+  it("names the CDN's own resources apart from a balancer's, and reads them back as two components", () => {
+    const { main } = chain("front-door", "load-balancer");
+    assert.match(main, /name\s+= "cdn-\$\{var\.name_prefix\}-front-door"/);
+    assert.match(main, /name\s+= "lb-\$\{var\.name_prefix\}-load-balancer"/);
+    const back = parseTerraform(main);
+    assert.ok(back.ok);
+    assert.deepEqual(back.model.nodes.filter((n) => n.kind === "front-door" || n.kind === "load-balancer").map((n) => n.kind).sort(), ["front-door", "load-balancer"]);
+  });
+
+  it("puts the CDN straight in front of an application with a serverless group, and the policy first", () => {
+    const { main } = chain("front-door", "containers");
+    assert.match(main, /resource "google_compute_backend_service" "front_door_to_containers" \{[\s\S]*?enable_cdn\s+= true[\s\S]*?security_policy/);
+    assert.match(main, /INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER/);
+  });
+
+  it("serves a name of its own over HTTPS on a managed certificate, and redirects port 80 to it", () => {
+    for (const kind of ["load-balancer", "front-door"]) {
+      const { model, ids } = modelOf("dns", kind, "containers");
+      const { main } = plan(addEdge(addEdge(model, ids[0] ?? "", ids[1] ?? ""), ids[1] ?? "", ids[2] ?? ""));
+      const name = kind.replace("-", "_");
+      assert.match(main, /resource "google_compute_managed_ssl_certificate" "dns_to_[a-z_]+" \{[\s\S]*?domains = \["www\.example\.gov\.uk"\]/, kind);
+      assert.match(main, /min_tls_version\s+= "TLS_1_2"/);
+      assert.match(main, new RegExp(`resource "google_compute_target_https_proxy" "${name}"`));
+      assert.match(main, /port_range\s+= "443"/);
+      assert.match(main, new RegExp(`resource "google_compute_target_http_proxy" "${name}" \\{[\\s\\S]*?url_map\\s+= google_compute_url_map\\.${name}_redirect\\.id`));
+      assert.match(main, /https_redirect\s+= true/);
+      assert.match(main, new RegExp(`resource "google_dns_record_set" "dns_to_${name}" \\{[\\s\\S]*?type\\s+= "A"[\\s\\S]*?rrdatas\\s+= \\[google_compute_global_address\\.${name}\\.address\\]`));
+    }
+  });
+
+  it("a stranger to the balancer is a dependency, not a backend", () => {
+    const { main } = chain("load-balancer", "postgres");
+    assert.match(main, /depends_on\s+= \[google_sql_database_instance\.postgres, google_project_service\.enabled\]/);
+  });
+
+  it("App Engine runs on its own service account, deployed from a bucket of its own, and takes its settings as env_variables", () => {
+    const { model, ids } = modelOf("app-service", "postgres");
+    const wired = plan(addEdge(model, ids[0] ?? "", ids[1] ?? ""));
+    assert.match(wired.main, /env_variables = \{\n\s+DATABASE_HOST = google_sql_database_instance\.postgres\.private_ip_address/);
+    assert.match(wired.main, /security_level = "SECURE_ALWAYS"/);
+    assert.match(wired.main, /service_account\s+= google_service_account\.app_service\.email/);
+    assert.match(wired.main, /purpose = "app-source"/);
+    assert.ok(wired.files.includes("src/app-service/index.js") && wired.files.includes("src/app-service/package.json"), wired.files.join(", "));
+    assert.match(plan(setNodeAttribute(model, ids[0] ?? "", "Compute tier", "Production (P3v3)")).main, /instance_class\s+= "F4"/);
+    assert.match(plan(setNodeAttribute(model, ids[0] ?? "", "Compute tier", "Dev / Test")).main, /instance_class\s+= "F1"/);
+  });
+
+  it("reads the application and its source back as one component", () => {
+    const back = parseTerraform(plan(modelOf("app-service").model).main);
+    assert.ok(back.ok);
+    assert.deepEqual(back.model.nodes.filter((n) => n.kind !== "external").map((n) => n.kind).sort(), ["app-service", "entra-id", "internet"]);
+  });
+});

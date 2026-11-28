@@ -10,6 +10,10 @@ output "dns_name_servers" {
   value = google_dns_managed_zone.dns.name_servers
 }
 
+output "load_balancer_address" {
+  value = google_compute_global_address.load_balancer.address
+}
+
 output "containers_url" {
   value = google_cloud_run_v2_service.containers.uri
 }
@@ -36,4 +40,8 @@ output "postgres_app_account" {
 
 output "redis_cache_host" {
   value = google_redis_instance.redis_cache.host
+}
+
+output "static_site_bucket" {
+  value = google_storage_bucket.static_site.name
 }

@@ -14,7 +14,7 @@ import {
   stringValue,
 } from "./hcl.ts";
 import { compareText } from "./graph/normalize.ts";
-import { GCP_BETA_REF, GCP_LABELS, type GcpPlan, privateServicesBlocks } from "./gcp-kinds.ts";
+import { GCP_BETA_REF, GCP_EDGE_PREFIX, GCP_LABELS, type GcpPlan, gcpBackend, privateServicesBlocks } from "./gcp-kinds.ts";
 import { MODULE_VERSIONS } from "./module-versions.ts";
 import {
   AWS_US_EAST_1,
@@ -187,6 +187,34 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
   // name is the underscore form, the cloud name the hyphen form.
   const originCloudName = quote(originName.replace(/_/g, "-"));
 
+  // A load balancer, or the CDN in front of an application, gets a backend for what it fronts. Whatever has
+  // none to write (a database, a queue) is the dependency the generic wire below makes it.
+  if (cloud === "gcp" && (source.node.kind === "front-door" || source.node.kind === "load-balancer")) {
+    const edge = source.node.kind === "front-door";
+    const backend = gcpBackend(
+      {
+        name: originName,
+        slug: tfSlug(source.node.id),
+        prefix: edge ? GCP_EDGE_PREFIX : "lb",
+        cdn: edge,
+        ...(edge ? { policy: `google_compute_security_policy.${source.name}.id` } : {}),
+      },
+      { kind: target.node.kind, name: target.name, domain: plan.domains.get(target.node.id) },
+    );
+    if (backend) {
+      // The first backend is where the URL map sends what no rule names; a later one is reachable by rule only.
+      if (!source.consumer.attributes.some((a) => a.key === "default_service")) {
+        source.consumer.attributes.push({ key: "default_service", value: backend.service });
+        source.consumer.blocks.push(...backend.routes);
+      }
+      if (backend.admit) {
+        const admitted = target.consumer.attributes.find((a) => a.key === backend.admit?.attribute);
+        if (admitted) admitted.value = backend.admit.value;
+      }
+      return backend.blocks;
+    }
+  }
+
   if (source.node.kind === "front-door" && hostname) {
     if (cloud === "azure") {
       // The profile module owns its origins and routes, so the edge adds map
@@ -267,7 +295,9 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
     }
   }
 
-  if (source.node.kind === "dns" && hostname) {
+  // A zone's record names a tier by its hostname, or on Google Cloud, where a balancer answers on an address, by that.
+  const address = cloud === "gcp" ? target.spec.addressResource?.(target.referent) : undefined;
+  if (source.node.kind === "dns" && (hostname || address)) {
     // The zone's name comes from the reviewer's attribute, which is the same
     // value the zone module was given.
     const zoneName = source.context.attr("Zone name");
@@ -284,21 +314,20 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
     };
     // A record naming a tier that does not answer for that name is a dangling
     // hostname, so a tier that can serve it is given the name and its certificate.
-    const served = target.spec.customDomain?.(target.consumer, domain) ?? [];
+    const served = target.spec.customDomain?.(target.consumer, domain, target.blocks) ?? [];
     if (target.spec.customDomain) {
       plan.domains.set(target.node.id, domain.fqdn);
       plan.notes.push(customDomainNote(domain, cloud, refAddress(source.referent), `${source.name}_name_servers`));
     }
     if (cloud === "gcp") {
       // A name for a tier that answers on an address gets an A record; one that answers on a name, a CNAME.
-      const address = target.spec.addressResource?.(target.referent);
       return [
         block("resource", ["google_dns_record_set", originName], [
           { key: "managed_zone", value: refAddress(source.referent, "name") },
           { key: "name", value: `"${domain.record}.\${${refAddress(source.referent, "dns_name")}}"` },
           { key: "type", value: quote(address ? "A" : "CNAME") },
           { key: "ttl", value: "300" },
-          { key: "rrdatas", value: address ? `[${address}]` : `["\${${hostname}}."]` },
+          { key: "rrdatas", value: address ? `[${address}]` : `["\${${hostname ?? ""}}."]` },
         ]),
         ...served,
       ];
@@ -307,8 +336,8 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
       // The zone module owns its records. A tier that answers on an address
       // gets an alias A record that follows its public IP; a CNAME may only
       // name another name.
-      const address = target.spec.addressResource?.(target.referent);
-      if (address) {
+      const alias = target.spec.addressResource?.(target.referent);
+      if (alias) {
         addMapEntry(source.consumer, "a_records", {
           key: domain.record,
           value: mapExpression([
@@ -316,7 +345,7 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
             { key: "resource_group_name", value: "module.resource_group.name" },
             { key: "zone_name", value: quote(zoneName) },
             { key: "ttl", value: "300" },
-            { key: "target_resource_id", value: address },
+            { key: "target_resource_id", value: alias },
           ]),
         });
         return served;
@@ -328,7 +357,7 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
           { key: "resource_group_name", value: "module.resource_group.name" },
           { key: "zone_name", value: quote(zoneName) },
           { key: "ttl", value: "300" },
-          { key: "record", value: hostname },
+          { key: "record", value: hostname ?? "" },
         ]),
       });
       return served;
@@ -511,7 +540,9 @@ function customDomainNote(domain: CustomDomain, cloud: Cloud, zoneAddress: strin
   const waits =
     cloud === "aws"
       ? "Until the zone is delegated, apply waits on the certificate's validation (aws_acm_certificate_validation)."
-      : "Until the zone is delegated, Front Door cannot validate the domain or issue its managed certificate.";
+      : cloud === "gcp"
+        ? "Until the zone is delegated, Google cannot provision the managed certificate, and the name does not serve HTTPS."
+        : "Until the zone is delegated, Front Door cannot validate the domain or issue its managed certificate.";
   return [
     `Before you apply: ${domain.fqdn} is served over HTTPS on a certificate validated through`,
     `the ${domain.zoneName} zone this plan creates, which works only once the zone is delegated.`,
