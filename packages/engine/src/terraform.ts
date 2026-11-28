@@ -14,7 +14,19 @@ import {
   stringValue,
 } from "./hcl.ts";
 import { compareText } from "./graph/normalize.ts";
-import { GCP_BETA_REF, GCP_EDGE_PREFIX, GCP_LABELS, type GcpPlan, gcpBackend, privateServicesBlocks } from "./gcp-kinds.ts";
+import {
+  APP_ENGINE_INGRESS,
+  edgeArmorPolicy,
+  foldedFronts,
+  GCP_BETA_REF,
+  GCP_EDGE_PREFIX,
+  GCP_LABELS,
+  type GcpBackend,
+  type GcpPlan,
+  gcpBackend,
+  plainHttpFrontEnds,
+  privateServicesBlocks,
+} from "./gcp-kinds.ts";
 import { MODULE_VERSIONS } from "./module-versions.ts";
 import {
   AWS_US_EAST_1,
@@ -175,7 +187,31 @@ type WirePlan = {
   domains: Map<string, string>;
   /** Google Cloud: load balancer node id -> the front door whose CDN and policy it carries. One front end does both. */
   collapsed: Map<string, Emitted>;
+  /** Google Cloud: ids of the nodes the model draws the internet straight to: what they admit is the model's, not a balancer's. */
+  exposed: Set<string>;
+  /** Google Cloud: the CDNs that already have an edge policy for the sites they front, and the targets whose residual was noted. */
+  edgePolicies: Set<string>;
+  noted: Set<string>;
 };
+
+/** Tell a target to admit what a backend admits it to: its ingress setting, wherever its kind writes it. */
+function admit(target: Emitted, how: NonNullable<GcpBackend["admit"]>): void {
+  let host: HclBlock | undefined = how.resource ? target.blocks.find((b) => b.labels[0] === how.resource) : target.consumer;
+  if (host && how.nested) host = host.blocks.find((b) => b.type === how.nested);
+  const setting = host?.attributes.find((a) => a.key === how.attribute);
+  if (setting) setting.value = how.value;
+}
+
+/** What a balancer in front of Cloud Run or a function leaves open, which no setting Google offers for an external one closes. */
+function residualNote(target: Emitted): string {
+  const what = target.node.kind === "functions" ? `google_cloudfunctions2_function.${target.name}` : `google_cloud_run_v2_service.${target.name}`;
+  return [
+    `${what} takes requests from the load balancer, and from callers inside the project's network and Google's own`,
+    "services (Pub/Sub, Cloud Scheduler) on its run.app address: Google has no ingress setting that admits an external",
+    "load balancer alone, and the balancer sends no identity, so the service lets allUsers invoke it. Those callers reach it",
+    "around the Cloud Armor policy; keep the project's network trusted, or put Identity-Aware Proxy on the backend.",
+  ].join("\n");
+}
 
 /**
  * Wire one edge. Ingress tiers get their own shapes because "put the CDN in front of
@@ -197,6 +233,7 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
     if (source.node.kind === "front-door" && target.node.kind === "load-balancer") return [];
     const edge = source.node.kind === "front-door";
     const front = edge ? source : plan.collapsed.get(source.node.id);
+    const edgePolicy = front && target.node.kind === "static-site" ? `google_compute_security_policy.${front.name}_edge.id` : undefined;
     const backend = gcpBackend(
       {
         name: originName,
@@ -204,6 +241,7 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
         prefix: edge ? GCP_EDGE_PREFIX : "lb",
         cdn: front !== undefined,
         ...(front ? { policy: `google_compute_security_policy.${front.name}.id` } : {}),
+        ...(edgePolicy ? { edgePolicy } : {}),
       },
       { kind: target.node.kind, name: target.name },
     );
@@ -213,11 +251,20 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
         source.consumer.attributes.push({ key: "default_service", value: backend.service });
         source.consumer.blocks.push(...backend.routes);
       }
-      if (backend.admit) {
-        const admitted = target.consumer.attributes.find((a) => a.key === backend.admit?.attribute);
-        if (admitted) admitted.value = backend.admit.value;
+      // What the model draws open to the internet stays as drawn; anything else admits the balancer and what is inside Google.
+      if (backend.admit && !plan.exposed.has(target.node.id)) admit(target, backend.admit);
+      const added = [...backend.blocks];
+      if (target.node.kind === "containers" || target.node.kind === "functions") {
+        if (!plan.noted.has(target.node.id)) {
+          plan.noted.add(target.node.id);
+          plan.notes.push(residualNote(target));
+        }
       }
-      return backend.blocks;
+      if (front && edgePolicy && !plan.edgePolicies.has(front.name)) {
+        plan.edgePolicies.add(front.name);
+        added.push(edgeArmorPolicy(`${front.name}_edge`, tfSlug(front.node.id)));
+      }
+      return added;
     }
   }
 
@@ -775,26 +822,40 @@ export function emitTerraform(
 
   const byNodeId = new Map(emitted.map((e) => [e.node.id, e]));
   const wireBlocks: HclBlock[] = [];
-  const plan: WirePlan = { notes, domains: new Map(), collapsed: new Map() };
+  const plan: WirePlan = { notes, domains: new Map(), collapsed: new Map(), exposed: new Set(), edgePolicies: new Set(), noted: new Set() };
   if (cloud === "gcp") {
-    // A front door in front of a load balancer adds its policy and its cache to that balancer's backends and keeps
-    // nothing else: the balancer is the one front end, so there is no second address to reach the origin around it.
-    for (const edge of model.edges) {
-      const front = byNodeId.get(edge.source);
-      const balancer = byNodeId.get(edge.target);
-      if (front?.node.kind !== "front-door" || balancer?.node.kind !== "load-balancer" || plan.collapsed.has(balancer.node.id)) continue;
-      plan.collapsed.set(balancer.node.id, front);
+    // A front door in front of a load balancer, or sending to what one does, adds its policy and its cache to that balancer's
+    // backends and keeps nothing else: the balancer is the one front end, so there is no second address to reach the origin around it.
+    for (const [balancerId, frontId] of foldedFronts(model)) {
+      const front = byNodeId.get(frontId);
+      const balancer = byNodeId.get(balancerId);
+      if (!front || !balancer) continue;
+      plan.collapsed.set(balancerId, front);
       front.blocks.splice(0, front.blocks.length, ...front.blocks.filter((b) => b.labels[0] === "google_compute_security_policy"));
       const gone = outputs.findIndex((o) => o.name === `${front.name}_address`);
       if (gone >= 0) outputs.splice(gone, 1);
+    }
+    const kindOf = new Map(model.nodes.map((n) => [n.id, n.kind]));
+    for (const edge of model.edges) {
+      const to = byNodeId.get(edge.target);
+      if (!to) continue;
+      // An application the model draws the internet straight to is public, and the plan says so.
+      if (kindOf.get(edge.source) === "internet" && to.node.kind === "app-service" && !plan.exposed.has(to.node.id)) {
+        plan.exposed.add(to.node.id);
+        admit(to, { resource: "google_app_engine_service_network_settings", nested: "network_settings", attribute: "ingress_traffic_allowed", value: quote(APP_ENGINE_INGRESS.all) });
+        notes.push(
+          `google_app_engine_application.${to.name} is public: the model draws the internet straight to it, so its appspot.com address\nanswers anyone. Put a load balancer or CDN in front and draw the internet to that instead to close it.`,
+        );
+      }
     }
   }
   // A zone's edges first: what a tier is named decides how the tiers in front
   // of it reach it.
   const fromZone = (id: string) => byNodeId.get(id)?.node.kind === "dns";
   const edges = [...model.edges.filter((e) => fromZone(e.source)), ...model.edges.filter((e) => !fromZone(e.source))];
+  const wired = new Set<string>();
   for (const edge of edges) {
-    const source = byNodeId.get(edge.source);
+    let source = byNodeId.get(edge.source);
     let target = byNodeId.get(edge.target);
     if (!source || !target || source === target) continue;
     // A zone's name goes to the balancer a front door has become.
@@ -802,7 +863,28 @@ export function emitTerraform(
       const balancer = [...plan.collapsed].find(([, front]) => front === target)?.[0];
       if (balancer) target = byNodeId.get(balancer) ?? target;
     }
+    // What a front door sends to, it sends to through the balancer it has become, once however many edges say so.
+    if (cloud === "gcp" && source.node.kind === "front-door" && target.node.kind !== "load-balancer") {
+      const balancer = [...plan.collapsed].find(([, front]) => front === source)?.[0];
+      if (balancer) source = byNodeId.get(balancer) ?? source;
+    }
+    if (cloud === "gcp" && source.node.kind === "load-balancer" && plan.collapsed.has(source.node.id)) {
+      const key = `${source.node.id}>${target.node.id}`;
+      if (wired.has(key)) continue;
+      wired.add(key);
+    }
     wireBlocks.push(...wireEdge(source, target, cloud, plan));
+  }
+
+  // A front end no zone names answers on plain HTTP, port 80, and the plan says so rather than leave it to be found.
+  if (cloud === "gcp") {
+    for (const node of plainHttpFrontEnds(model)) {
+      const front = byNodeId.get(node.id);
+      if (!front) continue;
+      notes.push(
+        `google_compute_global_forwarding_rule.${front.name} answers on plain HTTP, port 80 only: no DNS zone in the model names it, so there is\nno hostname to issue a managed certificate for. Draw a DNS zone to it to serve HTTPS (port 80 then redirects), or send nothing that\nneeds TLS through it.`,
+      );
+    }
   }
 
   if (cloud === "gcp") wireBlocks.push(...encryptUnderKeyStore(emitted, wireBlocks, usedNames, gcpApis.size > 0));

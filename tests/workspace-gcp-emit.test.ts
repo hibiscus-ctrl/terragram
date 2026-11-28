@@ -748,10 +748,52 @@ describe("load balancing, the CDN and the sites in front of them", () => {
     assert.doesNotMatch(main, /default_url_redirect/);
   });
 
-  it("restricts an application behind a balancer to the balancer and Google, and leaves one nothing fronts as the model drew it", () => {
-    assert.match(chain("load-balancer", "app-service").main, /resource "google_app_engine_service_network_settings" "load_balancer_to_app_service" \{[\s\S]*?ingress_traffic_allowed = "INGRESS_TRAFFIC_ALLOWED_INTERNAL_AND_LB"/);
-    assert.match(chain("front-door", "app-service").main, /google_app_engine_service_network_settings" "front_door_to_app_service"/);
-    assert.doesNotMatch(plan(modelOf("app-service").model).main, /service_network_settings/);
+  /** The model with an internet node, which `addNode` does not offer, drawn to the node at `index` of the others. */
+  const withInternet = (kinds: string[], to: number[]) => {
+    const internet = composeFromPrompt("A web app with a Postgres database").model.nodes.find((n) => n.kind === "internet");
+    assert.ok(internet);
+    const { model, ids } = modelOf(...kinds);
+    let wired: InfraModel = { ...model, nodes: [internet, ...model.nodes] };
+    for (const i of to) wired = addEdge(wired, internet.id, ids[i] ?? "");
+    return { model: wired, ids };
+  };
+  const ingressOf = (main: string) => /resource "google_app_engine_service_network_settings" "app_service" \{[\s\S]*?ingress_traffic_allowed = "([A-Z_]+)"/.exec(main)?.[1];
+
+  it("admits nothing from outside to an application nothing fronts, and the balancer and Google once one does", () => {
+    // Unwired, an application is public on appspot.com unless it is told otherwise.
+    assert.equal(ingressOf(plan(modelOf("app-service").model).main), "INGRESS_TRAFFIC_ALLOWED_INTERNAL_ONLY");
+    for (const front of ["load-balancer", "front-door"]) {
+      const { main } = chain(front, "app-service");
+      assert.equal(ingressOf(main), "INGRESS_TRAFFIC_ALLOWED_INTERNAL_AND_LB", front);
+      // One setting for the service, not one for the application and another for each balancer.
+      assert.equal(main.match(/resource "google_app_engine_service_network_settings"/g)?.length, 1, front);
+    }
+  });
+
+  it("makes an application public only when the model draws the internet straight to it, and says so", () => {
+    const { model } = withInternet(["app-service"], [0]);
+    const { main } = plan(model);
+    assert.equal(ingressOf(main), "INGRESS_TRAFFIC_ALLOWED_ALL");
+    assert.match(main, /# google_app_engine_application\.app_service is public: the model draws the internet straight to it/);
+    // A balancer wired to it as well does not close what the model drew open.
+    const both = withInternet(["app-service", "load-balancer"], [0]);
+    assert.equal(ingressOf(plan(addEdge(both.model, both.ids[1] ?? "", both.ids[0] ?? "")).main), "INGRESS_TRAFFIC_ALLOWED_ALL");
+    // Nor does the internet drawn to something else open an application that is not.
+    const elsewhere = withInternet(["app-service", "containers"], [1]);
+    assert.equal(ingressOf(plan(elsewhere.model).main), "INGRESS_TRAFFIC_ALLOWED_INTERNAL_ONLY");
+    assert.doesNotMatch(plan(elsewhere.model).main, /is public/);
+  });
+
+  it("does not delete the default service when the application is destroyed", () => {
+    const { main } = plan(modelOf("app-service").model);
+    assert.match(main, /noop_on_destroy\s+= true/);
+    assert.doesNotMatch(main, /delete_service_on_destroy/);
+  });
+
+  it("reads the application's ingress setting back as part of it", () => {
+    const back = parseTerraform(plan(modelOf("app-service").model).main);
+    assert.ok(back.ok);
+    assert.deepEqual(back.model.nodes.filter((n) => n.kind !== "external" && n.kind !== "internet").map((n) => n.kind).sort(), ["app-service", "entra-id"]);
   });
 
   it("reaches a function and an App Engine application the same way", () => {
@@ -860,6 +902,110 @@ describe("load balancing, the CDN and the sites in front of them", () => {
   });
 });
 
+describe("what a balancer in front of an application leaves open, and says it does", () => {
+  const chain = (...kinds: string[]) => {
+    const { model, ids } = modelOf(...kinds);
+    let wired = model;
+    for (let i = 0; i + 1 < ids.length; i++) wired = addEdge(wired, ids[i] ?? "", ids[i + 1] ?? "");
+    return { model: wired, ...plan(wired) };
+  };
+
+  it("says in the plan, the explanation and the feasibility check that a front end no zone names serves plain HTTP only", () => {
+    for (const kind of ["load-balancer", "front-door"]) {
+      const { model, main } = chain(kind, "containers");
+      assert.match(main, new RegExp(`# google_compute_global_forwarding_rule\\.${kind.replace("-", "_")} answers on plain HTTP, port 80 only: no DNS zone in the model names it`), kind);
+      assert.match(explainModel(model, "gcp", "London (europe-west2)"), /Answers on plain HTTP only, with no TLS: .*No DNS zone in the model names it/);
+      const verdict = assessFeasibility(model, "gcp");
+      const component = verdict.components.find((c) => c.kind === kind);
+      assert.equal(component?.status, "needs-review");
+      assert.match(component?.reason ?? "", /plain HTTP on port 80 only/);
+      assert.match(verdict.summary, /need review before generating/);
+      // Still possible, and still HTTP: the warning is not a refusal.
+      assert.match(main, /port_range\s+= "80"/);
+      assert.doesNotMatch(main, /target_https_proxy/);
+    }
+  });
+
+  it("says nothing of the sort once a zone names the front end, the CDN folded into a balancer included", () => {
+    for (const kinds of [["dns", "load-balancer", "containers"], ["dns", "front-door", "containers"], ["dns", "front-door", "load-balancer", "containers"]]) {
+      const { model, main } = chain(...kinds);
+      assert.doesNotMatch(main, /plain HTTP/, kinds.join(" > "));
+      assert.doesNotMatch(explainModel(model, "gcp", "London (europe-west2)"), /plain HTTP/, kinds.join(" > "));
+      const front = assessFeasibility(model, "gcp").components.filter((c) => c.kind === "load-balancer" || c.kind === "front-door");
+      assert.equal(front.some((c) => c.status === "needs-review"), false, kinds.join(" > "));
+    }
+    // Nor is it said of another cloud, where the same two kinds are built differently.
+    const { model } = chain("load-balancer", "containers");
+    assert.doesNotMatch(explainModel(model, "aws", "London (eu-west-2)"), /plain HTTP/);
+    assert.equal(assessFeasibility(model, "aws").components.some((c) => c.reason?.includes("plain HTTP")), false);
+  });
+
+  it("says what a balancer in front of Cloud Run or a function leaves open, once for each", () => {
+    for (const [kind, resource] of [["containers", "google_cloud_run_v2_service.containers"], ["functions", "google_cloudfunctions2_function.functions"]] as const) {
+      const { main } = chain("load-balancer", kind);
+      assert.match(main, new RegExp(`# ${resource.replace(".", "\\.")} takes requests from the load balancer, and from callers inside the project's network`), kind);
+      assert.match(main, /around the Cloud Armor policy/);
+      assert.equal(main.match(/around the Cloud Armor policy/g)?.length, 1);
+    }
+    // A target nothing fronts has nothing to say about a balancer.
+    assert.doesNotMatch(plan(modelOf("containers").model).main, /Cloud Armor policy/);
+  });
+
+  it("gives the CDN's site backend an edge policy of its own, which a plain balancer's does not have", () => {
+    const { main } = chain("front-door", "static-site");
+    assert.match(main, /resource "google_compute_security_policy" "front_door_edge" \{[\s\S]*?type\s+= "CLOUD_ARMOR_EDGE"/);
+    assert.match(main, /resource "google_compute_backend_bucket" "front_door_to_static_site" \{[\s\S]*?enable_cdn\s+= true\n\s+edge_security_policy\s+= google_compute_security_policy\.front_door_edge\.id/);
+    // The application policy is the front door's, and the bucket's backend takes no policy of that kind.
+    assert.match(main, /resource "google_compute_security_policy" "front_door" \{[\s\S]*?evaluatePreconfiguredWaf/);
+    assert.doesNotMatch(/resource "google_compute_backend_bucket"[\s\S]*?\n\}/.exec(main)?.[0] ?? "", /\bsecurity_policy\b/);
+    const plain = chain("load-balancer", "static-site").main;
+    assert.doesNotMatch(plain, /edge_security_policy|CLOUD_ARMOR_EDGE/);
+  });
+
+  it("makes one edge policy for a CDN however many sites it fronts, and one for a CDN folded into a balancer", () => {
+    const { model, ids } = modelOf("front-door", "static-site", "static-site");
+    const two = plan(addEdge(addEdge(model, ids[0] ?? "", ids[1] ?? ""), ids[0] ?? "", ids[2] ?? "")).main;
+    assert.equal(two.match(/resource "google_compute_security_policy" "front_door_edge"/g)?.length, 1);
+    assert.equal(two.match(/edge_security_policy\s+= /g)?.length, 2);
+    const folded = modelOf("front-door", "load-balancer", "static-site");
+    const fed = plan(addEdge(addEdge(folded.model, folded.ids[0] ?? "", folded.ids[1] ?? ""), folded.ids[1] ?? "", folded.ids[2] ?? "")).main;
+    assert.match(fed, /resource "google_compute_backend_bucket" "load_balancer_to_static_site" \{[\s\S]*?edge_security_policy\s+= google_compute_security_policy\.front_door_edge\.id/);
+  });
+
+  it("lets the balancer read a private site only once the balancer's own agent exists", () => {
+    const { main } = chain("load-balancer", "static-site");
+    assert.match(main, /resource "google_storage_bucket_iam_member" "load_balancer_to_static_site" \{[\s\S]*?https-lb\.iam\.gserviceaccount\.com"\n\s+depends_on\s+= \[google_compute_backend_bucket\.load_balancer_to_static_site\]/);
+  });
+
+  it("folds a balancer and a CDN that send to the same target into one front end, so there is no way in around the policy", () => {
+    const { model, ids } = modelOf("front-door", "load-balancer", "containers");
+    const both = plan(addEdge(addEdge(model, ids[0] ?? "", ids[2] ?? ""), ids[1] ?? "", ids[2] ?? ""));
+    // One backend to the target, cached and behind the policy, and one address: the CDN's own front end is not written.
+    assert.equal(both.main.match(/resource "google_compute_backend_service"/g)?.length, 1);
+    assert.match(both.main, /resource "google_compute_backend_service" "load_balancer_to_containers" \{[\s\S]*?enable_cdn\s+= true[\s\S]*?security_policy\s+= google_compute_security_policy\.front_door\.id/);
+    assert.equal(both.main.match(/resource "google_compute_global_address"/g)?.length, 1);
+    assert.doesNotMatch(both.main, /front_door_to_containers|google_compute_url_map" "front_door"/);
+    assert.equal(both.main.match(/member\s+= "allUsers"/g)?.length, 1);
+    // What only the CDN sends to goes through the balancer it has become.
+    const more = modelOf("front-door", "load-balancer", "containers", "static-site");
+    const wired = plan(addEdge(addEdge(addEdge(more.model, more.ids[0] ?? "", more.ids[2] ?? ""), more.ids[1] ?? "", more.ids[2] ?? ""), more.ids[0] ?? "", more.ids[3] ?? "")).main;
+    assert.match(wired, /resource "google_compute_backend_bucket" "load_balancer_to_static_site" \{[\s\S]*?enable_cdn\s+= true/);
+    assert.doesNotMatch(wired, /front_door_to_static_site/);
+    // A balancer and a CDN with nothing in common stay two front ends.
+    const apart = modelOf("front-door", "load-balancer", "containers", "functions");
+    const two = plan(addEdge(addEdge(apart.model, apart.ids[0] ?? "", apart.ids[2] ?? ""), apart.ids[1] ?? "", apart.ids[3] ?? "")).main;
+    assert.equal(two.match(/resource "google_compute_global_address"/g)?.length, 2);
+  });
+
+  it("gives a zone's name to the balancer a CDN has been folded into when they share a target", () => {
+    const { model, ids } = modelOf("dns", "front-door", "load-balancer", "containers");
+    const wired = addEdge(addEdge(addEdge(addEdge(model, ids[0] ?? "", ids[1] ?? ""), ids[1] ?? "", ids[3] ?? ""), ids[2] ?? "", ids[3] ?? ""), ids[0] ?? "", ids[2] ?? "");
+    const { main } = plan(wired);
+    assert.match(main, /resource "google_compute_target_https_proxy" "load_balancer"/);
+    assert.doesNotMatch(main, /plain HTTP/);
+  });
+});
+
 describe("least privilege in what the plan grants and asks", () => {
   it("bounds a database's grants to its own instance, and nothing else is granted at the project but logs and metrics", () => {
     const { main } = plan(modelOf("postgres", "containers", "kubernetes", "virtual-machine", "app-service").model);
@@ -884,14 +1030,14 @@ describe("least privilege in what the plan grants and asks", () => {
     assert.doesNotMatch(plan(modelOf("containers", "functions", "static-site", "object-storage").model).main, /allUsers|allAuthenticatedUsers/);
     const { model, ids } = modelOf("load-balancer", "containers");
     const { main } = plan(addEdge(model, ids[0] ?? "", ids[1] ?? ""));
-    assert.equal(main.match(/allUsers/g)?.length, 1);
+    assert.equal(main.match(/member\s+= "allUsers"/g)?.length, 1);
     assert.match(main, /ingress\s+= "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"/);
   });
 
   it("never asks for a control plane open to the world", () => {
     const { variables } = plan(modelOf("kubernetes").model);
-    assert.match(variables, /validation \{\n\s+condition\s+= can\(cidrhost\(var\.gke_authorized_cidr, 0\)\) && try\(tonumber\(split\("\/", var\.gke_authorized_cidr\)\[1\]\), 0\) >= 8/);
-    assert.match(variables, /error_message = "[^"]*not 0\.0\.0\.0\/0/);
+    assert.match(variables, /validation \{\n\s+condition\s+= can\(cidrhost\(var\.gke_authorized_cidr, 0\)\) && try\(tonumber\(split\("\/", var\.gke_authorized_cidr\)\[1\]\) >= 24, false\)/);
+    assert.match(variables, /error_message = "[^"]*not 0\.0\.0\.0\/x/);
   });
 
   it("writes no key, no password and no value for a secret anywhere in a plan with everything in it", () => {

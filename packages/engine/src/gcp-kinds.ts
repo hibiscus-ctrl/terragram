@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { type HclBlock, attributeOf, block, mapExpression, quote, quoteTemplate } from "./hcl.ts";
-import type { ModelNode } from "./model.ts";
+import type { InfraModel, ModelNode } from "./model.ts";
 
 /**
  * What each kind emits on Google Cloud.
@@ -712,8 +712,11 @@ export type GcpBackend = {
   service: string;
   /** Blocks the URL map takes when its default is this backend (a site's root document). */
   routes: HclBlock[];
-  /** The target itself has to be told to admit the balancer: its own ingress setting. */
-  admit?: { attribute: string; value: string; nested?: string };
+  /**
+   * The target itself has to be told to admit the balancer: its own ingress setting. It lives on the target's main
+   * block, or on the block of `resource` that the target's kind writes beside it, inside `nested` when there is one.
+   */
+  admit?: { attribute: string; value: string; resource?: string; nested?: string };
 };
 
 /**
@@ -723,7 +726,7 @@ export type GcpBackend = {
  * a Cloud Armor policy first. Anything else has no backend to write and is a dependency instead.
  */
 export function gcpBackend(
-  edge: { name: string; slug: string; prefix: string; cdn: boolean; policy?: string },
+  edge: { name: string; slug: string; prefix: string; cdn: boolean; policy?: string; edgePolicy?: string },
   target: GcpBackendTarget,
 ): GcpBackend | null {
   const { name } = edge;
@@ -783,12 +786,16 @@ export function gcpBackend(
   }
   if (target.kind === "app-service") {
     const version = `google_app_engine_standard_app_version.${target.name}`;
-    // Reached through the balancer, the application admits what comes from it and from inside Google, and nothing else.
-    return serverless("app_engine", [{ key: "service", value: `${version}.service` }], [
-      block("resource", ["google_app_engine_service_network_settings", name], [
-        { key: "service", value: `${version}.service` },
-      ], [block("network_settings", [], [{ key: "ingress_traffic_allowed", value: quote("INGRESS_TRAFFIC_ALLOWED_INTERNAL_AND_LB") }])]),
-    ]);
+    // The application admits nothing from outside until a balancer is wired to it: then the balancer and Google, and nothing else.
+    return {
+      ...serverless("app_engine", [{ key: "service", value: `${version}.service` }], []),
+      admit: {
+        resource: "google_app_engine_service_network_settings",
+        nested: "network_settings",
+        attribute: "ingress_traffic_allowed",
+        value: quote(APP_ENGINE_INGRESS.loadBalancer),
+      },
+    };
   }
   if (target.kind === "static-site") {
     const bucket = `google_storage_bucket.${target.name}`;
@@ -799,13 +806,17 @@ export function gcpBackend(
           { key: "name", value: cloudName(`${edge.prefix}-bucket`, `${edge.slug}-${target.name}`.replace(/_/g, "-")) },
           { key: "bucket_name", value: `${bucket}.name` },
           { key: "enable_cdn", value: String(edge.cdn) },
+          // A backend bucket takes an edge policy, not a backend one: the CDN's, when a CDN fronts the site.
+          ...(edge.edgePolicy ? [{ key: "edge_security_policy", value: edge.edgePolicy }] : []),
         ]),
-        // The bucket stays private: only the load balancer's own service agent reads it.
+        // The bucket stays private: only the load balancer's own service agent reads it. Google creates that agent when the
+        // first backend bucket is, so the grant waits for this one.
         block("data", ["google_project", name], []),
         block("resource", ["google_storage_bucket_iam_member", name], [
           { key: "bucket", value: `${bucket}.name` },
           { key: "role", value: quote("roles/storage.objectViewer") },
           { key: "member", value: `"serviceAccount:service-\${data.google_project.${name}.number}@https-lb.iam.gserviceaccount.com"` },
+          { key: "depends_on", value: `[${backend}]` },
         ]),
       ],
       service: `${backend}.id`,
@@ -872,6 +883,76 @@ function armorPolicy(c: GcpContext): HclBlock {
 /** Cloud Armor's policy name, as the backends of the CDN in front of it name it. */
 export const GCP_EDGE_PREFIX = "cdn";
 
+/** What an App Engine service's `ingress_traffic_allowed` is set to, by who may reach it. */
+export const APP_ENGINE_INGRESS = {
+  internalOnly: "INGRESS_TRAFFIC_ALLOWED_INTERNAL_ONLY",
+  loadBalancer: "INGRESS_TRAFFIC_ALLOWED_INTERNAL_AND_LB",
+  all: "INGRESS_TRAFFIC_ALLOWED_ALL",
+} as const;
+
+/**
+ * The Cloud Armor policy a CDN puts on a site's backend bucket. A backend bucket takes an edge policy, which Google
+ * limits to rules on the caller's address and region: the WAF signatures the application policy has cannot be written in
+ * one. So it allows what no rule denies, and is where a reviewer adds the ranges or countries to refuse.
+ */
+export function edgeArmorPolicy(name: string, slug: string): HclBlock {
+  return block("resource", ["google_compute_security_policy", name], [
+    { key: "name", value: cloudName("waf-edge", slug) },
+    { key: "description", value: quote("Filters requests to a CDN's sites by address and region at Google's edge: add the ranges or countries to refuse") },
+    { key: "type", value: quote("CLOUD_ARMOR_EDGE") },
+  ], [
+    block("rule", [], [
+      { key: "action", value: quote("allow") },
+      { key: "priority", value: "2147483647" },
+      { key: "description", value: quote("Allow what no rule above denies") },
+    ], [
+      block("match", [], [{ key: "versioned_expr", value: quote("SRC_IPS_V1") }], [
+        block("config", [], [{ key: "src_ip_ranges", value: `["*"]` }]),
+      ]),
+    ]),
+  ]);
+}
+
+/**
+ * Which load balancer each CDN in front of an application has become, as node ids (balancer -> front door). A CDN
+ * wired to a balancer is that balancer's: its backends cache and pass the policy, and there is one front end, so no second
+ * address reaches the origin around the policy. So is a CDN and a balancer that send to the same target, which would
+ * otherwise be two ways in, one of them unfiltered.
+ */
+export function foldedFronts(model: Pick<InfraModel, "nodes" | "edges">): Map<string, string> {
+  const kind = new Map(model.nodes.map((n) => [n.id, n.kind]));
+  const folded = new Map<string, string>();
+  for (const e of model.edges) {
+    if (kind.get(e.source) === "front-door" && kind.get(e.target) === "load-balancer" && !folded.has(e.target)) folded.set(e.target, e.source);
+  }
+  const targets = (id: string) => new Set(model.edges.filter((e) => e.source === id && kind.get(e.target) !== "load-balancer").map((e) => e.target));
+  for (const balancer of model.nodes.filter((n) => n.kind === "load-balancer" && !folded.has(n.id))) {
+    const own = targets(balancer.id);
+    const front = model.nodes.find((n) => n.kind === "front-door" && [...targets(n.id)].some((t) => own.has(t)));
+    if (front) folded.set(balancer.id, front.id);
+  }
+  return folded;
+}
+
+/** Why a front end that no DNS zone names serves plain HTTP only. */
+export const PLAIN_HTTP_REASON =
+  "No DNS zone in the model names it, so there is no hostname to issue a managed certificate for: it serves plain HTTP on port 80 only. " +
+  "Draw a DNS zone to it to serve HTTPS (port 80 then redirects), or send nothing that needs TLS through it.";
+
+/** The load balancers and CDNs of a Google plan that no DNS zone names, and so answer on plain HTTP only. */
+export function plainHttpFrontEnds(model: Pick<InfraModel, "nodes" | "edges">): ModelNode[] {
+  const kind = new Map(model.nodes.map((n) => [n.id, n.kind]));
+  const folded = foldedFronts(model);
+  const foldedIds = new Set(folded.values());
+  const named = (id: string) => model.edges.some((e) => e.target === id && kind.get(e.source) === "dns");
+  return model.nodes.filter((n) => {
+    if (n.kind === "front-door") return !foldedIds.has(n.id) && !named(n.id);
+    if (n.kind !== "load-balancer") return false;
+    const front = folded.get(n.id);
+    return !named(n.id) && !(front !== undefined && named(front));
+  });
+}
+
 /** App Engine's runtime and the placeholder it serves until the application is deployed. */
 const APP_ENGINE_FILES: Array<{ file: string; content: string }> = [
   {
@@ -885,7 +966,7 @@ const APP_ENGINE_FILES: Array<{ file: string; content: string }> = [
       "    res.writeHead(200, { \"content-type\": \"application/json\" });",
       "    res.end(JSON.stringify({ ok: true, message: \"Replace this placeholder with your application.\" }));",
       "  })",
-      "  .listen(process.env.PORT || 8080);",
+      "  .listen(8080); // App Engine standard sends requests to port 8080",
       "",
     ].join("\n"),
   },
@@ -1615,7 +1696,8 @@ export const GCP = {
             { key: "runtime", value: quote("nodejs22") },
             { key: "instance_class", value: quote(instanceClass) },
             { key: "service_account", value: `google_service_account.${c.name}.email` },
-            { key: "delete_service_on_destroy", value: "true" },
+            // The default service cannot be deleted, so a destroy leaves its version in place instead of failing on it.
+            { key: "noop_on_destroy", value: "true" },
             { key: "depends_on", value: `[google_app_engine_application.${c.name}]` },
           ], [
             block("entrypoint", [], [{ key: "shell", value: quote("node index.js") }]),
@@ -1633,6 +1715,11 @@ export const GCP = {
             { key: "location_id", value: "var.region" },
             { key: "database_type", value: quote("CLOUD_FIRESTORE") },
           ]),
+          // An application nothing fronts is public on appspot.com unless it is told otherwise: it admits nothing from outside
+          // until a balancer is wired to it, or the model draws the internet straight to it.
+          block("resource", ["google_app_engine_service_network_settings", c.name], [
+            { key: "service", value: `google_app_engine_standard_app_version.${c.name}.service` },
+          ], [block("network_settings", [], [{ key: "ingress_traffic_allowed", value: quote(APP_ENGINE_INGRESS.internalOnly) }])]),
           serviceAccount(c.name, c.slug, `Runs the ${c.slug} application`),
           projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
           // The deployment reads the zip as the application's account: from its own source bucket, and no other.

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { matchKinds } from "./engine.ts";
+import { PLAIN_HTTP_REASON, plainHttpFrontEnds } from "./gcp-kinds.ts";
 import { cloudSpec, KIND_LABELS } from "./kinds.ts";
 import type { Cloud, InfraModel, ModelNode } from "./model.ts";
 
@@ -68,6 +69,8 @@ function suggestionFor(node: ModelNode): string | null {
 
 export function assessFeasibility(model: InfraModel, cloud: Cloud): Feasibility {
   const components: ComponentVerdict[] = [];
+  // A front end that serves plain HTTP is built, but not as a reviewer would assume: it is said, not left to be found.
+  const plainHttp = new Set(cloud === "gcp" ? plainHttpFrontEnds(model).map((n) => n.id) : []);
   for (const node of model.nodes) {
     if (isConceptualEdge(node)) continue;
     const buildable = cloudSpec(node.kind, cloud) !== null;
@@ -86,8 +89,8 @@ export function assessFeasibility(model: InfraModel, cloud: Cloud): Feasibility 
       id: node.id,
       label: node.label,
       kind: node.kind,
-      status: node.flag ? "needs-review" : "buildable",
-      reason: node.flag?.reason ?? null,
+      status: node.flag || plainHttp.has(node.id) ? "needs-review" : "buildable",
+      reason: node.flag?.reason ?? (plainHttp.has(node.id) ? PLAIN_HTTP_REASON : null),
       suggestion: null,
     });
   }

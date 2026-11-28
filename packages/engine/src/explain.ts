@@ -1,6 +1,7 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { PLAIN_HTTP_REASON, plainHttpFrontEnds } from "./gcp-kinds.ts";
 import { fieldsForKind, kindDefinition } from "./kinds.ts";
 import {
   CATEGORY_META,
@@ -153,6 +154,13 @@ export function explainModel(model: InfraModel, cloud: Cloud, regionLabel: strin
     const sentences = selfEscalating.slice(0, 8).map((n) => `${nodeLabel(n)} ${selfAccessPhrase(n)}`);
     const more = selfEscalating.length > 8 ? `, and ${selfEscalating.length - 8} more` : "";
     paragraphs.push(`Can widen its own access: ${humanList(sentences)}${more}.`);
+  }
+
+  /* ----------------------------------------------------- plain HTTP only -- */
+
+  const plain = cloud === "gcp" ? plainHttpFrontEnds(model) : [];
+  if (plain.length > 0) {
+    paragraphs.push(`Answers on plain HTTP only, with no TLS: ${humanList(plain.map((n) => nodeLabel(n)))}. ${PLAIN_HTTP_REASON}`);
   }
 
   /* ----------------------------------------------------------------- flags -- */

@@ -20508,72 +20508,6 @@ function resourceNodes(model) {
 var ENGINE_NAME = "diagram-engine";
 var ENGINE_VERSION = "0.1.0";
 
-// ../packages/engine/src/module-versions.ts
-var MODULE_VERSIONS = {
-  "azure/resource-group": { source: "Azure/avm-res-resources-resourcegroup/azurerm", version: "0.4.0" },
-  "azure/dns-zone": { source: "Azure/avm-res-network-dnszone/azurerm", version: "0.2.1" },
-  "azure/cdn-profile": { source: "Azure/avm-res-cdn-profile/azurerm", version: "0.1.9" },
-  "azure/load-balancer": { source: "Azure/avm-res-network-loadbalancer/azurerm", version: "0.5.0" },
-  "azure/service-plan": { source: "Azure/avm-res-web-serverfarm/azurerm", version: "2.1.0" },
-  "azure/web-site": { source: "Azure/avm-res-web-site/azurerm", version: "0.22.0" },
-  "azure/container-environment": { source: "Azure/avm-res-app-managedenvironment/azurerm", version: "0.5.1" },
-  "azure/container-app": { source: "Azure/avm-res-app-containerapp/azurerm", version: "0.9.0" },
-  "azure/static-site": { source: "Azure/avm-res-web-staticsite/azurerm", version: "0.6.2" },
-  "azure/servicebus": { source: "Azure/avm-res-servicebus-namespace/azurerm", version: "0.4.0" },
-  "azure/virtual-network": { source: "Azure/avm-res-network-virtualnetwork/azurerm", version: "0.22.3" },
-  "azure/private-dns-zone": { source: "Azure/avm-res-network-privatednszone/azurerm", version: "0.5.0" },
-  "azure/redis": { source: "Azure/avm-res-cache-redis/azurerm", version: "0.4.0" },
-  "azure/postgres": { source: "Azure/avm-res-dbforpostgresql-flexibleserver/azurerm", version: "0.2.3" },
-  "azure/mysql": { source: "Azure/avm-res-dbformysql-flexibleserver/azurerm", version: "0.1.9" },
-  "azure/cosmos": { source: "Azure/avm-res-documentdb-databaseaccount/azurerm", version: "0.10.0" },
-  "azure/storage-account": { source: "Azure/avm-res-storage-storageaccount/azurerm", version: "0.10.0" },
-  "azure/user-assigned-identity": { source: "Azure/avm-res-managedidentity-userassignedidentity/azurerm", version: "0.5.3" },
-  "azure/key-vault": { source: "Azure/avm-res-keyvault-vault/azurerm", version: "0.11.0" },
-  "azure/log-analytics": { source: "Azure/avm-res-operationalinsights-workspace/azurerm", version: "0.5.1" },
-  "azure/app-insights": { source: "Azure/avm-res-insights-component/azurerm", version: "0.4.0" },
-  "aws/lambda": { source: "terraform-aws-modules/lambda/aws", version: "8.13.2" },
-  "aws/s3-bucket": { source: "terraform-aws-modules/s3-bucket/aws", version: "5.18.0" },
-  "aws/sqs": { source: "terraform-aws-modules/sqs/aws", version: "5.2.2" },
-  "aws/dynamodb-table": { source: "terraform-aws-modules/dynamodb-table/aws", version: "5.5.2" },
-  "aws/rds": { source: "terraform-aws-modules/rds/aws", version: "7.2.2" },
-  "aws/vpc": { source: "terraform-aws-modules/vpc/aws", version: "6.8.0" },
-  "aws/route53": { source: "terraform-aws-modules/route53/aws", version: "6.5.1" },
-  "aws/elasticache": { source: "terraform-aws-modules/elasticache/aws", version: "1.11.2" },
-  "aws/cloudwatch": { source: "terraform-aws-modules/cloudwatch/aws", version: "5.7.3" },
-  "aws/alb": { source: "terraform-aws-modules/alb/aws", version: "10.5.1" },
-  "aws/ecs": { source: "terraform-aws-modules/ecs/aws", version: "7.6.3" },
-  "aws/ec2-instance": { source: "terraform-aws-modules/ec2-instance/aws", version: "6.4.1" }
-};
-
-// ../packages/engine/src/provider-versions.ts
-var PROVIDER_VERSIONS = {
-  azure: {
-    name: "azurerm",
-    source: "hashicorp/azurerm",
-    version: "~> 4.81"
-  },
-  aws: {
-    name: "aws",
-    source: "hashicorp/aws",
-    version: "~> 6.73"
-  },
-  gcp: {
-    name: "google",
-    source: "hashicorp/google",
-    version: "~> 8.12"
-  },
-  "gcp-beta": {
-    name: "google-beta",
-    source: "hashicorp/google-beta",
-    version: "~> 8.12"
-  },
-  archive: {
-    name: "archive",
-    source: "hashicorp/archive",
-    version: "~> 2.8"
-  }
-};
-
 // ../packages/engine/src/gcp-kinds.ts
 var NAME_PREFIX = {
   name: "name_prefix",
@@ -20616,12 +20550,12 @@ function serviceAccount(name, id, description) {
     { key: "display_name", value: quote(description) }
   ]);
 }
-function projectRole(name, role, account) {
+function projectRole(name, role, account, condition) {
   return block("resource", ["google_project_iam_member", name], [
     { key: "project", value: "var.project_id" },
     { key: "role", value: quote(role) },
     { key: "member", value: `"serviceAccount:\${${account}.email}"` }
-  ]);
+  ], condition ? [block("condition", [], [{ key: "title", value: quote(condition.title) }, { key: "expression", value: condition.expression }])] : []);
 }
 var GCP_BETA_REF = "google-beta";
 function bucketWithLogs(c, opts) {
@@ -20749,6 +20683,10 @@ function sqlInstance(c, engine, prefix) {
   ]);
   instance.attributes.push({ key: "depends_on", value: `[${connection2}]` });
   const appAccount = `${c.name}_app`;
+  const onInstance = {
+    title: `Only the ${c.slug} instance`,
+    expression: `"resource.name == \\"projects/\${var.project_id}/instances/\${google_sql_database_instance.${c.name}.name}\\""`
+  };
   const database = block("resource", ["google_sql_database", c.name], [
     { key: "name", value: quote("app") },
     { key: "instance", value: `google_sql_database_instance.${c.name}.name` }
@@ -20762,8 +20700,9 @@ function sqlInstance(c, engine, prefix) {
     blocks: [
       instance,
       serviceAccount(appAccount, `${c.slug}-app`, `Connects to the ${c.slug} database with IAM authentication`),
-      projectRole(`${c.name}_app_instance_user`, "roles/cloudsql.instanceUser", `google_service_account.${appAccount}`),
-      projectRole(`${c.name}_app_client`, "roles/cloudsql.client", `google_service_account.${appAccount}`),
+      // The grants are the project's, but bounded by a condition to this one instance.
+      projectRole(`${c.name}_app_instance_user`, "roles/cloudsql.instanceUser", `google_service_account.${appAccount}`, onInstance),
+      projectRole(`${c.name}_app_client`, "roles/cloudsql.client", `google_service_account.${appAccount}`, onInstance),
       database,
       user
     ],
@@ -20971,27 +20910,15 @@ function gcpBackend(edge, target) {
     ]);
   }
   if (target.kind === "app-service") {
-    return serverless("app_engine", [{ key: "service", value: `google_app_engine_standard_app_version.${target.name}.service` }], []);
-  }
-  if (target.kind === "load-balancer") {
-    const group = `google_compute_global_network_endpoint_group.${name}`;
-    const named = target.domain !== void 0;
+    const version2 = `google_app_engine_standard_app_version.${target.name}`;
     return {
-      blocks: [
-        block("resource", ["google_compute_global_network_endpoint_group", name], [
-          { key: "name", value: cloudName(`${edge.prefix}-neg`, `${edge.slug}-${target.name}`.replace(/_/g, "-")) },
-          { key: "network_endpoint_type", value: quote(named ? "INTERNET_FQDN_PORT" : "INTERNET_IP_PORT") },
-          { key: "default_port", value: named ? "443" : "80" }
-        ]),
-        block("resource", ["google_compute_global_network_endpoint", name], [
-          { key: "global_network_endpoint_group", value: `${group}.id` },
-          named ? { key: "fqdn", value: quote(target.domain ?? "") } : { key: "ip_address", value: `google_compute_global_address.${target.name}.address` },
-          { key: "port", value: named ? "443" : "80" }
-        ]),
-        service(named ? "HTTPS" : "HTTP", `${group}.id`)
-      ],
-      service: `google_compute_backend_service.${name}.id`,
-      routes: []
+      ...serverless("app_engine", [{ key: "service", value: `${version2}.service` }], []),
+      admit: {
+        resource: "google_app_engine_service_network_settings",
+        nested: "network_settings",
+        attribute: "ingress_traffic_allowed",
+        value: quote(APP_ENGINE_INGRESS.loadBalancer)
+      }
     };
   }
   if (target.kind === "static-site") {
@@ -21002,14 +20929,18 @@ function gcpBackend(edge, target) {
         block("resource", ["google_compute_backend_bucket", name], [
           { key: "name", value: cloudName(`${edge.prefix}-bucket`, `${edge.slug}-${target.name}`.replace(/_/g, "-")) },
           { key: "bucket_name", value: `${bucket}.name` },
-          { key: "enable_cdn", value: String(edge.cdn) }
+          { key: "enable_cdn", value: String(edge.cdn) },
+          // A backend bucket takes an edge policy, not a backend one: the CDN's, when a CDN fronts the site.
+          ...edge.edgePolicy ? [{ key: "edge_security_policy", value: edge.edgePolicy }] : []
         ]),
-        // The bucket stays private: only the load balancer's own service agent reads it.
+        // The bucket stays private: only the load balancer's own service agent reads it. Google creates that agent when the
+        // first backend bucket is, so the grant waits for this one.
         block("data", ["google_project", name], []),
         block("resource", ["google_storage_bucket_iam_member", name], [
           { key: "bucket", value: `${bucket}.name` },
           { key: "role", value: quote("roles/storage.objectViewer") },
-          { key: "member", value: `"serviceAccount:service-\${data.google_project.${name}.number}@https-lb.iam.gserviceaccount.com"` }
+          { key: "member", value: `"serviceAccount:service-\${data.google_project.${name}.number}@https-lb.iam.gserviceaccount.com"` },
+          { key: "depends_on", value: `[${backend}]` }
         ])
       ],
       service: `${backend}.id`,
@@ -21059,12 +20990,66 @@ function armorPolicy(c) {
         block("config", [], [{ key: "src_ip_ranges", value: `["*"]` }])
       ])
     ]),
+    // Every request the policy judges is logged with what matched it, as the AWS web ACL's log is.
+    block("advanced_options_config", [], [
+      { key: "json_parsing", value: quote("STANDARD") },
+      { key: "log_level", value: quote("VERBOSE") }
+    ]),
     block("adaptive_protection_config", [], [], [
       block("layer_7_ddos_defense_config", [], [{ key: "enable", value: "true" }])
     ])
   ]);
 }
 var GCP_EDGE_PREFIX = "cdn";
+var APP_ENGINE_INGRESS = {
+  internalOnly: "INGRESS_TRAFFIC_ALLOWED_INTERNAL_ONLY",
+  loadBalancer: "INGRESS_TRAFFIC_ALLOWED_INTERNAL_AND_LB",
+  all: "INGRESS_TRAFFIC_ALLOWED_ALL"
+};
+function edgeArmorPolicy(name, slug) {
+  return block("resource", ["google_compute_security_policy", name], [
+    { key: "name", value: cloudName("waf-edge", slug) },
+    { key: "description", value: quote("Filters requests to a CDN's sites by address and region at Google's edge: add the ranges or countries to refuse") },
+    { key: "type", value: quote("CLOUD_ARMOR_EDGE") }
+  ], [
+    block("rule", [], [
+      { key: "action", value: quote("allow") },
+      { key: "priority", value: "2147483647" },
+      { key: "description", value: quote("Allow what no rule above denies") }
+    ], [
+      block("match", [], [{ key: "versioned_expr", value: quote("SRC_IPS_V1") }], [
+        block("config", [], [{ key: "src_ip_ranges", value: `["*"]` }])
+      ])
+    ])
+  ]);
+}
+function foldedFronts(model) {
+  const kind = new Map(model.nodes.map((n) => [n.id, n.kind]));
+  const folded = /* @__PURE__ */ new Map();
+  for (const e of model.edges) {
+    if (kind.get(e.source) === "front-door" && kind.get(e.target) === "load-balancer" && !folded.has(e.target)) folded.set(e.target, e.source);
+  }
+  const targets = (id) => new Set(model.edges.filter((e) => e.source === id && kind.get(e.target) !== "load-balancer").map((e) => e.target));
+  for (const balancer of model.nodes.filter((n) => n.kind === "load-balancer" && !folded.has(n.id))) {
+    const own2 = targets(balancer.id);
+    const front = model.nodes.find((n) => n.kind === "front-door" && [...targets(n.id)].some((t) => own2.has(t)));
+    if (front) folded.set(balancer.id, front.id);
+  }
+  return folded;
+}
+var PLAIN_HTTP_REASON = "No DNS zone in the model names it, so there is no hostname to issue a managed certificate for: it serves plain HTTP on port 80 only. Draw a DNS zone to it to serve HTTPS (port 80 then redirects), or send nothing that needs TLS through it.";
+function plainHttpFrontEnds(model) {
+  const kind = new Map(model.nodes.map((n) => [n.id, n.kind]));
+  const folded = foldedFronts(model);
+  const foldedIds = new Set(folded.values());
+  const named = (id) => model.edges.some((e) => e.target === id && kind.get(e.source) === "dns");
+  return model.nodes.filter((n) => {
+    if (n.kind === "front-door") return !foldedIds.has(n.id) && !named(n.id);
+    if (n.kind !== "load-balancer") return false;
+    const front = folded.get(n.id);
+    return !named(n.id) && !(front !== void 0 && named(front));
+  });
+}
 var APP_ENGINE_FILES = [
   {
     file: "index.js",
@@ -21077,7 +21062,7 @@ var APP_ENGINE_FILES = [
       '    res.writeHead(200, { "content-type": "application/json" });',
       '    res.end(JSON.stringify({ ok: true, message: "Replace this placeholder with your application." }));',
       "  })",
-      "  .listen(process.env.PORT || 8080);",
+      "  .listen(8080); // App Engine standard sends requests to port 8080",
       ""
     ].join("\n")
   },
@@ -21773,7 +21758,8 @@ var GCP = {
             { key: "runtime", value: quote("nodejs22") },
             { key: "instance_class", value: quote(instanceClass) },
             { key: "service_account", value: `google_service_account.${c.name}.email` },
-            { key: "delete_service_on_destroy", value: "true" },
+            // The default service cannot be deleted, so a destroy leaves its version in place instead of failing on it.
+            { key: "noop_on_destroy", value: "true" },
             { key: "depends_on", value: `[google_app_engine_application.${c.name}]` }
           ], [
             block("entrypoint", [], [{ key: "shell", value: quote("node index.js") }]),
@@ -21791,9 +21777,19 @@ var GCP = {
             { key: "location_id", value: "var.region" },
             { key: "database_type", value: quote("CLOUD_FIRESTORE") }
           ]),
+          // An application nothing fronts is public on appspot.com unless it is told otherwise: it admits nothing from outside
+          // until a balancer is wired to it, or the model draws the internet straight to it.
+          block("resource", ["google_app_engine_service_network_settings", c.name], [
+            { key: "service", value: `google_app_engine_standard_app_version.${c.name}.service` }
+          ], [block("network_settings", [], [{ key: "ingress_traffic_allowed", value: quote(APP_ENGINE_INGRESS.internalOnly) }])]),
           serviceAccount(c.name, c.slug, `Runs the ${c.slug} application`),
           projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
-          projectRole(`${c.name}_object_viewer`, "roles/storage.objectViewer", `google_service_account.${c.name}`),
+          // The deployment reads the zip as the application's account: from its own source bucket, and no other.
+          block("resource", ["google_storage_bucket_iam_member", `${source}_viewer`], [
+            { key: "bucket", value: `google_storage_bucket.${source}.name` },
+            { key: "role", value: quote("roles/storage.objectViewer") },
+            { key: "member", value: `"serviceAccount:\${google_service_account.${c.name}.email}"` }
+          ]),
           block("data", ["archive_file", c.name], [
             { key: "type", value: quote("zip") },
             { key: "source_dir", value: quoteTemplate`\${path.module}/src/${c.slug}` },
@@ -21863,6 +21859,72 @@ function privateServicesBlocks(networkId) {
     ])
   ];
 }
+
+// ../packages/engine/src/module-versions.ts
+var MODULE_VERSIONS = {
+  "azure/resource-group": { source: "Azure/avm-res-resources-resourcegroup/azurerm", version: "0.4.0" },
+  "azure/dns-zone": { source: "Azure/avm-res-network-dnszone/azurerm", version: "0.2.1" },
+  "azure/cdn-profile": { source: "Azure/avm-res-cdn-profile/azurerm", version: "0.1.9" },
+  "azure/load-balancer": { source: "Azure/avm-res-network-loadbalancer/azurerm", version: "0.5.0" },
+  "azure/service-plan": { source: "Azure/avm-res-web-serverfarm/azurerm", version: "2.1.0" },
+  "azure/web-site": { source: "Azure/avm-res-web-site/azurerm", version: "0.22.0" },
+  "azure/container-environment": { source: "Azure/avm-res-app-managedenvironment/azurerm", version: "0.5.1" },
+  "azure/container-app": { source: "Azure/avm-res-app-containerapp/azurerm", version: "0.9.0" },
+  "azure/static-site": { source: "Azure/avm-res-web-staticsite/azurerm", version: "0.6.2" },
+  "azure/servicebus": { source: "Azure/avm-res-servicebus-namespace/azurerm", version: "0.4.0" },
+  "azure/virtual-network": { source: "Azure/avm-res-network-virtualnetwork/azurerm", version: "0.22.3" },
+  "azure/private-dns-zone": { source: "Azure/avm-res-network-privatednszone/azurerm", version: "0.5.0" },
+  "azure/redis": { source: "Azure/avm-res-cache-redis/azurerm", version: "0.4.0" },
+  "azure/postgres": { source: "Azure/avm-res-dbforpostgresql-flexibleserver/azurerm", version: "0.2.3" },
+  "azure/mysql": { source: "Azure/avm-res-dbformysql-flexibleserver/azurerm", version: "0.1.9" },
+  "azure/cosmos": { source: "Azure/avm-res-documentdb-databaseaccount/azurerm", version: "0.10.0" },
+  "azure/storage-account": { source: "Azure/avm-res-storage-storageaccount/azurerm", version: "0.10.0" },
+  "azure/user-assigned-identity": { source: "Azure/avm-res-managedidentity-userassignedidentity/azurerm", version: "0.5.3" },
+  "azure/key-vault": { source: "Azure/avm-res-keyvault-vault/azurerm", version: "0.11.0" },
+  "azure/log-analytics": { source: "Azure/avm-res-operationalinsights-workspace/azurerm", version: "0.5.1" },
+  "azure/app-insights": { source: "Azure/avm-res-insights-component/azurerm", version: "0.4.0" },
+  "aws/lambda": { source: "terraform-aws-modules/lambda/aws", version: "8.13.2" },
+  "aws/s3-bucket": { source: "terraform-aws-modules/s3-bucket/aws", version: "5.18.0" },
+  "aws/sqs": { source: "terraform-aws-modules/sqs/aws", version: "5.2.2" },
+  "aws/dynamodb-table": { source: "terraform-aws-modules/dynamodb-table/aws", version: "5.5.2" },
+  "aws/rds": { source: "terraform-aws-modules/rds/aws", version: "7.2.2" },
+  "aws/vpc": { source: "terraform-aws-modules/vpc/aws", version: "6.8.0" },
+  "aws/route53": { source: "terraform-aws-modules/route53/aws", version: "6.5.1" },
+  "aws/elasticache": { source: "terraform-aws-modules/elasticache/aws", version: "1.11.2" },
+  "aws/cloudwatch": { source: "terraform-aws-modules/cloudwatch/aws", version: "5.7.3" },
+  "aws/alb": { source: "terraform-aws-modules/alb/aws", version: "10.5.1" },
+  "aws/ecs": { source: "terraform-aws-modules/ecs/aws", version: "7.6.3" },
+  "aws/ec2-instance": { source: "terraform-aws-modules/ec2-instance/aws", version: "6.4.1" }
+};
+
+// ../packages/engine/src/provider-versions.ts
+var PROVIDER_VERSIONS = {
+  azure: {
+    name: "azurerm",
+    source: "hashicorp/azurerm",
+    version: "~> 4.81"
+  },
+  aws: {
+    name: "aws",
+    source: "hashicorp/aws",
+    version: "~> 6.73"
+  },
+  gcp: {
+    name: "google",
+    source: "hashicorp/google",
+    version: "~> 8.12"
+  },
+  "gcp-beta": {
+    name: "google-beta",
+    source: "hashicorp/google-beta",
+    version: "~> 8.12"
+  },
+  archive: {
+    name: "archive",
+    source: "hashicorp/archive",
+    version: "~> 2.8"
+  }
+};
 
 // ../packages/engine/src/kinds.ts
 function moduleBlock(key, name, inputs, subdir) {
@@ -23140,7 +23202,7 @@ var KIND_DEFINITIONS = [
     },
     gcp: {
       type: "google_app_engine_standard_app_version",
-      matches: ["google_app_engine_flexible_app_version", "google_app_engine_application"],
+      matches: ["google_app_engine_flexible_app_version", "google_app_engine_application", "google_app_engine_service_network_settings"],
       emit: (c) => GCP.appService.emit({ ...c, gcp: gcpPlan(c) }),
       read: (b) => readOne(b, "instance_class", "Compute tier", (v) => appEngineClassFrom(v)),
       settings: { attribute: "env_variables" },
@@ -24568,6 +24630,10 @@ function explainModel(model, cloud, regionLabel) {
     const more = selfEscalating.length > 8 ? `, and ${selfEscalating.length - 8} more` : "";
     paragraphs.push(`Can widen its own access: ${humanList(sentences)}${more}.`);
   }
+  const plain = cloud === "gcp" ? plainHttpFrontEnds(model) : [];
+  if (plain.length > 0) {
+    paragraphs.push(`Answers on plain HTTP only, with no TLS: ${humanList(plain.map((n) => nodeLabel(n)))}. ${PLAIN_HTTP_REASON}`);
+  }
   const flagged = model.nodes.filter((n) => n.flag);
   if (flagged.length > 0) {
     const reasons = flagged.map((n) => `${nodeLabel(n)} \u2014 ${n.flag?.reason ?? ""}`);
@@ -24616,6 +24682,7 @@ function suggestionFor(node2) {
 }
 function assessFeasibility(model, cloud) {
   const components = [];
+  const plainHttp = new Set(cloud === "gcp" ? plainHttpFrontEnds(model).map((n) => n.id) : []);
   for (const node2 of model.nodes) {
     if (isConceptualEdge(node2)) continue;
     const buildable = cloudSpec(node2.kind, cloud) !== null;
@@ -24634,8 +24701,8 @@ function assessFeasibility(model, cloud) {
       id: node2.id,
       label: node2.label,
       kind: node2.kind,
-      status: node2.flag ? "needs-review" : "buildable",
-      reason: node2.flag?.reason ?? null,
+      status: node2.flag || plainHttp.has(node2.id) ? "needs-review" : "buildable",
+      reason: node2.flag?.reason ?? (plainHttp.has(node2.id) ? PLAIN_HTTP_REASON : null),
       suggestion: null
     });
   }
@@ -24778,32 +24845,59 @@ function addDependsOn(host, address) {
   if (existing) existing.value = value;
   else host.attributes.push({ key: "depends_on", value });
 }
+function admit(target, how) {
+  let host = how.resource ? target.blocks.find((b) => b.labels[0] === how.resource) : target.consumer;
+  if (host && how.nested) host = host.blocks.find((b) => b.type === how.nested);
+  const setting = host?.attributes.find((a) => a.key === how.attribute);
+  if (setting) setting.value = how.value;
+}
+function residualNote(target) {
+  const what = target.node.kind === "functions" ? `google_cloudfunctions2_function.${target.name}` : `google_cloud_run_v2_service.${target.name}`;
+  return [
+    `${what} takes requests from the load balancer, and from callers inside the project's network and Google's own`,
+    "services (Pub/Sub, Cloud Scheduler) on its run.app address: Google has no ingress setting that admits an external",
+    "load balancer alone, and the balancer sends no identity, so the service lets allUsers invoke it. Those callers reach it",
+    "around the Cloud Armor policy; keep the project's network trusted, or put Identity-Aware Proxy on the backend."
+  ].join("\n");
+}
 function wireEdge(source, target, cloud, plan) {
   const hostname3 = target.spec.hostname?.(target.referent);
   const originName = `${source.name}_to_${target.name}`;
   const originCloudName = quote(originName.replace(/_/g, "-"));
   if (cloud === "gcp" && (source.node.kind === "front-door" || source.node.kind === "load-balancer")) {
+    if (source.node.kind === "front-door" && target.node.kind === "load-balancer") return [];
     const edge = source.node.kind === "front-door";
+    const front = edge ? source : plan.collapsed.get(source.node.id);
+    const edgePolicy = front && target.node.kind === "static-site" ? `google_compute_security_policy.${front.name}_edge.id` : void 0;
     const backend = gcpBackend(
       {
         name: originName,
         slug: tfSlug(source.node.id),
         prefix: edge ? GCP_EDGE_PREFIX : "lb",
-        cdn: edge,
-        ...edge ? { policy: `google_compute_security_policy.${source.name}.id` } : {}
+        cdn: front !== void 0,
+        ...front ? { policy: `google_compute_security_policy.${front.name}.id` } : {},
+        ...edgePolicy ? { edgePolicy } : {}
       },
-      { kind: target.node.kind, name: target.name, domain: plan.domains.get(target.node.id) }
+      { kind: target.node.kind, name: target.name }
     );
     if (backend) {
       if (!source.consumer.attributes.some((a) => a.key === "default_service")) {
         source.consumer.attributes.push({ key: "default_service", value: backend.service });
         source.consumer.blocks.push(...backend.routes);
       }
-      if (backend.admit) {
-        const admitted = target.consumer.attributes.find((a) => a.key === backend.admit?.attribute);
-        if (admitted) admitted.value = backend.admit.value;
+      if (backend.admit && !plan.exposed.has(target.node.id)) admit(target, backend.admit);
+      const added = [...backend.blocks];
+      if (target.node.kind === "containers" || target.node.kind === "functions") {
+        if (!plan.noted.has(target.node.id)) {
+          plan.noted.add(target.node.id);
+          plan.notes.push(residualNote(target));
+        }
       }
-      return backend.blocks;
+      if (front && edgePolicy && !plan.edgePolicies.has(front.name)) {
+        plan.edgePolicies.add(front.name);
+        added.push(edgeArmorPolicy(`${front.name}_edge`, tfSlug(front.node.id)));
+      }
+      return added;
     }
   }
   if (source.node.kind === "front-door" && hostname3) {
@@ -25225,17 +25319,67 @@ function emitTerraform(model, cloud, tool = "terraform") {
   }
   const byNodeId = new Map(emitted.map((e) => [e.node.id, e]));
   const wireBlocks = [];
-  const plan = { notes, domains: /* @__PURE__ */ new Map() };
+  const plan = { notes, domains: /* @__PURE__ */ new Map(), collapsed: /* @__PURE__ */ new Map(), exposed: /* @__PURE__ */ new Set(), edgePolicies: /* @__PURE__ */ new Set(), noted: /* @__PURE__ */ new Set() };
+  if (cloud === "gcp") {
+    for (const [balancerId, frontId] of foldedFronts(model)) {
+      const front = byNodeId.get(frontId);
+      const balancer = byNodeId.get(balancerId);
+      if (!front || !balancer) continue;
+      plan.collapsed.set(balancerId, front);
+      front.blocks.splice(0, front.blocks.length, ...front.blocks.filter((b) => b.labels[0] === "google_compute_security_policy"));
+      const gone = outputs.findIndex((o) => o.name === `${front.name}_address`);
+      if (gone >= 0) outputs.splice(gone, 1);
+    }
+    const kindOf = new Map(model.nodes.map((n) => [n.id, n.kind]));
+    for (const edge of model.edges) {
+      const to = byNodeId.get(edge.target);
+      if (!to) continue;
+      if (kindOf.get(edge.source) === "internet" && to.node.kind === "app-service" && !plan.exposed.has(to.node.id)) {
+        plan.exposed.add(to.node.id);
+        admit(to, { resource: "google_app_engine_service_network_settings", nested: "network_settings", attribute: "ingress_traffic_allowed", value: quote(APP_ENGINE_INGRESS.all) });
+        notes.push(
+          `google_app_engine_application.${to.name} is public: the model draws the internet straight to it, so its appspot.com address
+answers anyone. Put a load balancer or CDN in front and draw the internet to that instead to close it.`
+        );
+      }
+    }
+  }
   const fromZone = (id) => byNodeId.get(id)?.node.kind === "dns";
   const edges = [...model.edges.filter((e) => fromZone(e.source)), ...model.edges.filter((e) => !fromZone(e.source))];
+  const wired = /* @__PURE__ */ new Set();
   for (const edge of edges) {
-    const source = byNodeId.get(edge.source);
-    const target = byNodeId.get(edge.target);
+    let source = byNodeId.get(edge.source);
+    let target = byNodeId.get(edge.target);
     if (!source || !target || source === target) continue;
+    if (source.node.kind === "dns" && target.node.kind === "front-door") {
+      const balancer = [...plan.collapsed].find(([, front]) => front === target)?.[0];
+      if (balancer) target = byNodeId.get(balancer) ?? target;
+    }
+    if (cloud === "gcp" && source.node.kind === "front-door" && target.node.kind !== "load-balancer") {
+      const balancer = [...plan.collapsed].find(([, front]) => front === source)?.[0];
+      if (balancer) source = byNodeId.get(balancer) ?? source;
+    }
+    if (cloud === "gcp" && source.node.kind === "load-balancer" && plan.collapsed.has(source.node.id)) {
+      const key = `${source.node.id}>${target.node.id}`;
+      if (wired.has(key)) continue;
+      wired.add(key);
+    }
     wireBlocks.push(...wireEdge(source, target, cloud, plan));
+  }
+  if (cloud === "gcp") {
+    for (const node2 of plainHttpFrontEnds(model)) {
+      const front = byNodeId.get(node2.id);
+      if (!front) continue;
+      notes.push(
+        `google_compute_global_forwarding_rule.${front.name} answers on plain HTTP, port 80 only: no DNS zone in the model names it, so there is
+no hostname to issue a managed certificate for. Draw a DNS zone to it to serve HTTPS (port 80 then redirects), or send nothing that
+needs TLS through it.`
+      );
+    }
   }
   if (cloud === "gcp") wireBlocks.push(...encryptUnderKeyStore(emitted, wireBlocks, usedNames, gcpApis.size > 0));
   for (const item of emitted) {
+    if ([...plan.collapsed.values()].includes(item)) continue;
     for (const variable of item.spec.finalize?.(item.consumer, item.context) ?? []) {
       variables.set(variable.name, variable);
     }
