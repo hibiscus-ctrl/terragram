@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { layoutPositions, NODE_HEIGHT, NODE_WIDTH } from "./layout.ts";
-import { CATEGORY_META, EDGE_ACCESS_META, type EdgeAccess, type InfraModel, type ModelNode, edgeAccessLabel } from "./model.ts";
+import { CATEGORY_META, EDGE_ACCESS_META, type EdgeAccess, type InfraModel, type ModelNode, edgeAccessLabel, selfAccessLabel } from "./model.ts";
 
 /**
  * Render the laid-out model to a standalone SVG string — a real, dependency-free
@@ -18,7 +18,7 @@ function esc(s: string): string {
 /** The line on a card whose node has access to itself: fixed wording, in the colour of an admin edge, so it survives greyscale as text. */
 function selfLine(node: ModelNode, x: number, y: number): string {
   if (!node.selfAccess) return "";
-  const text = `self: ${node.selfAccess}${node.selfConditional ? ", conditional" : ""}`;
+  const text = `self: ${selfAccessLabel(node)}`;
   return `
   <text x="${x + 12}" y="${y + 57}" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="${EDGE_ACCESS_META.admin.color}">${esc(text)}</text>`;
 }

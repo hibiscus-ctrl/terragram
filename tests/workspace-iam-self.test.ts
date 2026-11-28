@@ -268,6 +268,133 @@ describe("where a node's access to itself is shown", () => {
   });
 });
 
+describe("a role's access to itself through a literal ARN or a grant that is not bounded", () => {
+  const put = (resource: string, extra = "") => inline(`{ Effect = "Allow", Action = "iam:PutRolePolicy", Resource = ${resource}${extra} }`);
+  const anyEdge = (model: InfraModel) => model.edges.some((e) => e.target === ANY_RESOURCE_ID);
+
+  it("counts a literal ARN of the role as the role itself", () => {
+    for (const arn of [
+      "arn:aws:iam::123456789012:role/fn",
+      "arn:aws:iam::123456789012:role/service-role/FN",
+      "arn:aws-us-gov:iam::123456789012:role/fn",
+      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/fn",
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/fn",
+    ]) {
+      const model = read(put(`"${arn}"`));
+      assert.deepEqual(selfOf(model), ["entra-id: admin"], arn);
+      assert.equal(anyEdge(model), false, `${arn} is the role, not everything`);
+    }
+  });
+
+  it("does not count a literal ARN of a role that is not drawn, and says nothing about it", () => {
+    const model = read(put(`"arn:aws:iam::123456789012:role/other"`));
+    assert.deepEqual(selfOf(model), []);
+    assert.equal(anyEdge(model), false);
+  });
+
+  it("treats a literal ARN as broad when a drawn role's name cannot be read", () => {
+    const model = read(`${put(`"arn:aws:iam::123456789012:role/other"`)}
+resource "aws_iam_role" "dyn" {
+  name_prefix        = "dyn-"
+  assume_role_policy = "{}"
+}
+`);
+    assert.equal(anyEdge(model), true, "the ARN may be the role whose name is not known");
+    assert.deepEqual(selfOf(model), ["entra-id: admin"]);
+  });
+
+  it("marks a grant over every resource, and one over every role, that can change IAM", () => {
+    for (const resource of [`"*"`, `"arn:aws:iam::*:role/*"`, `"role/*"`, `"arn:aws:iam::123456789012:role/*"`, "var.role_arn"]) {
+      const model = read(put(resource));
+      assert.deepEqual(selfOf(model), ["entra-id: admin"], resource);
+      assert.equal(anyEdge(model), true, resource);
+    }
+    assert.deepEqual(selfOf(read(put(`"*"`, `, Condition = { StringEquals = { "aws:RequestedRegion" = "eu-west-1" } }`))), ["entra-id: admin (conditional)"]);
+  });
+
+  it("marks a service wildcard and an action it cannot read, and leaves a grant that cannot change IAM", () => {
+    const over = (action: string) => selfOf(read(inline(`{ Effect = "Allow", Action = ${action}, Resource = "*" }`)));
+    assert.deepEqual(over(`"*"`), ["entra-id: admin"]);
+    assert.deepEqual(over(`"iam:*"`), ["entra-id: admin"]);
+    assert.deepEqual(over(`["s3:GetObject", "i*:Put*"]`), ["entra-id: admin"]);
+    assert.deepEqual(over("var.actions"), ["entra-id: unscoped"]);
+    assert.deepEqual(selfOf(read(inline(`{ Effect = "Allow", NotAction = "s3:*", Resource = "*" }`))), ["entra-id: unscoped"]);
+    assert.deepEqual(over(`"s3:*"`), []);
+    assert.deepEqual(over(`["s3:GetObject", "iam:GetRole", "iam:List*"]`), []);
+  });
+
+  it("marks AdministratorAccess and IAMFullAccess past the drawn-target cap, and not PowerUserAccess", () => {
+    const attach = (policy: string, extra = "") => `${AWS}${extra}
+resource "aws_iam_role_policy_attachment" "a" {
+  role       = aws_iam_role.fn.name
+  policy_arn = "arn:aws:iam::aws:policy/${policy}"
+}
+`;
+    assert.deepEqual(selfOf(read(attach("AdministratorAccess"))), ["entra-id: admin"]);
+    assert.deepEqual(selfOf(read(attach("PowerUserAccess"))), []);
+    assert.deepEqual(selfOf(read(attach("ReadOnlyAccess"))), []);
+    const many = Array.from({ length: 30 }, (_, i) => `resource "aws_iam_policy" "p${i}" {\n  name   = "p${i}"\n  policy = "{}"\n}\n`).join("");
+    assert.deepEqual(selfOf(read(attach("IAMFullAccess", many))), ["entra-id: admin"]);
+  });
+
+  it("is the same level whether the grant names the role or everything, so swapping one for the other removes nothing", () => {
+    const own = read(put(`aws_iam_role.fn.arn`));
+    const broad = read(put(`"*"`));
+    assert.deepEqual(selfOf(own), selfOf(broad));
+    assert.doesNotMatch(report(own, broad), /\*\*Removed\*\*/);
+    assert.doesNotMatch(report(own, read(put(`"arn:aws:iam::123456789012:role/fn"`))), /\*\*(Removed|Added|Widened|Narrowed)\*\*/);
+  });
+});
+
+describe("what a role's conditional access to itself gives without the condition", () => {
+  const conditionalUnscoped = `{ Effect = "Allow", NotAction = "s3:*", Resource = aws_iam_role.fn.arn, Condition = { StringEquals = { "aws:RequestedRegion" = "eu-west-1" } } }`;
+  const unconditionalAdmin = `{ Effect = "Allow", Action = "iam:PutRolePolicy", Resource = aws_iam_role.fn.arn }`;
+  const onlyConditional = read(inline(conditionalUnscoped));
+  const withFloor = read(inline(`${conditionalUnscoped}, ${unconditionalAdmin}`));
+  const plainAdmin = read(inline(unconditionalAdmin));
+
+  it("is carried and worded like an edge's", () => {
+    const node = withFloor.nodes.find((n) => n.selfAccess);
+    assert.deepEqual([node?.selfAccess, node?.selfConditional, node?.selfUnconditional], ["unscoped", true, "admin"]);
+    assert.equal(selfAccessPhrase(node ?? {}), "has unscoped access to itself (conditional; admin without the condition)");
+    assert.match(modelToSvg(withFloor), />self: unscoped, conditional \(admin unconditional\)</);
+    assert.equal(onlyConditional.nodes.find((n) => n.selfAccess)?.selfUnconditional, undefined);
+    assert.equal(plainAdmin.nodes.find((n) => n.selfAccess)?.selfUnconditional, undefined);
+    assert.equal(infraModelSchema.safeParse(withFloor).success, true);
+  });
+
+  it("is a widening when what holds without the condition goes up, even if the level goes down", () => {
+    assert.match(report(onlyConditional, withFloor), /\*\*Widened\*\* Managed Identity: has unscoped access to itself \(conditional\) to has unscoped access to itself \(conditional; admin without the condition\)/);
+    assert.match(report(onlyConditional, plainAdmin), /\*\*Widened\*\* Managed Identity: .* to has admin access to itself$/m);
+    assert.doesNotMatch(report(onlyConditional, plainAdmin), /Narrowed/);
+    assert.match(report(plainAdmin, onlyConditional), /\*\*Widened\*\*/, "a stronger level behind a condition is wider than a plain admin");
+    assert.match(report(withFloor, onlyConditional), /\*\*Narrowed\*\*/);
+  });
+});
+
+describe("a node whose only change is its access to itself", () => {
+  const plain = read(inline(`{ Effect = "Allow", Action = "iam:GetRole", Resource = aws_iam_role.fn.arn }`));
+  const admin = read(inline(`{ Effect = "Allow", Action = "iam:PutRolePolicy", Resource = aws_iam_role.fn.arn }`));
+  const conditional = read(inline(`{ Effect = "Allow", Action = "iam:PutRolePolicy", Resource = aws_iam_role.fn.arn, Condition = { Bool = { "aws:SecureTransport" = "true" } } }`));
+
+  it("is said in those words, not as a change of kind", () => {
+    const added = report(plain, admin);
+    assert.match(added, /- `entra-id` can now widen its own access: admin$/m);
+    assert.match(report(plain, conditional), /- `entra-id` may now widen its own access: admin, conditional$/m);
+    assert.match(report(admin, plain), /- `entra-id` no longer can widen its own access \(was admin\)$/m);
+    assert.match(report(admin, conditional), /- `entra-id` may widen its own access: admin to admin, conditional$/m);
+    for (const text of [added, report(admin, plain), report(admin, conditional)]) assert.doesNotMatch(text, /changed: /);
+  });
+
+  it("still says a real change of kind or label", () => {
+    const renamed = structuredClone(admin);
+    const node = renamed.nodes.find((n) => n.selfAccess);
+    assert.ok(node);
+    node.label = "Renamed";
+    assert.match(report(admin, renamed), /`entra-id` changed: "Managed Identity" to "Renamed"/);
+  });
+});
+
 function report(before: InfraModel, after: InfraModel): string {
   const diff = diffModels(before, after);
   return renderReport({

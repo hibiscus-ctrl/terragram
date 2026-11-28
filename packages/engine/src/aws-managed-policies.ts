@@ -159,6 +159,9 @@ const POLICIES: ReadonlyMap<string, readonly ManagedGrant[]> = new Map<string, r
 
 const ARN_PREFIX = "arn:aws:iam::aws:policy/";
 
+/** The policies whose `*` row does not cover IAM: PowerUserAccess allows everything outside IAM, Organizations and Account, so it cannot rewrite the role it is attached to. */
+export const MANAGED_WITHOUT_IAM_WRITE: ReadonlySet<string> = new Set([`${ARN_PREFIX}PowerUserAccess`]);
+
 /** Longer than any managed policy ARN: anything past it is not looked up. */
 const MAX_ARN_LENGTH = 200;
 

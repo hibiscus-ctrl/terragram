@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both optional fields of `diagram.model/v1` (the id is unchanged). `explain` says "Can widen its own access: ...", the SVG card carries `self: admin`,
   the diagram's node says it, and the pull request's "Access changes" list has a line for it (added, widened, narrowed or removed) ranked beside the edges. Reads and
   writes on oneself, and `serviceAccountUser` on itself, are not marked. Only the level is kept, never the policy text.
+  A literal ARN of a drawn role (`arn:aws:iam::123456789012:role/fn`, the account may be a reference) counts as that role, and a grant over `*`, a wildcard
+  or unreadable ARN or a NotAction that can change IAM (and `AdministratorAccess`, or `IAMFullAccess` past the drawn-target cap, but not `PowerUserAccess`) marks
+  the identity holding it too, so swapping an own-ARN grant for `*` no longer reads as access removed. A conditional access to itself carries what holds
+  without the condition (`selfUnconditional`, an optional field of `diagram.model/v1`), worded like an edge's: `self: unscoped, conditional (admin unconditional)`.
+  The pull request report ranks a rise in what holds without the condition as a widening, and a node whose only change is its own access says "can now
+  widen its own access", not a change of kind.
 - The bundled AWS managed policy table now holds the `iam:Get*`/`iam:List*` reads the published policy documents grant (`AWSLambda_ReadOnlyAccess` and
   `AWSLambda_FullAccess`, `AmazonDynamoDBReadOnlyAccess` and `FullAccess`, `AmazonCognitoPowerUser`, `CloudFrontFullAccess`, `CloudWatchFullAccess`,
   `AWSKeyManagementServicePowerUser`), so IAM shows as `read` where a policy grants it. Beside a conditional `iam:PassRole` row the read stays visible as the

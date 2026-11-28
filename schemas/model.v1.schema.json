@@ -93,6 +93,14 @@
           "selfConditional": {
             "description": "With selfAccess: every grant behind it carries a condition. The level is the same.",
             "type": "boolean"
+          },
+          "selfUnconditional": {
+            "description": "With selfConditional: the strongest level some grant gives the node over itself with no condition at all, below selfAccess. Absent otherwise.",
+            "type": "string",
+            "enum": [
+              "admin",
+              "unscoped"
+            ]
           }
         },
         "required": [

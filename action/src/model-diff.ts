@@ -25,9 +25,15 @@ export type ModelDiff = {
   };
 };
 
-function nodeSignature(node: ModelNode): string {
+function nodeSignature(node: ModelNode, withSelf = true): string {
   const attributes = Object.entries(node.attributes ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return JSON.stringify([node.category, node.kind, node.label, attributes, node.flag?.reason ?? null, node.selfAccess ?? null, node.selfConditional === true]);
+  const self = withSelf ? [node.selfAccess ?? null, node.selfConditional === true, node.selfUnconditional ?? null] : [];
+  return JSON.stringify([node.category, node.kind, node.label, attributes, node.flag?.reason ?? null, ...self]);
+}
+
+/** Whether a node's access to itself is all that differs between two versions of it. */
+export function onlySelfAccessChanged(before: ModelNode, after: ModelNode): boolean {
+  return nodeSignature(before, false) === nodeSignature(after, false);
 }
 
 const edgeKey = (edge: ModelEdge) => `${edge.source}\u0000${edge.target}`;

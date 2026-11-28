@@ -1,13 +1,13 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { type Cloud, EDGE_ACCESS_META, type EdgeAccess, edgeAccessLabel, type ModelNode, selfAccessPhrase } from "terragram-engine/model";
+import { type Cloud, EDGE_ACCESS_META, type EdgeAccess, edgeAccessLabel, type ModelNode, selfAccessLabel, selfAccessPhrase } from "terragram-engine/model";
 import { strongerAccess, unconditionalLevel } from "terragram-engine/iam";
 
 import { COMMENT_MARKER } from "./comment.ts";
 import type { Inputs } from "./inputs.ts";
 import type { Diagram } from "./mermaid.ts";
-import { hasModelChanges, type ModelDiff } from "./model-diff.ts";
+import { hasModelChanges, type ModelDiff, onlySelfAccessChanged } from "./model-diff.ts";
 import type { FileState } from "./terraform-files.ts";
 
 /**
@@ -115,6 +115,7 @@ function accessLines(diff: ModelDiff): string[] {
   }
   // A node's access to itself is a path to widen its own access: a line like an edge's, ranked by the same level.
   const selfOf = (n: ModelNode | undefined) => (n?.selfAccess ? selfAccessPhrase(n) : undefined);
+  const selfRank = (access: ModelNode["selfAccess"]) => (access === "unscoped" ? 2 : access === "admin" ? 1 : 0);
   const selfLevel = (n: ModelNode | undefined) => n?.selfAccess === "unscoped" ? 0 : n?.selfAccess === "admin" ? 1 : 2;
   for (const n of diff.nodes.added) {
     const now = selfOf(n);
@@ -131,13 +132,24 @@ function accessLines(diff: ModelDiff): string[] {
     if (now && !was) row(after.id, after.id, selfLevel(after), `**Added** ${name(after.id)} ${now}`);
     else if (was && !now) row(after.id, after.id, 4, `**Removed** ${name(after.id)} ${was}`);
     else {
-      // The same access with a condition gone is wider; a level that is no longer the strongest, or a condition added, is narrower.
-      const widened = before.selfAccess === after.selfAccess ? !after.selfConditional : strongerAccess(before.selfAccess ?? "read", after.selfAccess ?? "read") === after.selfAccess;
+      // Wider when the level or what holds without a condition went up (even if the other went down: fail closed); narrower otherwise.
+      const floor = (n: ModelNode) => (n.selfConditional ? (n.selfUnconditional === undefined ? 0 : selfRank(n.selfUnconditional)) : selfRank(n.selfAccess));
+      const widened = selfRank(after.selfAccess) > selfRank(before.selfAccess) || floor(after) > floor(before);
       row(after.id, after.id, widened ? selfLevel(after) : 3, `**${widened ? "Widened" : "Narrowed"}** ${name(after.id)}: ${was} to ${now}`);
     }
   }
   rows.sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   return rows.map((r) => r.text);
+}
+
+/** A node whose only change is its access to itself: said in those words, not as a change of kind. "may" when the access is conditional or could not be read closely. */
+function selfOnlyLine(before: ModelNode, after: ModelNode): string {
+  const id = `\`${before.id.replaceAll("`", "'")}\``;
+  const was = selfAccessLabel(before);
+  const now = selfAccessLabel(after);
+  const may = after.selfConditional || after.selfAccess === "unscoped" ? "may" : "can";
+  if (now === undefined) return `${id} no longer ${before.selfConditional || before.selfAccess === "unscoped" ? "may" : "can"} widen its own access (was ${was ?? "none"})`;
+  return was === undefined ? `${id} ${may} now widen its own access: ${now}` : `${id} ${may} widen its own access: ${was} to ${now}`;
 }
 
 function statusLine(input: ReportInput): string {
@@ -190,6 +202,7 @@ function modelSection(input: ReportInput): string[] {
   if (nodes.changed.length > 0) {
     out.push(
       ...listed(nodes.changed, ({ before, after }) => {
+        if (onlySelfAccessChanged(before, after)) return selfOnlyLine(before, after);
         const what =
           before.label !== after.label
             ? `"${markdownText(before.label)}" to "${markdownText(after.label)}"`

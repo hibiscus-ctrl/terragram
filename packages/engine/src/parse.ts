@@ -271,7 +271,11 @@ export function parseTerraform(source: string): ParseResult {
     const node = instances.find((i) => i.node.id === edge.source)?.node;
     if (!node || (edge.access !== "admin" && edge.access !== "unscoped")) continue;
     node.selfAccess = edge.access;
-    if (edge.conditional) node.selfConditional = true;
+    if (edge.conditional) {
+      node.selfConditional = true;
+      // The unconditional floor only matters where it is itself a path to widen: `admin` under `unscoped`.
+      if ((edge.unconditional === "admin" || edge.unconditional === "unscoped") && edge.unconditional !== edge.access) node.selfUnconditional = edge.unconditional;
+    }
   }
   for (let i = untranslated.length - 1; i >= 0; i--) {
     const [type, name] = (untranslated[i] ?? "").split(".");

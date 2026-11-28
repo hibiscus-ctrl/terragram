@@ -20402,7 +20402,9 @@ var modelNodeSchema = external_exports.object({
   /** Set when the node's own grants reach the node itself (a role whose policy may rewrite the role, a service account that may mint tokens for itself): a path to widen its own access. `admin`, or `unscoped` when the grant could not be read closely. Absent otherwise; lower levels on oneself are not recorded. Counts as admin access wherever access is shown. */
   selfAccess: external_exports.enum(SELF_ACCESS).optional().describe("Set when the node's own grants reach the node itself, so it can widen its own access (a role whose policy may rewrite the role, a service account that may mint tokens for itself): admin, or unscoped when the grant could not be read closely. Absent otherwise. Counts as admin access."),
   /** With `selfAccess`: every grant behind it carries a Condition. The level is the same. */
-  selfConditional: external_exports.boolean().optional().describe("With selfAccess: every grant behind it carries a condition. The level is the same.")
+  selfConditional: external_exports.boolean().optional().describe("With selfAccess: every grant behind it carries a condition. The level is the same."),
+  /** With `selfConditional`: some grant gives this level on itself with no condition at all. Always below `selfAccess`, so only `admin` under `unscoped`. */
+  selfUnconditional: external_exports.enum(SELF_ACCESS).optional().describe("With selfConditional: the strongest level some grant gives the node over itself with no condition at all, below selfAccess. Absent otherwise.")
 });
 var EDGE_ORIGINS = ["derived", "user"];
 var EDGE_ACCESS = ["runs-as", "read", "write", "admin", "unscoped"];
@@ -20420,7 +20422,12 @@ function edgeAccessLabel(edge) {
 }
 function selfAccessPhrase(node2) {
   if (!node2.selfAccess) return void 0;
-  return `has ${node2.selfAccess} access to itself${node2.selfConditional ? " (conditional)" : ""}`;
+  if (!node2.selfConditional) return `has ${node2.selfAccess} access to itself`;
+  return `has ${node2.selfAccess} access to itself (conditional${node2.selfUnconditional ? `; ${node2.selfUnconditional} without the condition` : ""})`;
+}
+function selfAccessLabel(node2) {
+  if (!node2.selfAccess) return void 0;
+  return edgeAccessLabel({ access: node2.selfAccess, conditional: node2.selfConditional, unconditional: node2.selfUnconditional });
 }
 var modelEdgeSchema = external_exports.object({
   id: external_exports.string().min(1).max(80),
@@ -24374,9 +24381,13 @@ function writeRegularFile(root, target, content, label) {
 }
 
 // src/model-diff.ts
-function nodeSignature(node2) {
+function nodeSignature(node2, withSelf = true) {
   const attributes = Object.entries(node2.attributes ?? {}).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
-  return JSON.stringify([node2.category, node2.kind, node2.label, attributes, node2.flag?.reason ?? null, node2.selfAccess ?? null, node2.selfConditional === true]);
+  const self = withSelf ? [node2.selfAccess ?? null, node2.selfConditional === true, node2.selfUnconditional ?? null] : [];
+  return JSON.stringify([node2.category, node2.kind, node2.label, attributes, node2.flag?.reason ?? null, ...self]);
+}
+function onlySelfAccessChanged(before, after) {
+  return nodeSignature(before, false) === nodeSignature(after, false);
 }
 var edgeKey = (edge) => `${edge.source}\0${edge.target}`;
 var byId = (a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
@@ -24519,6 +24530,7 @@ function accessLines(diff) {
     );
   }
   const selfOf = (n) => n?.selfAccess ? selfAccessPhrase(n) : void 0;
+  const selfRank = (access) => access === "unscoped" ? 2 : access === "admin" ? 1 : 0;
   const selfLevel = (n) => n?.selfAccess === "unscoped" ? 0 : n?.selfAccess === "admin" ? 1 : 2;
   for (const n of diff.nodes.added) {
     const now = selfOf(n);
@@ -24535,12 +24547,21 @@ function accessLines(diff) {
     if (now && !was) row(after.id, after.id, selfLevel(after), `**Added** ${name(after.id)} ${now}`);
     else if (was && !now) row(after.id, after.id, 4, `**Removed** ${name(after.id)} ${was}`);
     else {
-      const widened = before.selfAccess === after.selfAccess ? !after.selfConditional : strongerAccess(before.selfAccess ?? "read", after.selfAccess ?? "read") === after.selfAccess;
+      const floor = (n) => n.selfConditional ? n.selfUnconditional === void 0 ? 0 : selfRank(n.selfUnconditional) : selfRank(n.selfAccess);
+      const widened = selfRank(after.selfAccess) > selfRank(before.selfAccess) || floor(after) > floor(before);
       row(after.id, after.id, widened ? selfLevel(after) : 3, `**${widened ? "Widened" : "Narrowed"}** ${name(after.id)}: ${was} to ${now}`);
     }
   }
   rows.sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   return rows.map((r) => r.text);
+}
+function selfOnlyLine(before, after) {
+  const id = `\`${before.id.replaceAll("`", "'")}\``;
+  const was = selfAccessLabel(before);
+  const now = selfAccessLabel(after);
+  const may = after.selfConditional || after.selfAccess === "unscoped" ? "may" : "can";
+  if (now === void 0) return `${id} no longer ${before.selfConditional || before.selfAccess === "unscoped" ? "may" : "can"} widen its own access (was ${was ?? "none"})`;
+  return was === void 0 ? `${id} ${may} now widen its own access: ${now}` : `${id} ${may} widen its own access: ${was} to ${now}`;
 }
 function statusLine(input3) {
   const dir = `\`${input3.terraformDir}\``;
@@ -24585,6 +24606,7 @@ function modelSection(input3) {
   if (nodes.changed.length > 0) {
     out.push(
       ...listed(nodes.changed, ({ before, after }) => {
+        if (onlySelfAccessChanged(before, after)) return selfOnlyLine(before, after);
         const what = before.label !== after.label ? `"${markdownText(before.label)}" to "${markdownText(after.label)}"` : `${markdownText(before.kind)} to ${markdownText(after.kind)}`;
         return `\`${before.id.replaceAll("`", "'")}\` changed: ${what}`;
       }),
