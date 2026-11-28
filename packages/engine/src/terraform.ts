@@ -27,7 +27,6 @@ import {
   plainHttpFrontEnds,
   privateServicesBlocks,
 } from "./gcp-kinds.ts";
-import { MODULE_VERSIONS } from "./module-versions.ts";
 import {
   AWS_US_EAST_1,
   attributeProblems,
@@ -40,7 +39,6 @@ import {
   frontDoorOrigin,
   modelIsProduction,
   type NetworkRefs,
-  PLAN_NETWORK,
   type PrivateNetwork,
   providerFor,
   refAddress,
@@ -51,6 +49,7 @@ import {
 } from "./kinds.ts";
 import { type Cloud, type InfraModel, type ModelNode, resourceNodes } from "./model.ts";
 import { PROVIDER_VERSIONS } from "./provider-versions.ts";
+import { PLAN_ADDRESS_SPACE, PLAN_NETWORK, planNetworkModule, privateDnsZoneModule, privateDnsZoneName, resourceGroupModule } from "./scaffold.ts";
 
 /**
  * Model → Terraform. Every resource fact comes from the kind registry; what this
@@ -465,9 +464,6 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
   return [];
 }
 
-/** The address space of the network an Azure plan adds when the model draws none. */
-const PLAN_ADDRESS_SPACE = "10.0.0.0/16";
-
 type SubnetRequest = { delegation: string | undefined; outbound: boolean | undefined };
 
 /**
@@ -490,29 +486,12 @@ function privateNetwork(name: string): {
         return `module.${name}.subnets[${quote(key)}].resource_id`;
       },
       dnsZone: (zone) => {
-        // privatelink.vaultcore.azure.net -> private_dns_vaultcore
-        const tf = `private_dns_${zone.replace(/^privatelink\./, "").split(".")[0]?.replace(/[^a-z0-9]+/g, "_")}`;
+        const tf = privateDnsZoneName(zone);
         zones.set(zone, tf);
         return `module.${tf}.resource_id`;
       },
     },
   };
-}
-
-/** The network a plan adds for itself: one address space, and the subnets its
- *  kinds ask for, added once they have all asked. */
-function planNetwork(): HclBlock {
-  const pin = MODULE_VERSIONS["azure/virtual-network"];
-  return block("module", [PLAN_NETWORK], [
-    { key: "source", value: quote(pin.source) },
-    { key: "version", value: quote(pin.version) },
-    { key: "name", value: quoteTemplate`vnet-\${var.name_prefix}` },
-    { key: "parent_id", value: "module.resource_group.resource_id" },
-    { key: "location", value: "module.resource_group.location" },
-    { key: "address_space", value: `[${quote(PLAN_ADDRESS_SPACE)}]` },
-    { key: "enable_telemetry", value: "false" },
-    { key: "tags", value: "local.tags" },
-  ]);
 }
 
 /** What sits behind each private DNS zone, as the note names it. */
@@ -902,7 +881,7 @@ export function emitTerraform(
   const networkBlocks: HclBlock[] = [];
   if (privateNet && privateNet.subnets.size > 0) {
     const own = azureNetworkNode ? byNodeId.get(azureNetworkNode.id)?.blocks[0] : undefined;
-    const network = own ?? planNetwork();
+    const network = own ?? planNetworkModule();
     if (!own) networkBlocks.push(network);
     const space = (azureNetworkNode ? byNodeId.get(azureNetworkNode.id)?.context.attr("Address space") : null) ?? PLAN_ADDRESS_SPACE;
     const octets = /^(\d+)\.(\d+)\./.exec(space.trim());
@@ -927,32 +906,7 @@ export function emitTerraform(
       });
     }
     const networkId = `module.${network.labels[0]}.resource_id`;
-    const zonePin = MODULE_VERSIONS["azure/private-dns-zone"];
-    for (const [zone, tf] of privateNet.zones) {
-      networkBlocks.push(
-        block("module", [tf], [
-          { key: "source", value: quote(zonePin.source) },
-          { key: "version", value: quote(zonePin.version) },
-          { key: "domain_name", value: quote(zone) },
-          { key: "parent_id", value: "module.resource_group.resource_id" },
-          {
-            key: "virtual_network_links",
-            value: mapExpression([
-              {
-                key: "network",
-                value: mapExpression([
-                  { key: "name", value: quote(`${tf.replace(/_/g, "-")}-link`) },
-                  { key: "virtual_network_id", value: networkId },
-                  { key: "autoregistration", value: "false" },
-                ]),
-              },
-            ]),
-          },
-          { key: "enable_telemetry", value: "false" },
-          { key: "tags", value: "local.tags" },
-        ]),
-      );
-    }
+    for (const zone of privateNet.zones.keys()) networkBlocks.push(privateDnsZoneModule(zone, networkId));
     if (privateNet.zones.size > 0) notes.push(privateNetworkNote(`module.${network.labels[0]}`, privateNet.zones.keys()));
   }
 
@@ -1009,16 +963,7 @@ export function emitTerraform(
     if (emitted.length > 0) {
       // Even the resource group is a Verified Module — the plan has no
       // hand-written Azure resource left to be inconsistent with.
-      scaffold.push(
-        block("module", ["resource_group"], [
-          { key: "source", value: quote(MODULE_VERSIONS["azure/resource-group"].source) },
-          { key: "version", value: quote(MODULE_VERSIONS["azure/resource-group"].version) },
-          { key: "name", value: quoteTemplate`rg-\${var.name_prefix}` },
-          { key: "location", value: "var.location" },
-          { key: "enable_telemetry", value: "false" },
-          { key: "tags", value: "local.tags" },
-        ]),
-      );
+      scaffold.push(resourceGroupModule());
     }
     variables.set("location", {
       name: "location",

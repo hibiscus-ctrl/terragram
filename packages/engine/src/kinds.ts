@@ -14,6 +14,7 @@ import {
 import type { Cloud, GeneratedCloud, ModelNode, NodeCategory, ReviewFlag } from "./model.ts";
 import { MODULE_VERSIONS, type ModuleKey } from "./module-versions.ts";
 import { PROVIDER_VERSIONS } from "./provider-versions.ts";
+import { isAzureScaffold, sameAttributes, squash } from "./scaffold.ts";
 import {
   appEngineClassFrom,
   finalizeFrontend,
@@ -952,7 +953,12 @@ const ACCESS_LOG_BUCKET_INPUT = "attach_access_log_delivery_policy";
  * that is the only default encryption S3 delivers access logs into.
  */
 function s3AccessLogs(c: EmitContext): { logging: { key: string; value: string }; bucket: HclBlock } {
-  const name = `${c.name}_logs`;
+  return s3AccessLogsOf(c.name, c.slug);
+}
+
+/** The log bucket of the bucket module `host` whose names carry `slug`, as `s3AccessLogs` writes it. */
+function s3AccessLogsOf(host: string, slug: string): { logging: { key: string; value: string }; bucket: HclBlock } {
+  const name = `${host}_logs`;
   return {
     logging: {
       key: "logging",
@@ -962,16 +968,33 @@ function s3AccessLogs(c: EmitContext): { logging: { key: string; value: string }
       ]),
     },
     bucket: moduleBlock("aws/s3-bucket", name, [
-      { key: "bucket", value: cloudName("logs", c.slug) },
+      { key: "bucket", value: cloudName("logs", slug) },
       { key: "control_object_ownership", value: "true" },
       { key: "object_ownership", value: quote("BucketOwnerEnforced") },
       ...S3_PUBLIC_ACCESS_BLOCK,
       { key: "versioning", value: mapExpression([{ key: "enabled", value: "true" }]) },
       s3Encryption("AES256"),
       { key: ACCESS_LOG_BUCKET_INPUT, value: "true" },
-      { key: "access_log_delivery_policy_source_buckets", value: `[module.${c.name}.s3_bucket_arn]` },
+      { key: "access_log_delivery_policy_source_buckets", value: `[module.${host}.s3_bucket_arn]` },
     ]),
   };
+}
+
+/**
+ * Whether an S3 module call is exactly the log bucket the plan adds for a bucket: every input the
+ * generator writes and no others, named for the bucket module it logs, which names it as its
+ * `logging` target. A bucket that merely takes the access-log policy, or is not the target of one
+ * in the file, is a store of the file's own and is drawn.
+ */
+function isS3LogBucket(b: HclBlock, all: readonly HclBlock[]): boolean {
+  const label = b.labels[0] ?? "";
+  if (b.type !== "module" || b.labels.length !== 1 || stringValue(attr(b, "source")) !== MODULE_VERSIONS["aws/s3-bucket"].source || !label.endsWith("_logs")) return false;
+  const hostName = label.slice(0, -"_logs".length);
+  const host = all.find((o) => o.type === "module" && o.labels.length === 1 && o.labels[0] === hostName && stringValue(attr(o, "source")) === MODULE_VERSIONS["aws/s3-bucket"].source);
+  const slug = /^"(?:data|site)-\$\{var\.name_prefix\}-([a-z0-9-]+)"$/.exec(squash(attr(host ?? b, "bucket")))?.[1];
+  if (host === undefined || attr(host, ACCESS_LOG_BUCKET_INPUT) !== undefined || slug === undefined) return false;
+  const expected = s3AccessLogsOf(hostName, slug);
+  return sameAttributes(b, expected.bucket) && squash(attr(host, "logging")) === squash(expected.logging.value);
 }
 
 /**
@@ -3258,30 +3281,13 @@ export function moduleSourceToKind(
 }
 
 /**
- * Module calls that are the plan's scaffolding rather than one of its components.
- * The Azure resource group is a Verified Module like everything else, but it is
- * not something a reviewer drew — so the reader skips it instead of showing it as
- * a block it could not translate.
+ * Whether a module call is scaffolding rather than a component: the Azure resource group, the
+ * network an Azure plan adds when the model draws none and its private DNS zones (`isAzureScaffold`),
+ * or the bucket a bucket's access logs go to. Only exactly what the generator writes, used by a
+ * component of the file, counts; a lookalike is drawn, the way `isScaffoldResource` does for Google Cloud.
  */
-const SCAFFOLD_MODULE_SOURCES: readonly string[] = [
-  MODULE_VERSIONS["azure/resource-group"].source,
-  MODULE_VERSIONS["azure/private-dns-zone"].source,
-];
-
-/** The module name of the network an Azure plan adds when the model draws none. */
-export const PLAN_NETWORK = "network";
-
-/**
- * Whether a module call is scaffolding: the resource group and the private DNS
- * zones above, the network an Azure plan adds when the model draws none, or the
- * bucket a bucket's access logs go to — part of the bucket that logs into it,
- * never a store the reviewer drew.
- */
-export function isScaffoldModule(b: HclBlock): boolean {
-  const source = stringValue(attr(b, "source")) ?? "";
-  if (SCAFFOLD_MODULE_SOURCES.includes(source)) return true;
-  if (source === MODULE_VERSIONS["azure/virtual-network"].source && b.labels[0] === PLAN_NETWORK) return true;
-  return source === MODULE_VERSIONS["aws/s3-bucket"].source && attr(b, ACCESS_LOG_BUCKET_INPUT) === "true";
+export function isScaffoldModule(b: HclBlock, all: readonly HclBlock[]): boolean {
+  return isAzureScaffold(b, all) || isS3LogBucket(b, all);
 }
 
 /** Whether the derived spine fronts this kind with an edge tier by default. */

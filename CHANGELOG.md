@@ -167,6 +167,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   order falls back to type and ID as before. The ids in the Mermaid and the JSON view of an estate with
   several accounts are numbered differently; the drawing is the same.
 
+### Fixed
+
+- Reading a plan back no longer hides a real Azure or AWS resource that only looks like the plan's own scaffolding. The Azure resource group and private
+  DNS zone modules, the network an Azure plan adds when the model draws none, and the S3 log bucket of a bucket are hidden only when they are exactly
+  what the generator writes (every input, no others, a name of the generator's shape) and a component of the file uses them, the way the Google Cloud
+  scaffolding already is. A resource group of your own, a virtual network that is called `network`, a zone nothing reads, or a bucket that takes the
+  access-log policy but is not the logging target of another is drawn, with its IAM edges.
+
 ## [0.2.0] - 2026-11-23
 
 ### Added
