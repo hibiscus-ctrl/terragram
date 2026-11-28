@@ -3340,3 +3340,6 @@ export function isFronted(kind: string): boolean {
 export function providerFor(cloud: GeneratedCloud): { name: string; source: string; version: string } {
   return PROVIDER_VERSIONS[cloud];
 }
+
+/** What a Google Cloud plan grants and starts from, for the sandbox's check of a plan to be held against (tests/sandbox-gcp-validate.test.ts). */
+export { GCP_IMAGES, GCP_LOG_DELIVERY_MEMBER, GCP_ROLES } from "./gcp-kinds.ts";

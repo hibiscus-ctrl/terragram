@@ -205,6 +205,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name or after a hyphen or a slash, instead of anything with `ih-sbx-tg-` somewhere in its name. Its preflight now also stops the run when a service account of the project holds Service
   Account Token Creator, Service Account User (the signed-in account excepted), Project IAM Admin, Security Admin, Role Admin or Service Account Key Admin, besides Editor and Owner,
   and fails on an empty policy instead of passing it.
+- The Google Cloud sandbox's check of the plans (`scripts/sandbox-gcp-validate.mjs`) now reads values, not only names. Before a plan is applied with a cloud token, a grant must be one of the
+  exact roles the generator writes (held equal to `GCP_ROLES` by a test) of a role its type of grant carries, to a service account the plan creates, a service agent it names, Google's log
+  delivery group, or `allUsers` as `roles/run.invoker` on Cloud Run; a virtual machine's `metadata` is the settings the generator writes (no `metadata_startup_script`, `startup-script`,
+  `user-data` or `ssh-keys`); a container's image is the generator's (`GCP_IMAGES`) with no `command`, `args` or environment other than references to the plan's own resources under a
+  name the generator writes; workloads run as a service account the plan creates; and a firewall or a control plane is not opened to `0.0.0.0/0`. A tampered plan is refused before Terraform runs.
 
 ## [0.2.0] - 2026-11-23
 

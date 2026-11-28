@@ -31,7 +31,7 @@ By hand, never in CI: `sandbox-google.yml` (environment `sandbox`, reviewers app
 `scripts/emit-plans.ts` to a real sandbox project and destroys them again (`scripts/sandbox-gcp.sh`). The plans go through
 `scripts/lib/sandbox-gcp.ts` first, which lists what a shared project needs changed (no App Engine, no project, no deletion
 protection) and fails if a change finds nothing to change: a new plan or a generator change that moves one of those lines
-fails `tests/sandbox-gcp-plans.test.ts`. Everything it creates is named `ih-sbx-tg-<plan letter><4 hex digits>` and swept by that exact shape of name (never by the prefix alone, so another team's `ih-sbx-tg-notes` is left alone); the preflight refuses a service account that holds Editor, Owner, Token Creator, Service Account User (other than the signed-in account), Project IAM Admin, Security Admin, Role Admin or Service Account Key Admin.
+fails `tests/sandbox-gcp-plans.test.ts`. Before a token is had, `scripts/sandbox-gcp-validate.mjs` also holds the plans to the generator's values (roles, images, members, startup scripts, container commands and environment): a role or image added to `GCP_ROLES` / `GCP_IMAGES` in `gcp-kinds.ts` goes in its lists in the same change, and `tests/sandbox-gcp-validate.test.ts` fails until it does. Everything it creates is named `ih-sbx-tg-<plan letter><4 hex digits>` and swept by that exact shape of name (never by the prefix alone, so another team's `ih-sbx-tg-notes` is left alone); the preflight refuses a service account that holds Editor, Owner, Token Creator, Service Account User (other than the signed-in account), Project IAM Admin, Security Admin, Role Admin or Service Account Key Admin.
 
 ## The engine: `packages/engine`
 

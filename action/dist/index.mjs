@@ -20509,6 +20509,23 @@ var ENGINE_NAME = "diagram-engine";
 var ENGINE_VERSION = "0.1.0";
 
 // ../packages/engine/src/gcp-kinds.ts
+var GCP_ROLES = {
+  logWriter: "roles/logging.logWriter",
+  metricWriter: "roles/monitoring.metricWriter",
+  monitoringViewer: "roles/monitoring.viewer",
+  artifactReader: "roles/artifactregistry.reader",
+  sqlInstanceUser: "roles/cloudsql.instanceUser",
+  sqlClient: "roles/cloudsql.client",
+  keyUser: "roles/cloudkms.cryptoKeyEncrypterDecrypter",
+  objectCreator: "roles/storage.objectCreator",
+  objectViewer: "roles/storage.objectViewer",
+  runInvoker: "roles/run.invoker"
+};
+var GCP_IMAGES = {
+  cloudRun: "us-docker.pkg.dev/cloudrun/container/hello",
+  virtualMachine: "debian-cloud/debian-12"
+};
+var GCP_LOG_DELIVERY_MEMBER = "group:cloud-storage-analytics@google.com";
 var NAME_PREFIX = {
   name: "name_prefix",
   type: "string",
@@ -20611,8 +20628,8 @@ function bucketWithLogs(c, opts) {
   ]);
   const grant = block("resource", ["google_storage_bucket_iam_member", `${logs}_delivery`], [
     { key: "bucket", value: `google_storage_bucket.${logs}.name` },
-    { key: "role", value: quote("roles/storage.objectCreator") },
-    { key: "member", value: quote("group:cloud-storage-analytics@google.com") }
+    { key: "role", value: quote(GCP_ROLES.objectCreator) },
+    { key: "member", value: quote(GCP_LOG_DELIVERY_MEMBER) }
   ]);
   return { bucket, blocks: [bucket, logBucket, grant] };
 }
@@ -20713,8 +20730,8 @@ function sqlInstance(c, engine, prefix) {
       instance,
       serviceAccount(appAccount, `${c.slug}-app`, `Connects to the ${c.slug} database with IAM authentication`),
       // The grants are the project's, but bounded by a condition to this one instance.
-      projectRole(`${c.name}_app_instance_user`, "roles/cloudsql.instanceUser", `google_service_account.${appAccount}`, onInstance),
-      projectRole(`${c.name}_app_client`, "roles/cloudsql.client", `google_service_account.${appAccount}`, onInstance),
+      projectRole(`${c.name}_app_instance_user`, GCP_ROLES.sqlInstanceUser, `google_service_account.${appAccount}`, onInstance),
+      projectRole(`${c.name}_app_client`, GCP_ROLES.sqlClient, `google_service_account.${appAccount}`, onInstance),
       database,
       user
     ],
@@ -20903,7 +20920,7 @@ function gcpBackend(edge, target) {
         block("resource", ["google_cloud_run_v2_service_iam_member", name], [
           { key: "name", value: `${run2}.name` },
           { key: "location", value: `${run2}.location` },
-          { key: "role", value: quote("roles/run.invoker") },
+          { key: "role", value: quote(GCP_ROLES.runInvoker) },
           { key: "member", value: quote("allUsers") }
         ])
       ]),
@@ -20916,7 +20933,7 @@ function gcpBackend(edge, target) {
       block("resource", ["google_cloud_run_service_iam_member", name], [
         { key: "service", value: `${fn}.service_config[0].service` },
         { key: "location", value: `${fn}.location` },
-        { key: "role", value: quote("roles/run.invoker") },
+        { key: "role", value: quote(GCP_ROLES.runInvoker) },
         { key: "member", value: quote("allUsers") }
       ])
     ]);
@@ -20950,7 +20967,7 @@ function gcpBackend(edge, target) {
         block("data", ["google_project", name], []),
         block("resource", ["google_storage_bucket_iam_member", name], [
           { key: "bucket", value: `${bucket}.name` },
-          { key: "role", value: quote("roles/storage.objectViewer") },
+          { key: "role", value: quote(GCP_ROLES.objectViewer) },
           { key: "member", value: `"serviceAccount:service-\${data.google_project.${name}.number}@https-lb.iam.gserviceaccount.com"` },
           { key: "depends_on", value: `[${backend}]` }
         ])
@@ -21239,7 +21256,7 @@ var GCP = {
           ], [
             block("boot_disk", [], [], [
               block("initialize_params", [], [
-                { key: "image", value: quote("debian-cloud/debian-12") },
+                { key: "image", value: quote(GCP_IMAGES.virtualMachine) },
                 { key: "size", value: "20" },
                 { key: "type", value: quote("pd-balanced") }
               ])
@@ -21256,8 +21273,8 @@ var GCP = {
             ])
           ]),
           serviceAccount(c.name, c.slug, `Runs the ${c.slug} instance`),
-          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
-          projectRole(`${c.name}_metric_writer`, "roles/monitoring.metricWriter", `google_service_account.${c.name}`)
+          projectRole(`${c.name}_log_writer`, GCP_ROLES.logWriter, `google_service_account.${c.name}`),
+          projectRole(`${c.name}_metric_writer`, GCP_ROLES.metricWriter, `google_service_account.${c.name}`)
         ],
         variables: [NAME_PREFIX, ...variables],
         outputs: [{ name: `${c.name}_internal_ip`, value: `google_compute_instance.${c.name}.network_interface[0].network_ip` }]
@@ -21348,10 +21365,10 @@ var GCP = {
             ])
           ]),
           serviceAccount(nodes, `${c.slug}-nodes`, `Runs the ${c.slug} cluster's nodes`),
-          projectRole(`${nodes}_log_writer`, "roles/logging.logWriter", `google_service_account.${nodes}`),
-          projectRole(`${nodes}_metric_writer`, "roles/monitoring.metricWriter", `google_service_account.${nodes}`),
-          projectRole(`${nodes}_monitoring_viewer`, "roles/monitoring.viewer", `google_service_account.${nodes}`),
-          projectRole(`${nodes}_artifact_reader`, "roles/artifactregistry.reader", `google_service_account.${nodes}`)
+          projectRole(`${nodes}_log_writer`, GCP_ROLES.logWriter, `google_service_account.${nodes}`),
+          projectRole(`${nodes}_metric_writer`, GCP_ROLES.metricWriter, `google_service_account.${nodes}`),
+          projectRole(`${nodes}_monitoring_viewer`, GCP_ROLES.monitoringViewer, `google_service_account.${nodes}`),
+          projectRole(`${nodes}_artifact_reader`, GCP_ROLES.artifactReader, `google_service_account.${nodes}`)
         ],
         variables: [
           NAME_PREFIX,
@@ -21401,7 +21418,7 @@ var GCP = {
                 { key: "min_instance_count", value: "1" },
                 { key: "max_instance_count", value: "10" }
               ]),
-              block("containers", [], [{ key: "image", value: quote("us-docker.pkg.dev/cloudrun/container/hello") }], [
+              block("containers", [], [{ key: "image", value: quote(GCP_IMAGES.cloudRun) }], [
                 block("ports", [], [{ key: "container_port", value: "8080" }]),
                 block("resources", [], [
                   {
@@ -21424,7 +21441,7 @@ var GCP = {
             ])
           ]),
           serviceAccount(c.name, c.slug, `Runs the ${c.slug} service`),
-          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`)
+          projectRole(`${c.name}_log_writer`, GCP_ROLES.logWriter, `google_service_account.${c.name}`)
         ],
         variables: [NAME_PREFIX],
         outputs: [{ name: `${c.name}_url`, value: `google_cloud_run_v2_service.${c.name}.uri` }]
@@ -21467,7 +21484,7 @@ var GCP = {
             ])
           ]),
           serviceAccount(c.name, c.slug, `Runs the ${c.slug} function`),
-          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
+          projectRole(`${c.name}_log_writer`, GCP_ROLES.logWriter, `google_service_account.${c.name}`),
           block("data", ["archive_file", c.name], [
             { key: "type", value: quote("zip") },
             { key: "source_dir", value: quoteTemplate`\${path.module}/src/${c.slug}` },
@@ -21580,7 +21597,7 @@ var GCP = {
           ]),
           block("resource", ["google_kms_crypto_key_iam_member", c.name], [
             { key: "crypto_key_id", value: `google_kms_crypto_key.${c.name}.id` },
-            { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+            { key: "role", value: quote(GCP_ROLES.keyUser) },
             { key: "member", value: `"serviceAccount:\${google_project_service_identity.${c.name}_secretmanager.email}"` }
           ])
         ],
@@ -21795,11 +21812,11 @@ var GCP = {
             { key: "service", value: `google_app_engine_standard_app_version.${c.name}.service` }
           ], [block("network_settings", [], [{ key: "ingress_traffic_allowed", value: quote(APP_ENGINE_INGRESS.internalOnly) }])]),
           serviceAccount(c.name, c.slug, `Runs the ${c.slug} application`),
-          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
+          projectRole(`${c.name}_log_writer`, GCP_ROLES.logWriter, `google_service_account.${c.name}`),
           // The deployment reads the zip as the application's account: from its own source bucket, and no other.
           block("resource", ["google_storage_bucket_iam_member", `${source}_viewer`], [
             { key: "bucket", value: `google_storage_bucket.${source}.name` },
-            { key: "role", value: quote("roles/storage.objectViewer") },
+            { key: "role", value: quote(GCP_ROLES.objectViewer) },
             { key: "member", value: `"serviceAccount:\${google_service_account.${c.name}.email}"` }
           ]),
           block("data", ["archive_file", c.name], [
@@ -25120,7 +25137,7 @@ function wireEdge(source, target, cloud, plan) {
       block("data", ["google_storage_project_service_account", originName], []),
       block("resource", ["google_kms_crypto_key_iam_member", originName], [
         { key: "crypto_key_id", value: `google_kms_crypto_key.${target.name}.id` },
-        { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+        { key: "role", value: quote(GCP_ROLES.keyUser) },
         { key: "member", value: `"serviceAccount:\${${agent}}"` }
       ])
     ];
@@ -25246,7 +25263,7 @@ function encryptUnderKeyStore(emitted, wired, usedNames, apis) {
     const email3 = service === "storage" ? `${KEY_AGENTS[service]}.${name}.email_address` : `${KEY_AGENTS[service]}.${name}.email`;
     const grant = block("resource", ["google_kms_crypto_key_iam_member", name], [
       { key: "crypto_key_id", value: key },
-      { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+      { key: "role", value: quote(GCP_ROLES.keyUser) },
       { key: "member", value: `"serviceAccount:\${${email3}}"` }
     ]);
     added.push(agent, grant);

