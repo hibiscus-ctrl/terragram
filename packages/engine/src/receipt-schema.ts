@@ -3,7 +3,7 @@
 
 import { z } from "zod";
 
-import { CLOUD_DESCRIPTION, CLOUDS, GENERATED_CLOUDS } from "./model.ts";
+import { CLOUD_DESCRIPTION, CLOUDS } from "./model.ts";
 import { LEGACY_RECEIPT_SCHEMA, RECEIPT_SCHEMA } from "./receipt.ts";
 
 /**
@@ -79,6 +79,6 @@ export const legacyEvidenceReceiptSchema = z.object({
   schema: z.literal(LEGACY_RECEIPT_SCHEMA),
   contentHash: hexHash,
   ...receiptBody,
-  // Issued before Google Cloud was read: a v2 receipt is for a cloud that was generated.
-  cloud: z.enum(GENERATED_CLOUDS),
+  // Issued before Google Cloud was read: a v2 receipt is for Azure or AWS, the two clouds generated then.
+  cloud: z.enum(["azure", "aws"]),
 });

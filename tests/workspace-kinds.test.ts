@@ -22,8 +22,12 @@ import { emitTerraform } from "terragram-engine/terraform";
  */
 
 const REAL = KIND_DEFINITIONS.filter((d) => d.role !== "conceptual" && d.role !== "external");
-/** The kinds Terragram builds: those with a spec on a cloud it generates for. Google Cloud's own kinds are only read. */
+/** The kinds both Azure and AWS build. Google Cloud has kinds of its own (a project, a cluster) that those two do not. */
 const EMITTABLE = REAL.filter((d) => d.azure !== null || d.aws !== null);
+/** What each cloud builds: every shared kind on Azure and AWS, and on Google Cloud the kinds that have an `emit`. */
+function builtOn(cloud: Cloud) {
+  return cloud === "gcp" ? REAL.filter((d) => d.gcp?.emit !== undefined) : EMITTABLE;
+}
 
 /** A one-node model for a kind, so each kind is exercised on its own. */
 function modelFor(kind: string): InfraModel {
@@ -34,7 +38,8 @@ function modelFor(kind: string): InfraModel {
 
 describe("kind registry", () => {
   it("offers every non-conceptual kind to a translator", () => {
-    assert.deepEqual([...MODEL_KIND_IDS].sort(), EMITTABLE.map((d) => d.kind).sort());
+    const built = REAL.filter((d) => d.azure !== null || d.aws !== null || d.gcp?.emit !== undefined);
+    assert.deepEqual([...MODEL_KIND_IDS].sort(), built.map((d) => d.kind).sort());
     assert.equal(MODEL_KIND_IDS.includes("internet"), false);
     assert.equal(MODEL_KIND_IDS.includes("external"), false);
   });
@@ -46,16 +51,21 @@ describe("kind registry", () => {
     }
   });
 
-  it("gives every kind that is only read a Google Cloud spec, and no emit", () => {
+  it("gives every kind only Google Cloud has a Google Cloud spec that builds it", () => {
     for (const definition of REAL.filter((d) => !EMITTABLE.includes(d))) {
-      assert.ok(definition.gcp, `${definition.kind} has no spec on any cloud`);
-      assert.equal("emit" in definition.gcp, false);
-      assert.equal(MODEL_KIND_IDS.includes(definition.kind), false);
+      assert.ok(definition.gcp?.emit, `${definition.kind} has no spec on any cloud, or one that cannot be built`);
+      assert.equal(MODEL_KIND_IDS.includes(definition.kind), true);
+    }
+  });
+
+  it("builds a Google Cloud kind only where cloudSpec says so, and reads the rest", () => {
+    for (const definition of REAL) {
+      assert.equal(cloudSpec(definition.kind, "gcp") !== null, definition.gcp?.emit !== undefined, definition.kind);
     }
   });
 
   for (const cloud of GENERATED_CLOUDS) {
-    for (const definition of EMITTABLE) {
+    for (const definition of builtOn(cloud as Cloud)) {
       it(`emits valid-shaped ${cloud} HCL for ${definition.kind}`, () => {
         const out = emitTerraform(modelFor(definition.kind), cloud as Cloud);
         const main = out.files[0]?.content ?? "";
@@ -63,14 +73,15 @@ describe("kind registry", () => {
         assert.ok(spec);
         // A kind emits either its primary resource or a pinned registry module — and
         // the module it names must be the one the pin file records.
-        const expected = spec?.moduleSource
+        // Google Cloud plans are the resources themselves: its module sources are only what a module call reads back through.
+        const expected = spec?.moduleSource && cloud !== "gcp"
           ? `source  = "${spec.moduleSource}"`
           : `resource "${spec?.type}"`;
         assert.ok(
           main.replace(/\s+=\s+/g, " = ").includes(expected.replace(/\s+=\s+/g, " = ")),
           `${definition.kind}/${cloud} did not emit ${expected}`,
         );
-        if (spec?.moduleSource) {
+        if (spec?.moduleSource && cloud !== "gcp") {
           assert.ok(
             out.modules.some((m) => m.source === spec.moduleSource && /^\d+\.\d+\.\d+$/.test(m.version)),
             `${definition.kind}/${cloud} module call is not pinned to an exact version`,

@@ -19,13 +19,13 @@ Turn a brief, a Mermaid flowchart or a Mermaid architecture-beta diagram into Te
 outputs.tf (and anything a component adds beside them) plus model.json to <dir>.
 
 Options:
-  --prompt <text>     describe the infrastructure in plain English
-  --mermaid <file>    read a Mermaid flowchart or architecture-beta diagram instead
-  --cloud aws|azure   target cloud (default: the one the brief names, else azure)
-  --tofu              emit for OpenTofu rather than Terraform
-  -o, --output <dir>  directory to write to (required)
-  --json              print a machine-readable summary
-  -h, --help          show this help
+  --prompt <text>        describe the infrastructure in plain English
+  --mermaid <file>       read a Mermaid flowchart or architecture-beta diagram instead
+  --cloud aws|azure|gcp  target cloud (default: the one the brief names, else azure)
+  --tofu                 emit for OpenTofu rather than Terraform
+  -o, --output <dir>     directory to write to (required)
+  --json                 print a machine-readable summary
+  -h, --help             show this help
 `;
 
 export async function generate(argv: string[], io: Io): Promise<number> {

@@ -255,7 +255,7 @@ describe("terragram parse, render and explain", () => {
     }
   });
 
-  it("parses, renders and explains a Google Cloud file, and builds nothing from it", async () => {
+  it("parses, renders, explains and generates for a Google Cloud file", async () => {
     const dir = fresh("gcp");
     const out = join(dir, "model.json");
     const parse = await cli(["parse", join(import.meta.dirname, "fixtures/gcp/main.tf"), "-o", out]);
@@ -272,9 +272,10 @@ describe("terragram parse, render and explain", () => {
     assert.equal(rendered.code, 0, rendered.stderr);
     assert.match(readFileSync(join(dir, "diagram.svg"), "utf8"), /^<svg /);
 
+    // Google Cloud is built too: the model's own words reach the same plan the engine writes.
     const generated = await cli(["generate", "--prompt", "a postgres database", "--cloud", "gcp", "-o", join(dir, "tf")]);
-    assert.equal(generated.code, 2);
-    assert.match(generated.stderr, /--cloud gcp is not available here/);
+    assert.equal(generated.code, 0, generated.stderr);
+    assert.match(readFileSync(join(dir, "tf", "main.tf"), "utf8"), /resource "google_sql_database_instance" "postgres"/);
   });
 
   it("refuses a file that is not a model, and says why", async () => {
@@ -532,7 +533,7 @@ describe("arguments, help and exit codes", () => {
       ["generate"],
       ["generate", "--prompt", "a web app"],
       ["generate", "--prompt", "a web app", "--mermaid", "x.mmd", "-o", "out"],
-      ["generate", "--prompt", "a web app", "-o", "out", "--cloud", "gcp"],
+      ["generate", "--prompt", "a web app", "-o", "out", "--cloud", "oracle"],
       ["generate", "--prompt", "a web app", "-o", "out", "--nope"],
       ["parse"],
       ["render"],

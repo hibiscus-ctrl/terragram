@@ -99,7 +99,7 @@ What it does, in order: requests the identity token from `ACTIONS_ID_TOKEN_REQUE
 
 | Input | Default | |
 | --- | --- | --- |
-| `model` | `diagram.json` | Path to the model file, relative to the workspace. Its `cloud` field picks `aws`, `azure` or `gcp`; without one, `azure`. For `gcp` the model is read, drawn, diffed and given a receipt, but no Terraform is generated, so there is nothing to compare or write. |
+| `model` | `diagram.json` | Path to the model file, relative to the workspace. Its `cloud` field picks `aws`, `azure` or `gcp`; without one, `azure`. |
 | `terraform-dir` | `infra/` | Directory holding the generated Terraform, relative to the workspace. |
 | `mode` | `check` | `check` regenerates in memory and fails, printing a unified diff and one error annotation per file, when a generated file differs or is missing. `write` writes the regenerated files. Only the files Terragram generates are compared or written; anything else in the directory is left alone. Line endings are not compared. |
 | `comment` | `true` | On a `pull_request` run, post or update one sticky comment (found by an HTML marker, and only if a bot wrote it). Ignored on other events. |

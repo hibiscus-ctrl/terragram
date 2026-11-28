@@ -30,7 +30,7 @@ export function parseModelDocument(text: string): { ok: true; document: ModelDoc
     return { ok: false, problem: `it is not a diagram model:\n${issues}` };
   }
   const { nodes, edges, topology, cloud } = parsed.data;
-  const problems = attributeProblems(resourceNodes({ nodes, edges, topology }));
+  const problems = attributeProblems(resourceNodes({ nodes, edges, topology }), cloud ?? DEFAULT_CLOUD);
   if (problems.length > 0) return { ok: false, problem: `it has values that cannot be used:\n${problems.map((p) => `  ${p}`).join("\n")}` };
   return { ok: true, document: { model: { nodes, edges, topology }, cloud: cloud ?? DEFAULT_CLOUD } };
 }

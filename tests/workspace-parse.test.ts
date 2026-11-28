@@ -143,7 +143,7 @@ describe("parseTerraform", () => {
 describe("emit round-trip", () => {
   it("reproduces kinds, attributes and topology from its own output", () => {
     const { model } = composeFromPrompt("A web app with a Postgres database and Redis cache");
-    const chosen = setNodeAttribute(model, "postgres", "PostgreSQL version", "PostgreSQL 14");
+    const chosen = setNodeAttribute(model, "postgres", "PostgreSQL version", "PostgreSQL 17");
 
     const emitted = emitTerraform(chosen, "azure");
     const parsed = parseTerraform(emitted.files[0]?.content ?? "");
@@ -156,7 +156,7 @@ describe("emit round-trip", () => {
     }
 
     const pg = parsed.model.nodes.find((n) => n.kind === "postgres");
-    assert.equal(pg?.attributes?.["PostgreSQL version"], "PostgreSQL 14");
+    assert.equal(pg?.attributes?.["PostgreSQL version"], "PostgreSQL 17");
 
     const app = parsed.model.nodes.find((n) => n.kind === "app-service");
     assert.ok(

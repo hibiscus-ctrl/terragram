@@ -12,7 +12,7 @@
 
 export type ProviderPin = { name: string; source: string; version: string };
 
-export const PROVIDER_VERSIONS: Record<"azure" | "aws", ProviderPin> = {
+export const PROVIDER_VERSIONS: Record<"azure" | "aws" | "gcp" | "gcp-beta" | "archive", ProviderPin> = {
   azure: {
     name: "azurerm",
     source: "hashicorp/azurerm",
@@ -22,6 +22,21 @@ export const PROVIDER_VERSIONS: Record<"azure" | "aws", ProviderPin> = {
     name: "aws",
     source: "hashicorp/aws",
     version: "~> 6.73",
+  },
+  gcp: {
+    name: "google",
+    source: "hashicorp/google",
+    version: "~> 8.12",
+  },
+  "gcp-beta": {
+    name: "google-beta",
+    source: "hashicorp/google-beta",
+    version: "~> 8.12",
+  },
+  archive: {
+    name: "archive",
+    source: "hashicorp/archive",
+    version: "~> 2.8",
   },
 };
 

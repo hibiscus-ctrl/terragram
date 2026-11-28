@@ -47,7 +47,7 @@ export function renderProviderFile(date, resolved) {
   const entries = resolved
     .map(
       (p) =>
-        `  ${p.cloud}: {\n    name: "${p.name}",\n    source: "${p.source}",\n    version: "${p.constraint}",\n  },`,
+        `  ${/^[A-Za-z_]\w*$/.test(p.cloud) ? p.cloud : JSON.stringify(p.cloud)}: {\n    name: "${p.name}",\n    source: "${p.source}",\n    version: "${p.constraint}",\n  },`,
     )
     .join("\n");
   return `${SOURCE_HEADER}/**
@@ -61,7 +61,7 @@ export function renderProviderFile(date, resolved) {
 
 export type ProviderPin = { name: string; source: string; version: string };
 
-export const PROVIDER_VERSIONS: Record<"azure" | "aws", ProviderPin> = {
+export const PROVIDER_VERSIONS: Record<"azure" | "aws" | "gcp" | "gcp-beta" | "archive", ProviderPin> = {
 ${entries}
 };
 

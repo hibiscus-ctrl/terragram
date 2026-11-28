@@ -14,6 +14,7 @@ import {
   stringValue,
 } from "./hcl.ts";
 import { compareText } from "./graph/normalize.ts";
+import { GCP_BETA_REF, GCP_LABELS, type GcpPlan, privateServicesBlocks } from "./gcp-kinds.ts";
 import { MODULE_VERSIONS } from "./module-versions.ts";
 import {
   AWS_US_EAST_1,
@@ -37,6 +38,7 @@ import {
   type VariableSpec,
 } from "./kinds.ts";
 import { type Cloud, type InfraModel, type ModelNode, resourceNodes } from "./model.ts";
+import { PROVIDER_VERSIONS } from "./provider-versions.ts";
 
 /**
  * Model → Terraform. Every resource fact comes from the kind registry; what this
@@ -69,6 +71,8 @@ export type TerraformOutput = {
   files: TerraformFile[];
   /** Every module call in the plan — what the receipt's SBOM records beside the provider. */
   modules: ModuleCall[];
+  /** Any provider the plan declares beside the main one (a function's archive provider), for the same SBOM. */
+  extraProviders: Array<{ name: string; version: string }>;
 };
 
 const CLOUD_CONFIG: Record<Cloud, { region: string; regionLabel: string; label: string }> = {
@@ -132,6 +136,10 @@ function addSetting(
   target: SettingsTarget,
   entry: { key: string; value: string },
 ): void {
+  if (target.append) {
+    target.append(host, entry);
+    return;
+  }
   let owner = host;
   if (target.nestedBlock) {
     const found = owner.blocks.find((b) => b.type === target.nestedBlock);
@@ -281,6 +289,20 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
       plan.domains.set(target.node.id, domain.fqdn);
       plan.notes.push(customDomainNote(domain, cloud, refAddress(source.referent), `${source.name}_name_servers`));
     }
+    if (cloud === "gcp") {
+      // A name for a tier that answers on an address gets an A record; one that answers on a name, a CNAME.
+      const address = target.spec.addressResource?.(target.referent);
+      return [
+        block("resource", ["google_dns_record_set", originName], [
+          { key: "managed_zone", value: refAddress(source.referent, "name") },
+          { key: "name", value: `"${domain.record}.\${${refAddress(source.referent, "dns_name")}}"` },
+          { key: "type", value: quote(address ? "A" : "CNAME") },
+          { key: "ttl", value: "300" },
+          { key: "rrdatas", value: address ? `[${address}]` : `["\${${hostname}}."]` },
+        ]),
+        ...served,
+      ];
+    }
     if (cloud === "azure") {
       // The zone module owns its records. A tier that answers on an address
       // gets an alias A record that follows its public IP; a CNAME may only
@@ -329,6 +351,25 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
     const encryption = source.consumer.attributes.find((a) => a.key === "server_side_encryption_configuration");
     if (encryption) encryption.value = s3Encryption("aws:kms", `aws_kms_key.${target.name}.arn`).value;
     return [];
+  }
+
+  // A bucket wired to the plan's secret store is encrypted under that store's own customer-managed key,
+  // which Cloud Storage's service agent is allowed to use. The bucket waits for that grant.
+  if (cloud === "gcp" && source.node.kind === "object-storage" && target.node.kind === "key-vault") {
+    const agent = `data.google_storage_project_service_account.${originName}.email_address`;
+    const grant = `google_kms_crypto_key_iam_member.${originName}`;
+    source.consumer.blocks.push(
+      block("encryption", [], [{ key: "default_kms_key_name", value: `google_kms_crypto_key.${target.name}.id` }]),
+    );
+    addDependsOn(source.consumer, grant);
+    return [
+      block("data", ["google_storage_project_service_account", originName], []),
+      block("resource", ["google_kms_crypto_key_iam_member", originName], [
+        { key: "crypto_key_id", value: `google_kms_crypto_key.${target.name}.id` },
+        { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+        { key: "member", value: `"serviceAccount:\${${agent}}"` },
+      ]),
+    ];
   }
 
   const connection = target.spec.connection?.(target.referent);
@@ -480,6 +521,108 @@ function customDomainNote(domain: CustomDomain, cloud: Cloud, zoneAddress: strin
   ].join("\n");
 }
 
+/** The Google service agents that read a customer-managed key on behalf of what the plan encrypts. */
+const KEY_AGENTS = {
+  storage: "data.google_storage_project_service_account",
+  pubsub: "google_project_service_identity",
+  bigquery: "data.google_bigquery_default_service_account",
+} as const;
+
+/**
+ * Google Cloud: a plan with a key store puts what it stores at rest under that store's key. Every bucket, Pub/Sub
+ * topic and BigQuery dataset that no edge already wired to a key is encrypted under it, and the key lets the service
+ * agent of each service use it, once per service; what is encrypted waits for that grant. A plan with no key store
+ * leaves them on Google's own encryption, which is why the scanner exceptions for them hold only there.
+ */
+function encryptUnderKeyStore(emitted: readonly Emitted[], wired: readonly HclBlock[], usedNames: Set<string>, apis: boolean): HclBlock[] {
+  const store = emitted.find((e) => e.node.kind === "key-vault");
+  if (!store) return [];
+  const key = `google_kms_crypto_key.${store.name}.id`;
+  const added: HclBlock[] = [];
+  const grants = new Map<keyof typeof KEY_AGENTS, string>();
+  /** The grant that lets one service's agent use the key, written the first time something needs it. */
+  const grantFor = (service: keyof typeof KEY_AGENTS): string => {
+    const existing = grants.get(service);
+    if (existing) return existing;
+    // A bucket an edge already wired to this key has its grant: a second one for the same agent would fight it over the binding.
+    const wiredAlready = wired.find(
+      (w) =>
+        w.type === "resource" &&
+        w.labels[0] === "google_kms_crypto_key_iam_member" &&
+        attributeOf(w, "crypto_key_id") === key &&
+        (attributeOf(w, "member") ?? "").startsWith(`"serviceAccount:\${${KEY_AGENTS[service]}.`),
+    );
+    if (wiredAlready) {
+      const address = `google_kms_crypto_key_iam_member.${wiredAlready.labels[1] ?? ""}`;
+      grants.set(service, address);
+      return address;
+    }
+    let name = `${store.name}_${service}`;
+    for (let n = 2; usedNames.has(name); n++) name = `${store.name}_${service}_${n}`;
+    usedNames.add(name);
+    const [data, type] = KEY_AGENTS[service].startsWith("data.") ? [true, KEY_AGENTS[service].slice(5)] : [false, KEY_AGENTS[service]];
+    const agent = block(data ? "data" : "resource", [type, name], service === "pubsub" ? [
+      { key: "provider", value: GCP_BETA_REF },
+      { key: "service", value: quote("pubsub.googleapis.com") },
+    ] : []);
+    if (apis) addDependsOn(agent, "google_project_service.enabled");
+    const email = service === "storage" ? `${KEY_AGENTS[service]}.${name}.email_address` : `${KEY_AGENTS[service]}.${name}.email`;
+    const grant = block("resource", ["google_kms_crypto_key_iam_member", name], [
+      { key: "crypto_key_id", value: key },
+      { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+      { key: "member", value: `"serviceAccount:\${${email}}"` },
+    ]);
+    added.push(agent, grant);
+    const address = `google_kms_crypto_key_iam_member.${name}`;
+    grants.set(service, address);
+    return address;
+  };
+  for (const { blocks } of emitted) {
+    for (const b of blocks) {
+      if (b.type !== "resource") continue;
+      const has = (type: string) => b.blocks.some((x) => x.type === type);
+      if (b.labels[0] === "google_storage_bucket" && !has("encryption")) {
+        b.blocks.push(block("encryption", [], [{ key: "default_kms_key_name", value: key }]));
+        addDependsOn(b, grantFor("storage"));
+      } else if (b.labels[0] === "google_pubsub_topic" && !b.attributes.some((a) => a.key === "kms_key_name")) {
+        b.attributes.push({ key: "kms_key_name", value: key });
+        addDependsOn(b, grantFor("pubsub"));
+      } else if (b.labels[0] === "google_bigquery_dataset" && !has("default_encryption_configuration")) {
+        b.blocks.push(block("default_encryption_configuration", [], [{ key: "kms_key_name", value: key }]));
+        addDependsOn(b, grantFor("bigquery"));
+      }
+    }
+  }
+  return added;
+}
+
+/** The address a block is referred to by, `type.name`. */
+function addressOf(b: HclBlock): string | null {
+  return b.type === "resource" && b.labels.length === 2 ? `${b.labels[0]}.${b.labels[1]}` : null;
+}
+
+/** Every attribute expression in a block and the blocks nested in it. */
+function expressionsOf(b: HclBlock): string[] {
+  return [...b.attributes.map((a) => a.value), ...b.blocks.flatMap(expressionsOf)];
+}
+
+/**
+ * Make every resource of a Google Cloud component that stands on no other resource of it wait
+ * for the APIs the plan enables. The ones that do stand on another are ordered by that
+ * reference, which is already after the one that waits. The project, when the plan creates it,
+ * is what the APIs are enabled in, so it never waits for them.
+ */
+function waitForApis(group: HclBlock[], project: string | undefined): void {
+  const own = new Set(group.map(addressOf).filter((a): a is string => a !== null));
+  for (const b of group) {
+    const address = addressOf(b);
+    if (!address || address === (project ? `google_project.${project}` : "")) continue;
+    const references = expressionsOf(b).flatMap((e) => e.match(/\bgoogle_[a-z0-9_]+\.[A-Za-z0-9_]+/g) ?? []);
+    if (references.some((r) => r !== address && own.has(r))) continue;
+    addDependsOn(b, "google_project_service.enabled");
+  }
+}
+
 /* ------------------------------------------------------------------- emit -- */
 
 /** A model whose free-text attributes cannot go into a plan; the message says which and why. */
@@ -497,13 +640,9 @@ export function emitTerraform(
   cloud: Cloud,
   tool: TerraformTool = "terraform",
 ): TerraformOutput {
-  const problems = attributeProblems(resourceNodes(model));
+  const problems = attributeProblems(resourceNodes(model), cloud);
   if (problems.length > 0) throw new ModelAttributeError(problems);
   const config = CLOUD_CONFIG[cloud];
-  // Google Cloud is read, drawn and explained, not generated: no provider, no files, nothing to compare or write.
-  if (cloud === "gcp") {
-    return { provider: "", providerVersion: "", region: config.region, regionLabel: config.regionLabel, tool, files: [], modules: [] };
-  }
   const provider = providerFor(cloud);
 
   const emitted: Emitted[] = [];
@@ -538,10 +677,29 @@ export function emitTerraform(
       ? privateNetwork(azureNetworkNode ? (names.get(azureNetworkNode.id) ?? tfName(azureNetworkNode.id)) : PLAN_NETWORK)
       : null;
 
+  // What Google Cloud kinds ask of the plan: the APIs to switch on, and private service access per network.
+  const gcpApis = new Set<string>();
+  const gcpPrivateServices = new Map<string, string>();
+  const gcp: Omit<GcpPlan, "position"> | null =
+    cloud === "gcp"
+      ? {
+          api: (...services) => {
+            for (const service of services) gcpApis.add(service);
+          },
+          privateServices: (networkId) => {
+            if (!gcpPrivateServices.has(networkId)) gcpPrivateServices.set(networkId, "google_service_networking_connection.private_services");
+            return "google_service_networking_connection.private_services";
+          },
+        }
+      : null;
+
+  const emittedOfKind = new Map<string, number>();
   for (const node of resourceNodes(model)) {
     const spec = cloudSpec(node.kind, cloud);
     if (!spec) continue;
     const name = names.get(node.id) ?? tfName(node.id);
+    const position = emittedOfKind.get(node.kind) ?? 0;
+    emittedOfKind.set(node.kind, position + 1);
 
     const fields = fieldsForKind(node.kind);
     const context: EmitContext = {
@@ -555,6 +713,7 @@ export function emitTerraform(
       },
       net,
       private: privateNet?.api ?? null,
+      gcp: gcp ? { ...gcp, position } : null,
     };
 
     const result = spec.emit(context);
@@ -590,6 +749,8 @@ export function emitTerraform(
     if (!source || !target || source === target) continue;
     wireBlocks.push(...wireEdge(source, target, cloud, plan));
   }
+
+  if (cloud === "gcp") wireBlocks.push(...encryptUnderKeyStore(emitted, wireBlocks, usedNames, gcpApis.size > 0));
 
   // Shapes that are only valid once their edges are known complete themselves
   // last, after every wire has landed.
@@ -664,24 +825,40 @@ export function emitTerraform(
   // floor is the one the Verified Modules themselves require — better said here
   // than discovered halfway through `init`.
   const requiredVersion = cloud === "azure" ? ">= 1.11, < 2.0" : ">= 1.6, < 2.0";
+  // A function's source is zipped by the archive provider, which only a plan that has one declares.
+  const needsArchive = [...emitted.flatMap((e) => e.blocks), ...wireBlocks].some(
+    (b) => b.type === "data" && b.labels[0] === "archive_file",
+  );
+  // Likewise the beta provider, for the few resources the main one does not have yet.
+  const needsBeta = [...emitted.flatMap((e) => e.blocks), ...wireBlocks].some((b) =>
+    b.attributes.some((a) => a.key === "provider" && a.value === GCP_BETA_REF),
+  );
+  const pins = [
+    provider,
+    ...(needsArchive ? [PROVIDER_VERSIONS.archive] : []),
+    ...(needsBeta ? [PROVIDER_VERSIONS["gcp-beta"]] : []),
+  ];
   const scaffold: HclBlock[] = [
     block("terraform", [], [{ key: "required_version", value: quote(requiredVersion) }], [
-      block("required_providers", [], [
-        {
-          key: provider.name,
-          value: mapExpression([
-            { key: "source", value: quote(provider.source) },
-            { key: "version", value: quote(provider.version) },
-          ]),
-        },
-      ]),
+      block("required_providers", [], pins.map((pin) => ({
+        key: pin.name,
+        value: mapExpression([
+          { key: "source", value: quote(pin.source) },
+          { key: "version", value: quote(pin.version) },
+        ]),
+      }))),
     ]),
   ];
 
   // Ownership and cost allocation, in one place, on every resource. The base set
   // is what the plan itself knows; `var.tags` is merged over it, so a reviewer's
   // Owner and CostCentre win and nothing here has to guess them.
-  if (emitted.length > 0) {
+  if (emitted.length > 0 && cloud === "gcp") {
+    // Google Cloud calls them labels, and takes lowercase keys and values only.
+    variables.set(GCP_LABELS.name, GCP_LABELS);
+    const base = `{ managed_by = "diagram", environment = "${modelIsProduction(model.nodes) ? "production" : "dev"}" }`;
+    scaffold.push(block("locals", [], [{ key: "labels", value: `merge(${base}, var.labels)` }]));
+  } else if (emitted.length > 0) {
     variables.set(TAGS.name, TAGS);
     // One line on purpose: `terraform fmt` leaves a single-line object alone,
     // and this one is short enough to read at a glance.
@@ -709,6 +886,34 @@ export function emitTerraform(
       name: "location",
       type: "string",
       description: "Azure region every resource is created in.",
+      default: quote(config.region),
+    });
+  } else if (cloud === "gcp") {
+    scaffold.push(
+      block("provider", ["google"], [
+        { key: "project", value: "var.project_id" },
+        { key: "region", value: "var.region" },
+        emitted.length > 0 ? { key: "default_labels", value: "local.labels" } : undefined,
+      ]),
+    );
+    if (needsBeta) {
+      scaffold.push(
+        block("provider", [GCP_BETA_REF], [
+          { key: "project", value: "var.project_id" },
+          { key: "region", value: "var.region" },
+          { key: "default_labels", value: "local.labels" },
+        ]),
+      );
+    }
+    variables.set("project_id", {
+      name: "project_id",
+      type: "string",
+      description: "ID of the project every resource is created in.",
+    });
+    variables.set("region", {
+      name: "region",
+      type: "string",
+      description: "Google Cloud region every resource is created in.",
       default: quote(config.region),
     });
   } else {
@@ -740,7 +945,32 @@ export function emitTerraform(
     });
   }
 
-  const resourceBlocks = [...networkBlocks, ...emitted.flatMap((e) => e.blocks)];
+  // Google Cloud: the plan switches on the APIs its kinds use, and gives databases and caches the
+  // private service connection they reach their network through. Every resource that stands on
+  // nothing else in its component waits for the APIs, so a first apply does not race them.
+  const gcpBlocks: HclBlock[] = [];
+  if (cloud === "gcp") {
+    const groups: HclBlock[][] = emitted.map((e) => e.blocks);
+    for (const networkId of gcpPrivateServices.keys()) {
+      const blocks = privateServicesBlocks(networkId);
+      gcpBlocks.push(...blocks);
+      groups.push(blocks);
+    }
+    if (gcpApis.size > 0) {
+      const project = emitted.find((e) => e.node.kind === "project");
+      gcpBlocks.unshift(
+        block("resource", ["google_project_service", "enabled"], [
+          { key: "for_each", value: `toset([${[...gcpApis].sort(compareText).map(quote).join(", ")}])` },
+          project ? { key: "project", value: `google_project.${project.name}.project_id` } : undefined,
+          { key: "service", value: "each.value" },
+          { key: "disable_on_destroy", value: "false" },
+        ]),
+      );
+      for (const group of groups) waitForApis(group, project?.name);
+    }
+  }
+
+  const resourceBlocks = [...networkBlocks, ...emitted.flatMap((e) => e.blocks), ...gcpBlocks];
   const modules: ModuleCall[] = resourceBlocks
     .filter((b) => b.type === "module")
     .map((b) => ({
@@ -767,7 +997,14 @@ export function emitTerraform(
         { key: "description", value: variable.description ? quote(variable.description) : undefined },
         { key: "sensitive", value: variable.sensitive ? "true" : undefined },
         { key: "default", value: variable.default },
-      ]),
+      ], variable.validation
+        ? [
+            block("validation", [], [
+              { key: "condition", value: variable.validation.condition },
+              { key: "error_message", value: quote(variable.validation.message) },
+            ]),
+          ]
+        : []),
     );
 
   const seenOutputs = new Set<string>();
@@ -786,6 +1023,7 @@ export function emitTerraform(
     regionLabel: config.regionLabel,
     tool,
     modules,
+    extraProviders: pins.slice(1).map((pin) => ({ name: pin.name, version: pin.version })),
     files: [
       { name: "main.tf", content: mainTf },
       {

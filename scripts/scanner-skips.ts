@@ -143,6 +143,91 @@ export const SCANNER_SKIPS: readonly ScannerSkip[] = [
       "= \"Disabled\", so every MySQL server reads as public. Enforced wherever the plan has PostgreSQL, whose " +
       "setting trivy does read.",
   },
+
+  // Google Cloud.
+  {
+    checkov: "CKV_GCP_79",
+    reason:
+      "The PostgreSQL major is the reviewer's choice among the supported versions the model offers (15 to 18), " +
+      "and Cloud SQL runs each of them. checkov accepts only the newest major, 18, so a plan on an older " +
+      "supported major is flagged for being one; MySQL 8.4, the only MySQL the model offers, passes. Versions " +
+      "past end of life are not offered at all.",
+  },
+  {
+    checkov: "CKV_GCP_62",
+    reason:
+      "Every bucket logs its access to a log bucket of its own. The log bucket is the one that is not " +
+      "logged: logging it would need a further bucket, and that one another, without end.",
+  },
+  {
+    checkov: "CKV_GCP_83",
+    enforcedWith: "key-vault",
+    reason:
+      "Enforced wherever the plan has a secret store: every topic is then encrypted under its key, with a grant " +
+      "to the Pub/Sub service agent. Without one there is no key to name, and Pub/Sub encrypts every topic at " +
+      "rest under a Google-managed key.",
+  },
+  {
+    checkov: "CKV_GCP_81",
+    enforcedWith: "key-vault",
+    reason:
+      "Enforced wherever the plan has a secret store: every dataset is then encrypted under its key, with a " +
+      "grant to BigQuery's encryption service account. Without one there is no key to name, and BigQuery " +
+      "encrypts every dataset at rest under a Google-managed key.",
+  },
+  {
+    checkov: "CKV_GCP_38",
+    trivy: "GCP-0033",
+    reason:
+      "Compute Engine encrypts every disk at rest under a Google-managed key. checkov asks for a " +
+      "customer-supplied key, whose raw key would be written into the plan and its state: no secret goes " +
+      "into the output. A customer-managed key needs a key and a grant to the Compute Engine service " +
+      "agent, which the plan's secret store provides only when the model draws one.",
+  },
+  {
+    trivy: "GCP-0066",
+    enforcedWith: "key-vault",
+    reason:
+      "Enforced wherever the plan has a secret store: every bucket, the log and source buckets the plan adds " +
+      "too, is then encrypted under its key, with a grant to the Cloud Storage service agent. Without one " +
+      "there is no key to name, and buckets are encrypted at rest under a Google-managed key.",
+  },
+  {
+    checkov: "CKV_GCP_82",
+    reason:
+      "A Cloud KMS key is never deleted, only its versions are scheduled for destruction, and a trial has " +
+      "to be destroyable: lifecycle.prevent_destroy would stop `terraform destroy` for the whole plan.",
+  },
+  {
+    checkov: "CKV_GCP_65",
+    reason:
+      "RBAC by Google Group needs a Google Workspace group the plan cannot create, in a domain only the " +
+      "owner knows. Cluster access follows IAM until the owner adds `authenticator_groups_config`.",
+  },
+  {
+    checkov: "CKV_GCP_69",
+    reason:
+      "The node pool sets workload_metadata_config.mode = GKE_METADATA, which turns the metadata server on " +
+      "for every node the cluster runs, and checkov passes that resource. It also reads the cluster, which " +
+      "has no node_config of its own: it sets remove_default_node_pool, so the pool it is created with is " +
+      "deleted before any workload runs, and a node_config written only for that pool would configure " +
+      "nodes that never serve.",
+  },
+  {
+    trivy: "GCP-0072",
+    reason:
+      "The one rule that admits traffic inside the network, from the subnetwork's own ip_cidr_range and nothing else " +
+      "(the address space is validated as private space, RFC 1918 or 100.64.0.0/10, so the source can never be public), as Google's " +
+      "default network does: instances of one plan reach each other on any port. A rule that named ports could not " +
+      "know what the plan's workloads listen on. A source from the internet is a different finding (GCP-0027, " +
+      "GCP-0070, GCP-0071), which is not skipped.",
+  },
+  {
+    trivy: "GCP-0074",
+    reason:
+      "The same internal rule: its source is the subnetwork's own private range, so the port range is the plan's own " +
+      "traffic. Ingress from the internet on a wide range is still GCP-0027, which is not skipped.",
+  },
 ];
 
 /** The entries that exempt a document holding these kinds from `tool`. */

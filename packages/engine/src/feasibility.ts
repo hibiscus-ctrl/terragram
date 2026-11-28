@@ -66,26 +66,7 @@ function suggestionFor(node: ModelNode): string | null {
   return matchKinds(node.label)[0] ?? NEAREST.find((n) => n.pattern.test(node.label))?.kind ?? null;
 }
 
-/** What `assessFeasibility` says about a cloud Terragram reads but does not generate for. */
-const READ_ONLY_SUMMARY: Partial<Record<Cloud, string>> = {
-  gcp: "Google Cloud models are read, drawn and explained here; Terraform is not generated for them, so nothing is left out.",
-};
-
 export function assessFeasibility(model: InfraModel, cloud: Cloud): Feasibility {
-  const readOnly = READ_ONLY_SUMMARY[cloud];
-  if (readOnly) {
-    const components = model.nodes
-      .filter((node) => !isConceptualEdge(node))
-      .map((node): ComponentVerdict => ({
-        id: node.id,
-        label: node.label,
-        kind: node.kind,
-        status: node.flag ? "needs-review" : "buildable",
-        reason: node.flag?.reason ?? null,
-        suggestion: null,
-      }));
-    return { verdict: "full", components, omitted: [], summary: readOnly };
-  }
   const components: ComponentVerdict[] = [];
   for (const node of model.nodes) {
     if (isConceptualEdge(node)) continue;
@@ -114,7 +95,7 @@ export function assessFeasibility(model: InfraModel, cloud: Cloud): Feasibility 
   const omitted = components.filter((c) => c.status === "unsupported").map((c) => c.label);
   const built = components.length - omitted.length;
   const verdict = components.length === 0 || built === 0 ? "none" : omitted.length > 0 ? "partial" : "full";
-  const cloudLabel = cloud === "aws" ? "AWS" : "Azure";
+  const cloudLabel = cloud === "aws" ? "AWS" : cloud === "gcp" ? "Google Cloud" : "Azure";
   const review = components.filter((c) => c.status === "needs-review").length;
 
   let summary: string;

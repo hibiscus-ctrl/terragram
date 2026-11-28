@@ -184,8 +184,12 @@ resource "google_sql_database_instance" "o" { database_version = var.version }
   });
 
   it("reads the version out of the database_version Google spells", () => {
-    const pg = read('resource "google_sql_database_instance" "p" {\n  database_version = "POSTGRES_14"\n}');
-    assert.deepEqual(pg.model.nodes.find((n) => n.kind === "postgres")?.attributes, { "PostgreSQL version": "PostgreSQL 14" });
+    const pg = read('resource "google_sql_database_instance" "p" {\n  database_version = "POSTGRES_17"\n}');
+    assert.deepEqual(pg.model.nodes.find((n) => n.kind === "postgres")?.attributes, { "PostgreSQL version": "PostgreSQL 17" });
+    // A major past end of life is still a PostgreSQL instance, but not one the model can name a version for.
+    const old = read('resource "google_sql_database_instance" "p" {\n  database_version = "POSTGRES_14"\n}');
+    assert.equal(old.model.nodes.some((n) => n.kind === "postgres"), true);
+    assert.equal(old.model.nodes.find((n) => n.kind === "postgres")?.attributes?.["PostgreSQL version"], undefined);
     const my = read('resource "google_sql_database_instance" "m" {\n  database_version = "MYSQL_8_4"\n}');
     assert.deepEqual(my.model.nodes.find((n) => n.kind === "mysql")?.attributes, { "MySQL version": "MySQL 8.4" });
   });
@@ -211,10 +215,12 @@ module "net" {
     assert.deepEqual(module.model.nodes.map((n) => n.kind), ["internet", "vnet"]);
   });
 
-  it("is read only: there is a spec to read by and nothing to emit", () => {
+  it("reads and builds a kind from the same spec, and reads the ones it does not build yet", () => {
     assert.equal(readSpec("queue", "gcp")?.type, "google_pubsub_topic");
-    assert.equal(cloudSpec("queue", "gcp"), null);
+    assert.equal(cloudSpec("queue", "gcp")?.type, "google_pubsub_topic");
     assert.equal(readSpec("queue", "aws")?.type, "aws_sqs_queue");
+    assert.equal(readSpec("static-site", "gcp")?.type, "google_storage_bucket");
+    assert.equal(cloudSpec("static-site", "gcp"), null);
   });
 });
 
@@ -291,22 +297,24 @@ resource "google_dns_managed_zone" "z" { name = "z" }
   });
 });
 
-describe("a Google Cloud model is read, drawn and explained, not generated", () => {
+describe("a Google Cloud model is read, drawn, explained and generated", () => {
   const { model } = read(FIXTURE);
 
-  it("writes no Terraform and names no provider", () => {
+  it("writes a plan on the google provider, from resources and no module", () => {
     const out = emitTerraform(model, "gcp");
-    assert.deepEqual(out.files, []);
+    assert.equal(out.provider, "google");
+    assert.match(out.providerVersion, /^~> \d+\.\d+$/);
     assert.deepEqual(out.modules, []);
-    assert.equal(out.provider, "");
     assert.equal(out.regionLabel, "London (europe-west2)");
+    assert.deepEqual(out.files.slice(0, 3).map((f) => f.name), ["main.tf", "variables.tf", "outputs.tf"]);
+    assert.match(out.files[0]?.content ?? "", /# Target: Google Cloud · London \(europe-west2\) · Terraform/);
   });
 
-  it("says so rather than listing every component as not buildable", () => {
+  it("says which components it cannot build, as it does for AWS and Azure", () => {
     const feasibility = assessFeasibility(model, "gcp");
-    assert.equal(feasibility.verdict, "full");
-    assert.deepEqual(feasibility.omitted, []);
-    assert.match(feasibility.summary, /Google Cloud models are read, drawn and explained/);
+    assert.equal(feasibility.verdict, "partial");
+    assert.deepEqual(feasibility.omitted, ["Load Balancer", "Static Site"]);
+    assert.match(feasibility.summary, /^17 of 19 components can be built on Google Cloud\. Not buildable: Load Balancer, Static Site\./);
   });
 
   it("is described in plain English as Google Cloud", () => {
@@ -317,12 +325,12 @@ describe("a Google Cloud model is read, drawn and explained, not generated", () 
     assert.match(text, /Data Warehouse/);
   });
 
-  it("has a receipt that verifies, with no provider in its bill of materials", async () => {
+  it("has a receipt that verifies, with the plan hashed and the provider in its bill of materials", async () => {
     const built = await buildEvidenceReceipt(model, "gcp", "deterministic", "alice", "2026-11-27T00:00:00Z", { signer: testSigner() });
     assert.equal(built.receipt.cloud, "gcp");
-    assert.deepEqual(built.receipt.plan, []);
-    assert.equal(built.receipt.sbom.length, 1);
-    assert.equal(built.receipt.omitted.length, 0);
+    assert.deepEqual(built.receipt.plan.slice(0, 3), ["main.tf", "variables.tf", "outputs.tf"]);
+    assert.ok(built.receipt.sbom.some((entry) => entry.name === "google"));
+    assert.deepEqual(built.receipt.omitted, ["Load Balancer", "Static Site"]);
     const files = buildBundle(built.receipt, model, built.terraform.files, built.attestation);
     const report = await verifyBundle(files, { trustedKeys: [built.receipt.publicKey ?? ""] });
     assert.equal(report.ok, true, JSON.stringify(report));

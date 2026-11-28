@@ -50,7 +50,7 @@ jobs:
         # drops below the floor in package.json. A drop here means logic lost a test.
         run: npm run test:coverage
 
-  # The generated-Terraform gate: every brief and template, both clouds, through
+  # The generated-Terraform gate: every brief and template, every generated cloud, through
   # terraform fmt/init/validate, the three scanners (tflint/trivy/checkov run in
   # their pinned containers here — the runner has Docker), and Infraweaver's own
   # assess, then every module call against its published interface. This is

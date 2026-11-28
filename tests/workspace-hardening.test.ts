@@ -160,6 +160,101 @@ const EXPECTED: Array<{ kind: string; cloud: Cloud; facts: RegExp[] }> = [
       /drop_invalid_header_fields\s+= true/,
     ],
   },
+  {
+    kind: "object-storage",
+    cloud: "gcp",
+    facts: [
+      /uniform_bucket_level_access\s+= true/,
+      /public_access_prevention\s+= "enforced"/,
+      /versioning \{\n\s+enabled = true/,
+      /log_bucket\s+= google_storage_bucket\.object_storage_logs\.name/,
+    ],
+  },
+  {
+    kind: "postgres",
+    cloud: "gcp",
+    // Private address only, TLS with a client certificate, backups with point-in-time recovery,
+    // and no password anywhere: the application connects as a service account.
+    facts: [
+      /ipv4_enabled\s+= false/,
+      /ssl_mode\s+= "TRUSTED_CLIENT_CERTIFICATE_REQUIRED"/,
+      /point_in_time_recovery_enabled\s+= true/,
+      /deletion_protection\s+= true/,
+      /name\s+= "cloudsql\.iam_authentication"/,
+      /type\s+= "CLOUD_IAM_SERVICE_ACCOUNT"/,
+      /query_insights_enabled\s+= true/,
+    ],
+  },
+  {
+    kind: "mysql",
+    cloud: "gcp",
+    facts: [
+      /ipv4_enabled\s+= false/,
+      /binary_log_enabled\s+= true/,
+      /name\s+= "local_infile"\n\s+value = "off"/,
+      /deletion_protection_enabled\s+= true/,
+    ],
+  },
+  {
+    kind: "kubernetes",
+    cloud: "gcp",
+    facts: [
+      /enable_private_nodes\s+= true/,
+      /enable_shielded_nodes\s+= true/,
+      /master_authorized_networks_config/,
+      /workload_pool\s+= "\$\{var\.project_id\}\.svc\.id\.goog"/,
+      /mode = "GKE_METADATA"/,
+      /issue_client_certificate\s+= false/,
+      /enable_intranode_visibility\s+= true/,
+    ],
+  },
+  {
+    kind: "virtual-machine",
+    cloud: "gcp",
+    // No public address, no project-wide SSH keys, OS Login, Shielded VM, and a service account of its own.
+    facts: [
+      /block-project-ssh-keys\s+= "true"/,
+      /enable-oslogin\s+= "TRUE"/,
+      /enable_secure_boot\s+= true/,
+      /google_service_account\.virtual_machine\.email/,
+    ],
+  },
+  {
+    kind: "vnet",
+    cloud: "gcp",
+    facts: [
+      /auto_create_subnetworks\s+= false/,
+      /private_ip_google_access\s+= true/,
+      /log_config \{\n\s+aggregation_interval/,
+      /source_ranges\s+= \["35\.235\.240\.0\/20"\]/,
+    ],
+  },
+  {
+    kind: "key-vault",
+    cloud: "gcp",
+    // The secret is encrypted under a key of its own that rotates every 90 days, and holds no value.
+    facts: [/kms_key_name\s+= google_kms_crypto_key\.key_vault\.id/, /rotation_period\s+= "7776000s"/],
+  },
+  {
+    kind: "containers",
+    cloud: "gcp",
+    facts: [/service_account\s+= google_service_account\.containers\.email/, /EXECUTION_ENVIRONMENT_GEN2/],
+  },
+  {
+    kind: "functions",
+    cloud: "gcp",
+    facts: [/ingress_settings\s+= "ALLOW_INTERNAL_AND_GCLB"/, /public_access_prevention\s+= "enforced"/],
+  },
+  {
+    kind: "dns",
+    cloud: "gcp",
+    facts: [/state\s+= "on"/, /enable_logging\s+= true/],
+  },
+  {
+    kind: "redis-cache",
+    cloud: "gcp",
+    facts: [/auth_enabled\s+= true/, /transit_encryption_mode\s+= "SERVER_AUTHENTICATION"/],
+  },
 ];
 
 describe("hardening every kind carries by default", () => {
@@ -272,6 +367,42 @@ describe("production posture follows the reviewer's choice", () => {
       cloud: "azure",
       dev: [/type = "Periodic"/],
       production: [/type = "Continuous"/, /automatic_failover_enabled\s+= true/],
+    },
+    {
+      kind: "postgres",
+      cloud: "gcp",
+      dev: [/availability_type\s+= "ZONAL"/, /retained_backups\s+= 7/, /tier\s+= "db-custom-1-3840"/],
+      production: [/availability_type\s+= "REGIONAL"/, /retained_backups\s+= 35/, /tier\s+= "db-custom-2-7680"/],
+    },
+    {
+      kind: "mysql",
+      cloud: "gcp",
+      dev: [/availability_type\s+= "ZONAL"/],
+      production: [/availability_type\s+= "REGIONAL"/],
+    },
+    {
+      kind: "nosql",
+      cloud: "gcp",
+      dev: [/delete_protection_state\s+= "DELETE_PROTECTION_DISABLED"/],
+      production: [/delete_protection_state\s+= "DELETE_PROTECTION_ENABLED"/],
+    },
+    {
+      kind: "kubernetes",
+      cloud: "gcp",
+      dev: [/deletion_protection\s+= false/, /location\s+= "\$\{var\.region\}-a"/],
+      production: [/deletion_protection\s+= true/, /location\s+= var\.region/],
+    },
+    {
+      kind: "data-warehouse",
+      cloud: "gcp",
+      dev: [/delete_contents_on_destroy\s+= true/],
+      production: [/delete_contents_on_destroy\s+= false/],
+    },
+    {
+      kind: "object-storage",
+      cloud: "gcp",
+      dev: [/force_destroy\s+= true/],
+      production: [/force_destroy\s+= false/],
     },
   ];
 

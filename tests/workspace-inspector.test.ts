@@ -129,7 +129,7 @@ describe("buildEvidenceReceipt", () => {
   it("changes the content hash when a resolved attribute changes the plan", async () => {
     const { model } = composeFromPrompt(WEB_PROMPT);
     const pg = model.nodes.find((n) => n.kind === "postgres")!;
-    const changed = setNodeAttribute(model, pg.id, "PostgreSQL version", "PostgreSQL 14");
+    const changed = setNodeAttribute(model, pg.id, "PostgreSQL version", "PostgreSQL 17");
     const base = await buildEvidenceReceipt(model, "azure", "deterministic", "a", "2026-07-10T00:00:00Z");
     const next = await buildEvidenceReceipt(changed, "azure", "deterministic", "a", "2026-07-10T00:00:00Z");
     assert.notEqual(base.receipt.contentHash, next.receipt.contentHash);
