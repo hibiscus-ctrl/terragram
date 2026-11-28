@@ -196,6 +196,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hyphens, starting with a letter).
 - A Google Cloud plan now refuses a label Google would refuse, at plan time. `var.labels` has a validation over every key and value (a key starts with a lowercase
   letter; keys and values hold lowercase letters, digits, hyphens and underscores and are at most 63 characters), where a bad label used to pass `terraform plan` and fail at apply.
+- Importing a Mermaid `architecture-beta` diagram no longer takes quadratic or worse time on a declaration with a long run of whitespace (`service a` followed by
+  4000 spaces and a character took 36 seconds). Each optional part of a declaration is read from its own leading whitespace, so the match is linear, and a line over 2000
+  characters is refused with an error naming the line.
 
 ## [0.2.0] - 2026-11-23
 

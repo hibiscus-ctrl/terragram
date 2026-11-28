@@ -293,3 +293,51 @@ describe("architecture-beta: determinism", () => {
     assert.equal(JSON.stringify(parseMermaid(source)), JSON.stringify(parseMermaid(source)));
   });
 });
+
+describe("architecture-beta: hostile input", () => {
+  // Whitespace between a name and the optional icon, title and `in` parts used to backtrack polynomially: this took 36 s.
+  const bounded = (source: string, ms = 1000) => {
+    const started = performance.now();
+    const res = parseMermaid(source);
+    const took = performance.now() - started;
+    assert.ok(took < ms, `took ${Math.round(took)} ms`);
+    return res;
+  };
+
+  it("reads a long run of spaces after a declaration in linear time", () => {
+    const res = bounded(`architecture-beta\nservice a${" ".repeat(4000)}x`);
+    assert.equal(res.ok, false);
+  });
+
+  it("reads runs of spaces between the parts of a declaration in linear time", () => {
+    for (const filler of [" ", "\t", " \t"]) {
+      const pad = filler.repeat(2000);
+      bounded(`architecture-beta\ngroup g\nservice a${pad}(cloud)${pad}[A]${pad}in${pad}g${pad}x`);
+      bounded(`architecture-beta\nservice a${pad}(cloud${pad}`);
+      bounded(`architecture-beta\nservice a${pad}[A${pad}`);
+      bounded(`architecture-beta\njunction j${pad}in${pad}`);
+      bounded(`architecture-beta\nservice a\nservice b\na:R${pad}<${pad}--${pad}L:b${pad}x`);
+    }
+  });
+
+  it("still reads a declaration with the spacing people write", () => {
+    const res = ok(`architecture-beta
+      group g(cloud)[Group]
+      service a (server) [A server] in g
+      service b(database) in g
+      service c   [C]
+      service d
+      junction j in g
+      a:R -- L:b`);
+    assert.deepEqual(res.model.nodes.map((n) => n.label).filter((l) => l !== "Internet").sort(), ["A server", "C", "b", "d"]);
+  });
+
+  it("refuses a line over the cap with a message that names the line and the cap", () => {
+    const message = error(`architecture-beta\nservice a[${"x".repeat(5000)}]`);
+    assert.match(message, /^Line 2: .*over 2000 characters/);
+  });
+
+  it("accepts a title just under the cap", () => {
+    ok(`architecture-beta\nservice a[${"x".repeat(1900)}]`);
+  });
+});
