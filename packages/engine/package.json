@@ -1,6 +1,6 @@
 {
   "name": "terragram-engine",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The Terragram generation engine: diagram model, Terraform/OpenTofu emitter, HCL parser, verifier and evidence receipts. Pure functions; models, signing and logging come in through ports.",
   "private": true,
   "license": "AGPL-3.0-only",

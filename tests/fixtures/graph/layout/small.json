@@ -1,0 +1,348 @@
+{
+  "schema": "diagram.graph-layout/v1",
+  "cloud": "aws",
+  "mode": "full",
+  "compared": false,
+  "width": 924,
+  "height": 478,
+  "top": 0,
+  "cut": null,
+  "header": [],
+  "footer": [
+    "1 glue resource hidden: aws_iam_role_policy_attachment x1."
+  ],
+  "groups": [
+    {
+      "id": "g0",
+      "kind": "scope",
+      "label": "AWS account 123456789012",
+      "heading": "AWS account 123456789012",
+      "parent": null,
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 24,
+      "y": 24,
+      "width": 876,
+      "height": 430
+    },
+    {
+      "id": "g1",
+      "kind": "module",
+      "label": "module terraform-aws-modules/vpc/aws",
+      "detail": "5.13.0",
+      "heading": "module terraform-aws-modules/vpc/aws 5.13.0",
+      "parent": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 256,
+      "y": 194,
+      "width": 412,
+      "height": 246
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n0",
+      "kind": "module call",
+      "category": "other",
+      "label": "terraform-aws-modules/vpc/aws",
+      "title": "module call terraform-aws-modules/vpc/aws",
+      "group": "g1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 270,
+      "y": 230,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n1",
+      "kind": "aws_iam_policy",
+      "category": "identity",
+      "label": "ReadOnlyAccess",
+      "title": "aws_iam_policy ReadOnlyAccess",
+      "group": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 714,
+      "y": 364,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n2",
+      "kind": "aws_iam_role",
+      "category": "identity",
+      "label": "web-role",
+      "title": "aws_iam_role web-role",
+      "group": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 714,
+      "y": 230,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n3",
+      "kind": "aws_instance",
+      "category": "compute",
+      "label": "i-0abc123def456",
+      "title": "aws_instance i-0abc123def456, region eu-west-1",
+      "group": "g0",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 376,
+      "y": 60,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n4",
+      "kind": "aws_security_group",
+      "category": "network",
+      "label": "sg-0123abcd",
+      "title": "aws_security_group sg-0123abcd, region eu-west-1",
+      "group": "g0",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 38,
+      "y": 230,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n5",
+      "kind": "aws_subnet",
+      "category": "network",
+      "label": "subnet-0f1e2d3c",
+      "title": "aws_subnet subnet-0f1e2d3c, region eu-west-1",
+      "group": "g1",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 482,
+      "y": 230,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n6",
+      "kind": "aws_vpc",
+      "category": "network",
+      "label": "vpc-0a1b2c3d",
+      "title": "aws_vpc vpc-0a1b2c3d, region eu-west-1",
+      "group": "g1",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 472,
+      "y": 364,
+      "width": 172,
+      "height": 62
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "source": "n2",
+      "target": "n1",
+      "kind": "reference",
+      "status": "unchanged",
+      "points": [
+        {
+          "x": 800,
+          "y": 292
+        },
+        {
+          "x": 800,
+          "y": 328
+        },
+        {
+          "x": 800,
+          "y": 364
+        }
+      ]
+    },
+    {
+      "id": "e1",
+      "source": "n3",
+      "target": "n0",
+      "kind": "reference",
+      "status": "unchanged",
+      "points": [
+        {
+          "x": 413,
+          "y": 122
+        },
+        {
+          "x": 356,
+          "y": 158
+        },
+        {
+          "x": 356,
+          "y": 194
+        },
+        {
+          "x": 356,
+          "y": 230
+        }
+      ]
+    },
+    {
+      "id": "e2",
+      "source": "n3",
+      "target": "n2",
+      "kind": "reference",
+      "status": "unchanged",
+      "points": [
+        {
+          "x": 548,
+          "y": 108
+        },
+        {
+          "x": 800,
+          "y": 158
+        },
+        {
+          "x": 800,
+          "y": 194
+        },
+        {
+          "x": 800,
+          "y": 230
+        }
+      ]
+    },
+    {
+      "id": "e3",
+      "source": "n3",
+      "target": "n4",
+      "kind": "reference",
+      "status": "unchanged",
+      "points": [
+        {
+          "x": 376,
+          "y": 108
+        },
+        {
+          "x": 124,
+          "y": 158
+        },
+        {
+          "x": 124,
+          "y": 194
+        },
+        {
+          "x": 124,
+          "y": 230
+        }
+      ]
+    },
+    {
+      "id": "e4",
+      "source": "n3",
+      "target": "n5",
+      "kind": "reference",
+      "status": "unchanged",
+      "points": [
+        {
+          "x": 511,
+          "y": 122
+        },
+        {
+          "x": 568,
+          "y": 158
+        },
+        {
+          "x": 568,
+          "y": 194
+        },
+        {
+          "x": 568,
+          "y": 230
+        }
+      ]
+    },
+    {
+      "id": "e5",
+      "source": "n4",
+      "target": "n6",
+      "kind": "reference",
+      "status": "unchanged",
+      "points": [
+        {
+          "x": 210,
+          "y": 282
+        },
+        {
+          "x": 404,
+          "y": 328
+        },
+        {
+          "x": 487,
+          "y": 364
+        }
+      ]
+    },
+    {
+      "id": "e6",
+      "source": "n5",
+      "target": "n6",
+      "kind": "reference",
+      "status": "unchanged",
+      "points": [
+        {
+          "x": 568,
+          "y": 292
+        },
+        {
+          "x": 568,
+          "y": 328
+        },
+        {
+          "x": 563,
+          "y": 364
+        }
+      ]
+    }
+  ],
+  "hidden": {
+    "count": 1,
+    "types": [
+      {
+        "type": "aws_iam_role_policy_attachment",
+        "count": 1
+      }
+    ]
+  }
+}
