@@ -3,6 +3,7 @@
 
 import { attributeOf, extractReferences, type HclBlock, mapEntries, parseHcl, stringValue } from "./hcl.ts";
 import {
+  isDeadLetterTopic,
   isScaffoldModule,
   isScaffoldResource,
   kindDefinition,
@@ -157,7 +158,8 @@ export function parseTerraform(source: string): ParseResult {
     // cluster beside an ECS service) attaches to the primary like any secondary.
     const primaries = items.filter(
       (i) =>
-        i.type === spec?.type ||
+        // The dead-letter topic of a queue is part of that queue, not a second one.
+        (i.type === spec?.type && !isDeadLetterTopic(i.block, blocks)) ||
         (i.type === "module" && moduleSource(i.block) === spec?.moduleSource),
     );
     const seeds = primaries.length > 0 ? primaries : [items[0] as Resolved];
@@ -187,6 +189,7 @@ export function parseTerraform(source: string): ParseResult {
       if (seeds.includes(item)) continue;
       const target =
         own.find((i) => item.name === i.tfName) ??
+        (isDeadLetterTopic(item.block, blocks) ? own.find((i) => item.name === `${i.tfName}_dead_letter`) : undefined) ??
         own.find((i) => item.name.startsWith(i.tfName)) ??
         own[0];
       target?.blocks.push(item.block);

@@ -22,6 +22,7 @@ import {
   GCP,
   type GcpPlan,
   isEdgeBlock,
+  isGcpDeadLetterTopic,
   isGcpScaffold,
   redisSkuFrom,
   runSizeFrom,
@@ -3299,6 +3300,15 @@ export function isScaffoldModule(b: HclBlock, all: readonly HclBlock[]): boolean
  */
 export function isScaffoldResource(b: HclBlock, all: readonly HclBlock[]): boolean {
   return isGcpScaffold(b, all);
+}
+
+/**
+ * Whether a resource block is the dead-letter topic a Google Cloud plan adds for a queue, which reads back as
+ * part of the queue rather than as a queue of its own. Only exactly what the generator writes, given up on by
+ * the subscription of the topic it is named for, counts (`isGcpDeadLetterTopic`); a topic of the file's own is drawn.
+ */
+export function isDeadLetterTopic(b: HclBlock, all: readonly HclBlock[]): boolean {
+  return isGcpDeadLetterTopic(b, all);
 }
 
 export function isFronted(kind: string): boolean {

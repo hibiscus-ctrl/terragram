@@ -177,6 +177,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what the generator writes (every input, no others, a name of the generator's shape) and a component of the file uses them, the way the Google Cloud
   scaffolding already is. A resource group of your own, a virtual network that is called `network`, a zone nothing reads, or a bucket that takes the
   access-log policy but is not the logging target of another is drawn, with its IAM edges.
+- A Google Cloud Pub/Sub queue reads back as one node instead of two. The dead-letter topic the generator writes for a queue (its name and retention, the key
+  store's key when there is one, no other attribute, given up on by the queue's own subscription and named like its topic) folds into the queue, and what is
+  granted on it is granted on the queue. A topic of your own, whatever its name, a lookalike that differs in any way, or one no subscription gives up on is
+  drawn as a queue of its own.
 
 ## [0.2.0] - 2026-11-23
 

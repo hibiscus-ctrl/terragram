@@ -328,6 +328,38 @@ export function isGcpScaffold(b: HclBlock, all: readonly HclBlock[]): boolean {
   }
 }
 
+/**
+ * Whether a topic is the dead-letter topic the plan adds for a queue, so that the queue reads back as one node
+ * (the topic, its subscription and the topic the subscription gives up on). It is exactly what `queue` writes
+ * (the generator's name and retention, and the key store's key when the topic has one, no other attribute) and
+ * it is tied to the queue: the subscription of the same name reads from the topic of that name and names this
+ * one as its `dead_letter_topic`, and both topics carry one slug and one key. A topic of the file's own, however
+ * it is named, and a lookalike that differs in any way or that no subscription gives up on, is drawn.
+ */
+export function isGcpDeadLetterTopic(b: HclBlock, all: readonly HclBlock[]): boolean {
+  if (b.type !== "resource" || b.labels.length !== 2 || b.labels[0] !== "google_pubsub_topic") return false;
+  const name = b.labels[1] ?? "";
+  const queue = /^([a-z0-9_]+)_dead_letter$/.exec(name)?.[1];
+  const slug = /^"dlq-\$\{var\.name_prefix\}-([a-z0-9-]+)"$/.exec(compact(attributeOf(b, "name")))?.[1];
+  if (queue === undefined || slug === undefined) return false;
+  const key = attributeOf(b, "kms_key_name");
+  const keyName = key === undefined ? undefined : /^google_kms_crypto_key\.([a-z0-9_]+)\.id$/.exec(compact(key))?.[1];
+  if (!hasExactly(b, key === undefined ? ["name", "message_retention_duration"] : ["name", "message_retention_duration", "kms_key_name"])) return false;
+  if (compact(attributeOf(b, "message_retention_duration")) !== '"604800s"') return false;
+  if (key !== undefined && (keyName === undefined || !all.some((o) => o.type === "resource" && o.labels[0] === "google_kms_crypto_key" && o.labels[1] === keyName))) return false;
+  const topic = all.find((o) => o.type === "resource" && o.labels.length === 2 && o.labels[0] === "google_pubsub_topic" && o.labels[1] === queue);
+  if (!topic || compact(attributeOf(topic, "name")) !== `"topic-\${var.name_prefix}-${slug}"` || compact(attributeOf(topic, "kms_key_name")) !== compact(key)) return false;
+  return all.some(
+    (o) =>
+      o.type === "resource" &&
+      o.labels.length === 2 &&
+      o.labels[0] === "google_pubsub_subscription" &&
+      o.labels[1] === queue &&
+      compact(attributeOf(o, "topic")) === `google_pubsub_topic.${queue}.id` &&
+      o.blocks.some((c) => c.type === "dead_letter_policy" && compact(attributeOf(c, "dead_letter_topic")) === `google_pubsub_topic.${name}.id`),
+  );
+}
+
 /* ----------------------------------------------------------------- buckets -- */
 
 /**
