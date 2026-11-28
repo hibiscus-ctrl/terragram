@@ -8,15 +8,15 @@
 #   sandbox-gcp.sh generate              write the four plans (scripts/sandbox-gcp-plans.ts); needs no credentials
 #   sandbox-gcp.sh summary               print, as Markdown, what the plans change for a sandbox project; needs none
 #   sandbox-gcp.sh validate              refuse plans that are not what the generator writes (sandbox-gcp-validate.mjs); needs none
-#   sandbox-gcp.sh preflight             fail if a service account holds Editor or Owner in the project
+#   sandbox-gcp.sh preflight             fail if a service account holds Editor, Owner or a role that can mint or widen access in the project
 #   sandbox-gcp.sh apply <plan>          terraform init and apply one plan
 #   sandbox-gcp.sh smoke <plan>          check the plan's main resources exist and are healthy
 #   sandbox-gcp.sh destroy <plan>        terraform destroy it, tried again, and fail if state is left
-#   sandbox-gcp.sh sweep                 delete every resource named ih-sbx-tg-, whatever made it
+#   sandbox-gcp.sh sweep                 delete every resource named like a run's own (ih-sbx-tg-<plan letter><4 hex digits>), whatever made it
 #
 # <plan> is gcp-data, gcp-platform, gcp-site or gcp-serverless. Everything a run creates is named
 # ih-sbx-tg-<plan letter><four hex digits of the run> and labelled terragram_sandbox=<run id>, so the
-# sweep finds it by name (networks, firewall rules, routers and service accounts take no labels) and a
+# sweep finds it by that exact shape of name, never by the prefix alone (networks, firewall rules, routers and service accounts take no labels) and a
 # reader finds whose it is by label. Terraform's state stays in the runner's temporary directory: it is
 # never printed, uploaded or kept, and no command here prints an output or an attribute value.
 #
@@ -36,6 +36,14 @@ work=${SANDBOX_DIR:-${RUNNER_TEMP:?}/sandbox-gcp}
 region=${GOOGLE_REGION:-europe-west2}
 zone="${region}-a"
 mark="ih-sbx-tg-"
+# One run's names as a pattern: the prefix (prefix) is the mark, a plan's letter and four hex digits; the shared network's
+# (network_name) is the mark, "net-" and four hex digits. A name has it at its start or after a hyphen or a slash, and ends
+# with it or goes on after a hyphen, so something that only has ih-sbx-tg- somewhere in its name (another team's
+# ih-sbx-tg-notes, a bucket called prod-ih-sbx-tg) is never the sweep's. The sweep takes every run's leftovers, so the
+# run id is not part of it. name_re is for gcloud's --filter and jq, dataset_re for BigQuery's ids (no hyphens).
+run_re="${mark}([dpsf]|net-)[0-9a-f]{4}"
+name_re="(^|[-/])${run_re}(-|\$)"
+dataset_re='(^|_)ih_sbx_tg_([dpsf]|net_)[0-9a-f]{4}(_|$)'
 here=$(cd "$(dirname "$0")" && pwd)
 
 # Generating and summarising run where no token can be had (the first job installs dependencies), and
@@ -252,12 +260,12 @@ RUNNABLE" "$(listed sql instances list --filter "name ~ $p" --format 'value(stat
 
 bigquery="https://bigquery.googleapis.com/bigquery/v2/projects/$project/datasets"
 
-# bq_datasets <dataset id fragment>: the project's datasets whose ID has the fragment (dataset IDs take no hyphens).
+# bq_datasets <pattern>: the project's datasets whose ID matches the extended regular expression (dataset IDs take no hyphens).
 bq_datasets() {
   local token
   token=$(gcloud auth print-access-token)
   curl -fsS -H "Authorization: Bearer $token" "$bigquery?all=true&maxResults=1000" |
-    jq -r '.datasets[]?.datasetReference.datasetId' | grep -F "$1" || true
+    jq -r '.datasets[]?.datasetReference.datasetId' | grep -E "$1" || true
 }
 
 destroy_state() {
@@ -291,14 +299,14 @@ destroy_plan() {
   [ "$failed" -eq 0 ]
 }
 
-# Every resource whose name has ih-sbx-tg- in it, by kind, those that use others first. The plans'
-# names put the kind first (waf-ih-sbx-tg-..., cdn-ih-sbx-tg-...), so the filter is a substring match.
+# Every resource named like a run's own (name_re), by kind, those that use others first. The plans' names
+# put the kind first (waf-ih-sbx-tg-d1a2b-..., cdn-ih-sbx-tg-d1a2b-...), so the pattern may start after a hyphen.
 sweep_all() {
-  local named="name ~ $mark" token rest name loc kind
+  local named="name ~ \"$name_re\"" token rest name loc kind
   token=$(gcloud auth print-access-token)
-  names=$(listed run services list --region "$region" --filter "metadata.name ~ $mark" --format 'value(metadata.name)')
+  names=$(listed run services list --region "$region" --filter "metadata.name ~ \"$name_re\"" --format 'value(metadata.name)')
   while IFS= read -r name; do [ -n "$name" ] && gcloud run services delete "$name" --region "$region" "${q[@]}" || true; done <<< "$names"
-  names=$(listed functions list --filter "name ~ /functions/.*$mark" --format 'value(name.basename(),name.segment(3))')
+  names=$(listed functions list --filter "name ~ \"/functions/(.*-)?${run_re}(-|\$)\"" --format 'value(name.basename(),name.segment(3))')
   while read -r name loc; do [ -n "$name" ] && gcloud functions delete "$name" --region "$loc" "${q[@]}" || true; done <<< "$names"
   names=$(listed container clusters list --filter "$named" --format 'value(name,location)')
   while read -r name loc; do [ -n "$name" ] && gcloud container clusters delete "$name" --location "$loc" "${q[@]}" || true; done <<< "$names"
@@ -322,7 +330,7 @@ sweep_all() {
     # Deletion protection is on for an instance made outside a sandbox plan: this one is ours by name.
     [ -n "$name" ] && { gcloud sql instances patch "$name" --no-deletion-protection "${q[@]}" || true; gcloud sql instances delete "$name" "${q[@]}" || true; }
   done <<< "$names"
-  for name in $(bq_datasets "$(printf '%s' "$mark" | tr - _)"); do
+  for name in $(bq_datasets "$dataset_re"); do
     curl -fsS -X DELETE -H "Authorization: Bearer $token" "$bigquery/$name?deleteContents=true" || true
   done
   names=$(listed firestore databases list --filter "$named" --format 'value(name.basename())')
@@ -345,7 +353,7 @@ sweep_all() {
   # Monitoring has no gcloud group outside alpha: the REST API, with gcloud's token.
   for kind in alertPolicies notificationChannels; do
     names=$(curl -fsS -H "Authorization: Bearer $token" "https://monitoring.googleapis.com/v3/projects/$project/$kind" |
-      jq -r --arg mark "$mark" '(.alertPolicies // .notificationChannels // [])[] | select(.displayName | contains($mark)) | .name')
+      jq -r --arg re "$name_re" '(.alertPolicies // .notificationChannels // [])[] | select(.displayName | test($re)) | .name')
     while IFS= read -r name; do [ -n "$name" ] && curl -fsS -X DELETE -H "Authorization: Bearer $token" "https://monitoring.googleapis.com/v3/$name" || true; done <<< "$names"
   done
   # Key rings and keys can't be deleted: only the versions of keys still enabled or disabled are destroyed.
@@ -377,18 +385,18 @@ sweep_all() {
   # The plans' service accounts, and what they hold in the project's IAM policy (a destroy that never
   # finished leaves both). Only members of ours: the bindings of anything else are not touched.
   names=$(gcloud projects get-iam-policy "$project" --format json |
-    jq -r --arg mark "$mark" '.bindings[]? | select(has("condition") | not) | .role as $role | .members[]? | select(contains("serviceAccount:sa-" + $mark)) | "\($role) \(.)"')
+    jq -r --arg run "$run_re" '.bindings[]? | select(has("condition") | not) | .role as $role | .members[]? | select(test("^serviceAccount:sa-" + $run + "-")) | "\($role) \(.)"')
   while read -r kind name; do [ -n "$name" ] && gcloud projects remove-iam-policy-binding "$project" --role "$kind" --member "$name" "${q[@]}" > /dev/null || true; done <<< "$names"
-  names=$(listed iam service-accounts list --filter "email ~ ^sa-$mark" --format 'value(email)')
+  names=$(listed iam service-accounts list --filter "email ~ \"^sa-${run_re}-\"" --format 'value(email)')
   while IFS= read -r name; do [ -n "$name" ] && gcloud iam service-accounts delete "$name" "${q[@]}" || true; done <<< "$names"
 }
 
 # What is left, by the same filters: one name a line. Cloud Asset Inventory lags by minutes, so the
 # kinds are listed one by one.
 left_after_sweep() {
-  local named="name ~ $mark"
-  listed run services list --region "$region" --filter "metadata.name ~ $mark" --format 'value(metadata.name)'
-  listed functions list --filter "name ~ /functions/.*$mark" --format 'value(name)'
+  local named="name ~ \"$name_re\""
+  listed run services list --region "$region" --filter "metadata.name ~ \"$name_re\"" --format 'value(metadata.name)'
+  listed functions list --filter "name ~ \"/functions/(.*-)?${run_re}(-|\$)\"" --format 'value(name)'
   listed container clusters list --filter "$named" --format 'value(name)'
   for kind in forwarding-rules target-http-proxies target-https-proxies url-maps backend-services addresses; do
     listed compute "$kind" list --global --filter "$named" --format 'value(name)'
@@ -399,33 +407,60 @@ left_after_sweep() {
   listed compute networks subnets list --filter "$named" --format 'value(name)'
   listed redis instances list --region "$region" --filter "$named" --format 'value(name)'
   listed sql instances list --filter "$named" --format 'value(name)'
-  bq_datasets "$(printf '%s' "$mark" | tr - _)"
+  bq_datasets "$dataset_re"
   listed firestore databases list --filter "$named" --format 'value(name)'
   listed secrets list --filter "$named" --format 'value(name)'
   listed pubsub topics list --filter "$named" --format 'value(name)'
   listed pubsub subscriptions list --filter "$named" --format 'value(name)'
   listed dns managed-zones list --filter "$named" --format 'value(name)'
   listed storage buckets list --filter "$named" --format 'value(name)'
-  listed iam service-accounts list --filter "email ~ ^sa-$mark" --format 'value(email)'
+  listed iam service-accounts list --filter "email ~ \"^sa-${run_re}-\"" --format 'value(email)'
 }
 
-# A plan may attach any service account of the project to what it creates (the account holds Service
-# Account User on the project), and so give a job the roles that account holds: none may hold Editor or
-# Owner. Fails closed: a policy that can't be read, or read as something else, fails too. Only the
-# counts are printed, never the policy or an account's name; the bootstrap's README has the command
-# that lists them.
+# The roles no service account of the project may hold, because a plan may attach any service account
+# of the project to what it creates and so give a job the roles that account holds, and these let it act
+# as, mint credentials for or grant itself the access of other accounts: Editor and Owner, Service Account
+# Token Creator, Service Account User, Project IAM Admin, Security Admin, Role Admin and Service Account Key
+# Admin. The one exception is Service Account User for the account this job signs in as, which the sandbox
+# needs to attach the accounts its plans create (see self_account).
+risky_roles=(
+  roles/editor
+  roles/owner
+  roles/iam.serviceAccountTokenCreator
+  roles/iam.serviceAccountUser
+  roles/resourcemanager.projectIamAdmin
+  roles/iam.securityAdmin
+  roles/iam.roleAdmin
+  roles/iam.serviceAccountKeyAdmin
+)
+
+# The email of the service account the credentials file signs in as: the workload identity federation
+# configuration names it in its impersonation URL. Empty when it cannot be read, which exempts nothing.
+self_account() {
+  jq -r '(.service_account_impersonation_url // "") | capture("/serviceAccounts/(?<email>[^/:]+):generateAccessToken").email // empty' "$GOOGLE_APPLICATION_CREDENTIALS" 2> /dev/null || true
+}
+
+# Fails closed: a policy that can't be read, or read as something else, fails too. Only the counts are
+# printed, never the policy or an account's name; the bootstrap's README has the command that lists them.
 preflight() {
-  local policy found
+  local policy found self roles
   policy=$(gcloud projects get-iam-policy "$project" --format json) || fail "the project's IAM policy could not be read"
-  found=$(jq -r '
+  # Nothing at all is not a policy: jq would print nothing for it, which reads as no grants.
+  jq -e 'type == "object"' <<< "$policy" > /dev/null 2>&1 || fail "the project's IAM policy could not be read as JSON"
+  self=$(self_account)
+  roles=$(printf '%s\n' "${risky_roles[@]}" | jq -R . | jq -s -c .)
+  found=$(jq -r --argjson roles "$roles" --arg self "$self" '
     if type != "object" then error("not a policy") else . end
-    | [.bindings[]? | select(.role == "roles/editor" or .role == "roles/owner") | .role as $role
-      | .members[]? | select(test("^serviceAccount:|^principal://iam\\.googleapis\\.com/projects/-/serviceAccounts/")) | $role]
+    | [.bindings[]? | select(.role as $r | $roles | index($r)) | .role as $role
+      | .members[]? | select(test("^serviceAccount:|^principal://iam\\.googleapis\\.com/projects/-/serviceAccounts/"))
+      | select(($role == "roles/iam.serviceAccountUser" and $self != ""
+          and (sub("^serviceAccount:"; "") | sub("^principal://iam\\.googleapis\\.com/projects/-/serviceAccounts/"; "") | ascii_downcase) == ($self | ascii_downcase)) | not)
+      | $role]
     | group_by(.) | map("\(.[0]): \(length)") | join(", ")' <<< "$policy") || fail "the project's IAM policy could not be read as JSON"
   if [ -n "$found" ]; then
-    fail "Service accounts hold Editor or Owner in the project ($found): remove those grants before running this workflow (see the bootstrap's README)"
+    fail "Service accounts hold roles that can act as other accounts or widen access in the project ($found): remove those grants before running this workflow (see the bootstrap's README)"
   fi
-  echo "No service account holds Editor or Owner in the project."
+  echo "No service account holds Editor, Owner or a role that mints or widens access in the project."
 }
 
 case $command in

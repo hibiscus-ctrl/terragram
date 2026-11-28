@@ -20,8 +20,10 @@ name: Sandbox (Google Cloud)
 # Terraform and the generator's placeholders), and Terraform then installs only the providers of the
 # committed lock files (scripts/sandbox-gcp-locks/, init with -lockfile=readonly, no plugin
 # cache, the CLI configuration scripts/sandbox-gcp.tfrc). Both jobs' summaries give the plans' digest.
-# Before it applies anything it checks that no service account of the project holds Editor or Owner
-# (a plan may attach any service account of the project to what it creates), and stops if one does.
+# Before it applies anything it checks that no service account of the project holds Editor, Owner or a role that
+# can act as, mint credentials for or widen the access of others (Service Account Token Creator, Service Account
+# User beyond the signed-in account, Project IAM Admin, Security Admin, Role Admin, Service Account Key Admin;
+# a plan may attach any service account of the project to what it creates), and stops if one does.
 #
 # The plans are the generator's own, with the changes a shared project needs (scripts/lib/sandbox-gcp.ts
 # lists them, and the run's summary says which): no App Engine application (one per project, for good),
@@ -160,9 +162,9 @@ jobs:
           export_environment_variables: false
 
       # Before anything is changed: a plan may attach any service account of the project to what it
-      # creates, so none may hold Editor or Owner. Every step that changes the project needs this to have
+      # creates, so none may hold Editor, Owner or a role that mints or widens access. Every step that changes the project needs this to have
       # passed, always() steps included.
-      - name: No service account holds Editor or Owner
+      - name: No service account can mint or widen access
         id: preflight
         timeout-minutes: 5
         env:

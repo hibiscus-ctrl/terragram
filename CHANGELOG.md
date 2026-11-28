@@ -201,6 +201,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   characters is refused with an error naming the line.
 - The Google Cloud sandbox workflow runs only from `main`. A dispatch from another branch would have run that branch's `scripts/sandbox-gcp.sh` with the cloud token once the
   reviewers approved; now the first job fails with an error naming the ref, and the job that gets the token has `if: github.ref == 'refs/heads/main'`.
+- The Google Cloud sandbox sweep deletes only what is named like a run's own (`ih-sbx-tg-<plan letter><4 hex digits>`, the shared network's `ih-sbx-tg-net-<4 hex digits>`), at the start of a
+  name or after a hyphen or a slash, instead of anything with `ih-sbx-tg-` somewhere in its name. Its preflight now also stops the run when a service account of the project holds Service
+  Account Token Creator, Service Account User (the signed-in account excepted), Project IAM Admin, Security Admin, Role Admin or Service Account Key Admin, besides Editor and Owner,
+  and fails on an empty policy instead of passing it.
 
 ## [0.2.0] - 2026-11-23
 
