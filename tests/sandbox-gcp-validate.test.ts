@@ -623,6 +623,8 @@ describe("the sandbox's check, by shape", () => {
   it("refuses a cluster with inline nodes, or with its control plane open or not private", () => {
     tamper("gcp-platform/main.tf", /master_auth \{/, 'node_config {\n    metadata = { startup-script = "x" }\n  }\n  master_auth {', /the block node_config is not one of a google_container_cluster/);
     tamper("gcp-platform/main.tf", /master_auth \{/, "node_pool {\n  }\n  master_auth {", /the block node_pool is not one of a google_container_cluster/);
+    tamper("gcp-platform/main.tf", /remove_default_node_pool\s+= true/, "remove_default_node_pool = false", /remove_default_node_pool must be true/);
+    tamper("gcp-platform/main.tf", /\n\s+remove_default_node_pool\s+= true/, "", /must set remove_default_node_pool/);
     tamper("gcp-platform/main.tf", /\n\s+private_cluster_config \{[^}]*\}/, "", /must set private_cluster_config/);
     tamper("gcp-platform/main.tf", /\n\s+master_authorized_networks_config \{[\s\S]*?\n {2}\}\n/, "\n", /must set master_authorized_networks_config/);
     tamper("gcp-platform/main.tf", /\n\s+cidr_blocks \{[\s\S]*?\n {4}\}\n/, "\n", /master_authorized_networks_config must set cidr_blocks/);

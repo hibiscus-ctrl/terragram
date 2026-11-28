@@ -910,7 +910,9 @@ export const SHAPES = {
       network: ref("google_compute_network", "id"),
       subnetwork: ref(...SUBNETWORK),
       networking_mode: anyValue,
-      remove_default_node_pool: anyValue,
+      // The default pool runs on the default compute service account; every node must be in a node pool,
+      // whose node_config names a service account the plan creates.
+      remove_default_node_pool: literal("true"),
       initial_node_count: anyValue,
       enable_shielded_nodes: anyValue,
       enable_intranode_visibility: anyValue,
@@ -937,7 +939,7 @@ export const SHAPES = {
       addons_config: node({}, { network_policy_config: node({ disabled: anyValue }) }),
       binary_authorization: node({ evaluation_mode: anyValue }),
     },
-    ["private_cluster_config", "master_authorized_networks_config"],
+    ["private_cluster_config", "master_authorized_networks_config", "remove_default_node_pool"],
   ),
   google_container_node_pool: resource(
     { name: anyValue, cluster: ref("google_container_cluster", "id"), location: anyValue, node_count: anyValue },
