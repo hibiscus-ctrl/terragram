@@ -373,7 +373,56 @@ resource "aws_s3_bucket_policy" "p" {
       ],
     );
     assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Allow", Principal = { AWS = aws_iam_role.fn.arn }, Action = "s3:GetObject", Resource = "*" }`)), ["entra-id -> object-storage: read"]);
-    assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Allow", Principal = { AWS = "arn:aws:iam::123456789012:role/fn" }, Action = "s3:GetObject", Resource = "*" }`)), ["entra-id -> object-storage: read"]);
+    // Only an account that is provably this one maps to a drawn role: here, the one the caller is in.
+    assert.deepEqual(
+      edgesOf(bucketPolicy(`{ Effect = "Allow", Principal = { AWS = "arn:aws:iam::${"$"}{data.aws_caller_identity.current.account_id}:role/fn" }, Action = "s3:GetObject", Resource = "*" }`)),
+      ["entra-id -> object-storage: read"],
+    );
+  });
+
+  it("does not map a principal ARN of another account to the drawn role of the same name", () => {
+    const other = `"arn:aws:iam::210987654321:role/fn"`;
+    assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Allow", Principal = { AWS = ${other} }, Action = "s3:GetObject", Resource = "*" }`)), [
+      "principal-aws-account -> object-storage: read",
+    ]);
+    // A role whose account is a variable may be anyone's: it is not the drawn one either.
+    assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Allow", Principal = { AWS = "arn:aws:iam::${"$"}{var.account}:role/fn" }, Action = "s3:GetObject", Resource = "*" }`)), [
+      "principal-aws-account -> object-storage: read",
+    ]);
+    const trust = edgesOf(`
+resource "aws_iam_role" "t" {
+  name = "t"
+  assume_role_policy = jsonencode({ Statement = [{ Effect = "Allow", Principal = { AWS = ${other} }, Action = "sts:AssumeRole" }] })
+}
+`);
+    assert.deepEqual(trust.filter((e) => e.includes("-> entra-id-2")), ["principal-aws-account -> entra-id-2: admin"]);
+    assert.equal(trust.some((e) => e === "entra-id -> entra-id-2: runs-as"), false);
+  });
+
+  it("reads a principal of type \"*\" as anyone", () => {
+    const block = (identifiers: string) => `${BASE}
+data "aws_iam_policy_document" "p" {
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = ["*"]
+    principals {
+      type        = "*"
+      identifiers = ${identifiers}
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "p" {
+  bucket = aws_s3_bucket.data.id
+  policy = data.aws_iam_policy_document.p.json
+}
+`;
+    assert.deepEqual(typed(read(block('["*"]')).model).filter((e) => !e.startsWith("functions")), ["principal-aws-anyone -> object-storage: read"]);
+    assert.deepEqual(typed(read(block('["arn:aws:iam::123456789012:root"]')).model).filter((e) => !e.startsWith("functions")), ["principal-aws-anyone -> object-storage: unscoped"]);
+    assert.deepEqual(typed(read(block("var.who")).model).filter((e) => !e.startsWith("functions")), ["principal-aws-anyone -> object-storage: unscoped"]);
+    for (const principal of [`"*"`, `{ "*" = "*" }`]) {
+      assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Allow", Principal = ${principal}, Action = "s3:GetObject", Resource = "*" }`)), ["principal-aws-anyone -> object-storage: read"], principal);
+    }
   });
 
   it("reads a policy document data source with principals and not_principals blocks", () => {

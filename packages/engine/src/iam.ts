@@ -644,7 +644,7 @@ const NO_IDENTITIES: Identities = { named: new Map(), unsure: new Set() };
 const ARN_OPEN_PART = /^(?:[A-Za-z0-9-]*|\$\{[^{}:"]*\})$/;
 
 /** A `role/...` or `user/...` ARN with a literal name: the partition and account may be a reference (a wildcard one is not read, so it stays broad); the name is the last path segment. */
-function identityArn(text: string): { kind: "role" | "user"; name: string } | null {
+function identityArn(text: string): { kind: "role" | "user"; name: string; account: string } | null {
   if (text.length > 512) return null;
   const parts = text.split(":");
   const [head, partition, service, region, account, resource] = parts;
@@ -652,7 +652,7 @@ function identityArn(text: string): { kind: "role" | "user"; name: string } | nu
   if (!ARN_OPEN_PART.test(partition ?? "") || !ARN_OPEN_PART.test(account ?? "")) return null;
   const m = /^(role|user)\/([A-Za-z0-9+=,.@_/-]+)$/.exec(resource ?? "");
   const name = m?.[2]?.split("/").pop();
-  return m && name ? { kind: m[1] === "user" ? "user" : "role", name } : null;
+  return m && name ? { kind: m[1] === "user" ? "user" : "role", name, account: account ?? "" } : null;
 }
 
 /**
@@ -665,6 +665,9 @@ function identityReach(named: { kind: "role" | "user"; name: string }, identitie
   for (const id of found) add(id);
   return found.length === 0 && identities.unsure.has(named.kind);
 }
+
+/** Whether an ARN's account is provably the one the file is applied in: the account of the caller. A literal id or a variable may be any other account. */
+const OWN_ACCOUNT = /^\$\{data\.aws_caller_identity\.[A-Za-z_][\w-]*\.account_id\}$/;
 
 /** `undrawn`: it also names something the picture does not hold, which is any resource at the grant's own level. */
 type Reach = { targets: string[]; broad: boolean; undrawn: boolean };
@@ -1107,6 +1110,8 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     const kind = type.toLowerCase();
     if (value.t === "list") return value.items.flatMap((item) => sourcesOfValue(type, item));
     if (value.t === "obj") return [stand("other", true)];
+    // A principal of type "*" is anyone; so is the one identifier a document may give it. Any other identifier under it is not read: it may be anyone.
+    if (type === "*") return [value.t === "str" && value.text === "*" ? stand("anyone") : stand("anyone", true)];
     if (kind === "service") return [stand("service")];
     if (kind === "federated") return [stand("federated")];
     if (kind === "canonicaluser") return [stand("other")];
@@ -1117,6 +1122,8 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
       if (value.text === "*") return [stand("anyone")];
       const named = identityArn(value.text);
       if (named) {
+        // The file does not say which account a drawn role is in, so an ARN is that role only when its account is provably the file's own: otherwise it is some principal of another account.
+        if (!OWN_ACCOUNT.test(named.account)) return [stand("account")];
         const found = identities.named.get(`${named.kind}/${named.name.toLowerCase()}`) ?? [];
         return found.length > 0 && !identities.unsure.has(named.kind) ? found.map(drawnSource) : [...found.map(drawnSource), stand("account")];
       }
