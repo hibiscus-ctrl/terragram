@@ -1,10 +1,11 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { NODE_HEIGHT, NODE_WIDTH } from "../layout.ts";
 import { CATEGORY_META } from "../model.ts";
 import { SEVERITIES, type Severity } from "./findings.ts";
-import { type Box, HEADER, layoutGraph, type Point } from "./layout.ts";
+import { HEADER, type Point } from "./layout.ts";
+import { type LayoutGroup, type LayoutNode, layoutGraphView } from "./layout-view.ts";
+import { cleanText, clip } from "./text.ts";
 import type { EdgeStatus, GraphCategory, GraphStatus, GraphView, ViewGroup, ViewNode } from "./project.ts";
 
 /**
@@ -59,11 +60,8 @@ export const EDGE_STYLE: Record<EdgeStatus, { stroke: string; width: number; das
 
 /** Text for XML: control characters dropped (they are not legal there), markup escaped. */
 function esc(text: string): string {
-  const clean = [...text].filter((ch) => ch >= " " || ch === "\t").join("");
-  return clean.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return cleanText(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-
-export const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 const num = (n: number) => String(Math.round(n * 10) / 10);
 
@@ -95,66 +93,34 @@ function marker(tally: NonNullable<ViewNode["findings"]>, right: number, y: numb
   return `<g><title>${esc(findingsTitle(tally))}</title><rect x="${num(x)}" y="${num(y - 8)}" width="${width}" height="16" rx="8" fill="${SEVERITY_COLOUR[tally.worst]}"/><text x="${num(x + width / 2)}" y="${num(y + 4)}" text-anchor="middle" font-family="${FONT}" font-size="10" font-weight="700" fill="#ffffff">${label}</text></g>`;
 }
 
-function groupSvg(group: ViewGroup, box: Box): string {
+function groupSvg(group: LayoutGroup): string {
   const style = STATUS_STYLE[group.status];
   const [plainStroke, plainFill, plainDash] = GROUP_STYLE[group.kind];
   const stroke = style.stroke ?? plainStroke;
   const fill = style.stroke ? style.fill : plainFill;
   const dash = style.dash ?? plainDash;
-  const status = group.status === "unchanged" || group.status === "context" ? "" : ` [${group.status}]`;
-  const heading = `${group.label}${group.detail ? ` ${group.detail}` : ""}${status}`;
-  const right = box.x + box.width - 10;
-  return `<g><rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="12" fill="${fill}" stroke="${stroke}" stroke-width="1.25"${dash ? ` stroke-dasharray="${dash}"` : ""}/>
-<text x="${box.x + 12}" y="${box.y + HEADER - 7}" font-family="${FONT}" font-size="11" font-weight="700" fill="${MUTED}">${esc(clip(heading, Math.max(12, Math.floor((box.width - 56) / 6.6))))}</text>${group.findings ? marker(group.findings, right, box.y + HEADER / 2 + 1) : ""}
+  const right = group.x + group.width - 10;
+  return `<g><rect x="${group.x}" y="${group.y}" width="${group.width}" height="${group.height}" rx="12" fill="${fill}" stroke="${stroke}" stroke-width="1.25"${dash ? ` stroke-dasharray="${dash}"` : ""}/>
+<text x="${group.x + 12}" y="${group.y + HEADER - 7}" font-family="${FONT}" font-size="11" font-weight="700" fill="${MUTED}">${esc(group.heading)}</text>${group.badges.findings ? marker(group.badges.findings, right, group.y + HEADER / 2 + 1) : ""}
 </g>`;
 }
 
-function nodeSvg(node: ViewNode, box: Box): string {
+function nodeSvg(node: LayoutNode): string {
   const colour = CATEGORY_COLOUR[node.category];
   const style = STATUS_STYLE[node.status];
   const stroke = style.stroke ?? colour;
   const faded = node.status === "context" ? ' opacity="0.55"' : "";
-  const title = [`${node.type} ${node.label}`, node.region ? `region ${node.region}` : "", node.status === "unchanged" ? "" : node.status]
-    .filter(Boolean)
-    .join(", ");
-  const { x, y } = box;
+  const { x, y } = node;
   const strike = node.status === "removed" ? ' text-decoration="line-through"' : "";
   const mark = style.mark
     ? `<circle cx="${x}" cy="${y}" r="8" fill="${stroke}"/><text x="${x}" y="${y + 4}" text-anchor="middle" font-family="${FONT}" font-size="12" font-weight="700" fill="#ffffff">${style.mark}</text>`
     : "";
-  return `<g${faded}><title>${esc(title)}</title>
-<rect x="${x}" y="${y}" width="${NODE_WIDTH}" height="${NODE_HEIGHT}" rx="9" fill="${style.fill}" stroke="${stroke}" stroke-width="1.5"${style.dash ? ` stroke-dasharray="${style.dash}"` : ""}/>
-<rect x="${x}" y="${y + 10}" width="4" height="${NODE_HEIGHT - 20}" rx="2" fill="${colour}"/>
-<text x="${x + 14}" y="${y + 24}" font-family="${FONT}" font-size="9" font-weight="600" fill="${colour}" letter-spacing="0.3"${strike}>${esc(clip(node.type, 26))}</text>
-<text x="${x + 14}" y="${y + 46}" font-family="${FONT}" font-size="12" font-weight="700" fill="${INK}"${strike}>${esc(clip(node.label, 20))}</text>${mark}${node.findings ? marker(node.findings, x + NODE_WIDTH - 6, y) : ""}
+  return `<g${faded}><title>${esc(node.title)}</title>
+<rect x="${x}" y="${y}" width="${node.width}" height="${node.height}" rx="9" fill="${style.fill}" stroke="${stroke}" stroke-width="1.5"${style.dash ? ` stroke-dasharray="${style.dash}"` : ""}/>
+<rect x="${x}" y="${y + 10}" width="4" height="${node.height - 20}" rx="2" fill="${colour}"/>
+<text x="${x + 14}" y="${y + 24}" font-family="${FONT}" font-size="9" font-weight="600" fill="${colour}" letter-spacing="0.3"${strike}>${esc(clip(node.kind, 26))}</text>
+<text x="${x + 14}" y="${y + 46}" font-family="${FONT}" font-size="12" font-weight="700" fill="${INK}"${strike}>${esc(clip(node.label, 20))}</text>${mark}${node.badges.findings ? marker(node.badges.findings, x + node.width - 6, y) : ""}
 </g>`;
-}
-
-/** The words under the picture: what was hidden, what the findings are, what the colours mean. */
-export function footerLines(view: GraphView): string[] {
-  const lines: string[] = [];
-  if (view.mode === "delta") lines.push("Delta view: what changed, and the resources one reference away from it.");
-  if (view.hidden.count > 0) {
-    const shown = view.hidden.types.slice(0, 4).map((t) => `${t.type} x${t.count}`);
-    const more = view.hidden.types.length - shown.length;
-    lines.push(`${view.hidden.count} glue resource${view.hidden.count === 1 ? "" : "s"} hidden: ${shown.join(", ")}${more > 0 ? `, and ${more} more type${more === 1 ? "" : "s"}` : ""}.`);
-  }
-  if (view.findings) {
-    const parts = SEVERITIES.flatMap((s) => (view.findings?.bySeverity[s] ? [`${view.findings.bySeverity[s]} ${s}`] : []));
-    const placed = view.findings.total - view.findings.unplaced;
-    lines.push(`Findings: ${placed} placed${parts.length > 0 ? ` (${parts.join(", ")})` : ""}${view.findings.unplaced > 0 ? `, ${view.findings.unplaced} not placed` : ""}.`);
-  }
-  return lines;
-}
-
-export function headerLines(view: GraphView): string[] {
-  const lines: string[] = [];
-  if (view.title) lines.push(view.title);
-  if (view.changes) {
-    const c = view.changes;
-    lines.push(`Resources +${c.nodesAdded} -${c.nodesRemoved} ~${c.nodesChanged}, references +${c.edgesAdded} -${c.edgesRemoved}`);
-  }
-  return lines;
 }
 
 function legend(view: GraphView, y: number): string {
@@ -174,15 +140,15 @@ function legend(view: GraphView, y: number): string {
 }
 
 export function renderGraphSvg(view: GraphView): string {
-  const head = headerLines(view);
-  const top = head.length * 18 + (head.length > 0 ? 6 : 0);
+  const layout = layoutGraphView(view);
+  const head = layout.header;
+  const top = layout.top;
   const empty = view.nodes.length === 0;
-  const layout = empty ? undefined : layoutGraph(view, top);
-  const foot = footerLines(view);
+  const foot = layout.footer;
   const message = empty ? (view.mode === "delta" ? "No changes." : "No resources to draw.") : "";
 
-  const bodyWidth = layout?.width ?? 360;
-  const bodyHeight = layout?.height ?? top + 56;
+  const bodyWidth = empty ? 360 : layout.width;
+  const bodyHeight = empty ? top + 56 : layout.height;
   const keyItems = legend(view, 0) !== "";
   const footTop = bodyHeight + 4;
   const width = Math.ceil(Math.max(bodyWidth, 360));
@@ -192,21 +158,15 @@ export function renderGraphSvg(view: GraphView): string {
   head.forEach((line, i) => {
     parts.push(`<text x="24" y="${24 + i * 18}" font-family="${FONT}" font-size="${i === 0 && view.title ? 14 : 11}" font-weight="${i === 0 && view.title ? 700 : 400}" fill="${i === 0 && view.title ? INK : MUTED}">${esc(line)}</text>`);
   });
-  if (layout) {
-    for (const group of view.groups) {
-      const box = layout.groups.get(group.id);
-      if (box) parts.push(groupSvg(group, box));
-    }
-    view.edges.forEach((edge, i) => {
-      const d = curve(layout.edges[i] ?? []);
-      if (d === "") return;
+  if (!empty) {
+    for (const group of layout.groups) parts.push(groupSvg(group));
+    for (const edge of layout.edges) {
+      const d = curve(edge.points);
+      if (d === "") continue;
       const s = EDGE_STYLE[edge.status];
       parts.push(`<path d="${d}" fill="none" stroke="${s.stroke}" stroke-width="${s.width}"${s.dash ? ` stroke-dasharray="${s.dash}"` : ""} marker-end="url(#tg-arrow-${edge.status})"/>`);
-    });
-    for (const node of view.nodes) {
-      const box = layout.nodes.get(node.id);
-      if (box) parts.push(nodeSvg(node, box));
     }
+    for (const node of layout.nodes) parts.push(nodeSvg(node));
   } else {
     parts.push(`<text x="24" y="${top + 36}" font-family="${FONT}" font-size="12" fill="${MUTED}">${message}</text>`);
   }

@@ -1,0 +1,423 @@
+{
+  "schema": "diagram.graph-layout/v1",
+  "cloud": "aws",
+  "title": "Estate",
+  "mode": "full",
+  "compared": true,
+  "width": 934,
+  "height": 520,
+  "top": 42,
+  "cut": null,
+  "header": [
+    "Estate",
+    "Resources +1 -1 ~1, references +3 -1"
+  ],
+  "footer": [
+    "1 glue resource hidden: aws_iam_role_policy_attachment x1.",
+    "Findings: 2 placed (1 high, 1 low)."
+  ],
+  "groups": [
+    {
+      "id": "g0",
+      "kind": "scope",
+      "label": "AWS account 123456789012",
+      "heading": "AWS account 123456789012",
+      "parent": null,
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": {
+          "count": 1,
+          "worst": "low",
+          "bySeverity": {
+            "low": 1
+          }
+        }
+      },
+      "x": 24,
+      "y": 66,
+      "width": 886,
+      "height": 430
+    },
+    {
+      "id": "g1",
+      "kind": "module",
+      "label": "module terraform-aws-modules/vpc/aws",
+      "detail": "5.13.0",
+      "heading": "module terraform-aws-modules/vpc/aws 5.13.0 [changed]",
+      "parent": "g0",
+      "status": "changed",
+      "badges": {
+        "change": "changed",
+        "findings": null
+      },
+      "x": 256,
+      "y": 236,
+      "width": 422,
+      "height": 246
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n0",
+      "kind": "module call",
+      "category": "other",
+      "label": "terraform-aws-modules/vpc/aws",
+      "title": "module call terraform-aws-modules/vpc/aws, changed",
+      "group": "g1",
+      "status": "changed",
+      "badges": {
+        "change": "changed",
+        "findings": null
+      },
+      "x": 270,
+      "y": 272,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n1",
+      "kind": "aws_iam_policy",
+      "category": "identity",
+      "label": "ReadOnlyAccess",
+      "title": "aws_iam_policy ReadOnlyAccess",
+      "group": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 724,
+      "y": 406,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n2",
+      "kind": "aws_iam_role",
+      "category": "identity",
+      "label": "web-role",
+      "title": "aws_iam_role web-role",
+      "group": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 724,
+      "y": 272,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n3",
+      "kind": "aws_instance",
+      "category": "compute",
+      "label": "i-0abc123def456",
+      "title": "aws_instance i-0abc123def456, region eu-west-1",
+      "group": "g0",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 280,
+      "y": 102,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n4",
+      "kind": "aws_instance",
+      "category": "compute",
+      "label": "i-0old999",
+      "title": "aws_instance i-0old999, region eu-west-1, removed",
+      "group": "g0",
+      "region": "eu-west-1",
+      "status": "removed",
+      "badges": {
+        "change": "removed",
+        "findings": null
+      },
+      "x": 588,
+      "y": 102,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n5",
+      "kind": "aws_security_group",
+      "category": "network",
+      "label": "sg-0123abcd",
+      "title": "aws_security_group sg-0123abcd, region eu-west-1, added",
+      "group": "g0",
+      "region": "eu-west-1",
+      "status": "added",
+      "badges": {
+        "change": "added",
+        "findings": null
+      },
+      "x": 38,
+      "y": 272,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n6",
+      "kind": "aws_subnet",
+      "category": "network",
+      "label": "subnet-0f1e2d3c",
+      "title": "aws_subnet subnet-0f1e2d3c, region eu-west-1",
+      "group": "g1",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 492,
+      "y": 272,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n7",
+      "kind": "aws_vpc",
+      "category": "network",
+      "label": "vpc-0a1b2c3d",
+      "title": "aws_vpc vpc-0a1b2c3d, region eu-west-1",
+      "group": "g1",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": {
+          "count": 1,
+          "worst": "high",
+          "bySeverity": {
+            "high": 1
+          }
+        }
+      },
+      "x": 472,
+      "y": 406,
+      "width": 172,
+      "height": 62
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "source": "n2",
+      "target": "n1",
+      "kind": "reference",
+      "status": "unchanged",
+      "points": [
+        {
+          "x": 810,
+          "y": 334
+        },
+        {
+          "x": 810,
+          "y": 370
+        },
+        {
+          "x": 810,
+          "y": 406
+        }
+      ]
+    },
+    {
+      "id": "e1",
+      "source": "n3",
+      "target": "n0",
+      "kind": "reference",
+      "status": "added",
+      "points": [
+        {
+          "x": 361,
+          "y": 164
+        },
+        {
+          "x": 356,
+          "y": 200
+        },
+        {
+          "x": 356,
+          "y": 236
+        },
+        {
+          "x": 356,
+          "y": 272
+        }
+      ]
+    },
+    {
+      "id": "e2",
+      "source": "n3",
+      "target": "n2",
+      "kind": "reference",
+      "status": "unchanged",
+      "points": [
+        {
+          "x": 452,
+          "y": 146
+        },
+        {
+          "x": 810,
+          "y": 200
+        },
+        {
+          "x": 810,
+          "y": 236
+        },
+        {
+          "x": 810,
+          "y": 272
+        }
+      ]
+    },
+    {
+      "id": "e3",
+      "source": "n3",
+      "target": "n5",
+      "kind": "reference",
+      "status": "added",
+      "points": [
+        {
+          "x": 280,
+          "y": 157
+        },
+        {
+          "x": 124,
+          "y": 200
+        },
+        {
+          "x": 124,
+          "y": 236
+        },
+        {
+          "x": 124,
+          "y": 272
+        }
+      ]
+    },
+    {
+      "id": "e4",
+      "source": "n3",
+      "target": "n6",
+      "kind": "reference",
+      "status": "unchanged",
+      "points": [
+        {
+          "x": 415,
+          "y": 164
+        },
+        {
+          "x": 472,
+          "y": 200
+        },
+        {
+          "x": 472,
+          "y": 236
+        },
+        {
+          "x": 529,
+          "y": 272
+        }
+      ]
+    },
+    {
+      "id": "e5",
+      "source": "n4",
+      "target": "n6",
+      "kind": "reference",
+      "status": "removed",
+      "points": [
+        {
+          "x": 652,
+          "y": 164
+        },
+        {
+          "x": 626,
+          "y": 200
+        },
+        {
+          "x": 626,
+          "y": 236
+        },
+        {
+          "x": 600,
+          "y": 272
+        }
+      ]
+    },
+    {
+      "id": "e6",
+      "source": "n5",
+      "target": "n7",
+      "kind": "reference",
+      "status": "added",
+      "points": [
+        {
+          "x": 210,
+          "y": 324
+        },
+        {
+          "x": 404,
+          "y": 370
+        },
+        {
+          "x": 487,
+          "y": 406
+        }
+      ]
+    },
+    {
+      "id": "e7",
+      "source": "n6",
+      "target": "n7",
+      "kind": "reference",
+      "status": "unchanged",
+      "points": [
+        {
+          "x": 578,
+          "y": 334
+        },
+        {
+          "x": 578,
+          "y": 370
+        },
+        {
+          "x": 567,
+          "y": 406
+        }
+      ]
+    }
+  ],
+  "hidden": {
+    "count": 1,
+    "types": [
+      {
+        "type": "aws_iam_role_policy_attachment",
+        "count": 1
+      }
+    ]
+  },
+  "changes": {
+    "nodesAdded": 1,
+    "nodesRemoved": 1,
+    "nodesChanged": 1,
+    "edgesAdded": 3,
+    "edgesRemoved": 1
+  },
+  "findings": {
+    "total": 2,
+    "unplaced": 0,
+    "bySeverity": {
+      "high": 1,
+      "low": 1
+    }
+  }
+}

@@ -1,0 +1,234 @@
+{
+  "schema": "diagram.graph-layout/v1",
+  "cloud": "aws",
+  "mode": "full",
+  "compared": false,
+  "width": 1164,
+  "height": 344,
+  "top": 0,
+  "cut": {
+    "maxNodes": 6,
+    "nodes": 31,
+    "edges": 47
+  },
+  "header": [],
+  "footer": [
+    "Cut to the first 6 resources: 31 more and 47 references are not drawn.",
+    "11 glue resources hidden: aws_route_table_association x4, aws_iam_role_policy_attachment x2, aws_lb_target_group_attachment x2, aws_lambda_permission x1, and 2 more types."
+  ],
+  "groups": [
+    {
+      "id": "g0",
+      "kind": "scope",
+      "label": "AWS account 123456789012",
+      "heading": "AWS account 123456789012",
+      "parent": null,
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 24,
+      "y": 24,
+      "width": 1116,
+      "height": 296
+    },
+    {
+      "id": "g2",
+      "kind": "module",
+      "label": "module terraform-aws-modules/s3-bucket/aws",
+      "detail": "4.1.0",
+      "heading": "module terraform-aws…",
+      "parent": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 38,
+      "y": 194,
+      "width": 200,
+      "height": 112
+    },
+    {
+      "id": "g3",
+      "kind": "module",
+      "label": "module terraform-aws-modules/vpc/aws",
+      "detail": "5.13.0",
+      "heading": "module terraform-aws-modules/vpc/aws 5.13.0",
+      "parent": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 714,
+      "y": 194,
+      "width": 412,
+      "height": 112
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n0",
+      "kind": "module call",
+      "category": "other",
+      "label": "terraform-aws-modules/s3-bucket/aws",
+      "title": "module call terraform-aws-modules/s3-bucket/aws",
+      "group": "g2",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 52,
+      "y": 230,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n1",
+      "kind": "module call",
+      "category": "other",
+      "label": "terraform-aws-modules/vpc/aws",
+      "title": "module call terraform-aws-modules/vpc/aws",
+      "group": "g3",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 728,
+      "y": 230,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n2",
+      "kind": "aws_db_instance",
+      "category": "data",
+      "label": "db-main",
+      "title": "aws_db_instance db-main, region eu-west-1",
+      "group": "g0",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 284,
+      "y": 60,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n3",
+      "kind": "aws_db_subnet_group",
+      "category": "data",
+      "label": "main-db",
+      "title": "aws_db_subnet_group main-db, region eu-west-1",
+      "group": "g0",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 284,
+      "y": 230,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n4",
+      "kind": "aws_eip",
+      "category": "network",
+      "label": "eipalloc-0a1",
+      "title": "aws_eip eipalloc-0a1, region eu-west-1",
+      "group": "g3",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 940,
+      "y": 230,
+      "width": 172,
+      "height": 62
+    },
+    {
+      "id": "n5",
+      "kind": "aws_iam_instance_profile",
+      "category": "identity",
+      "label": "app-profile",
+      "title": "aws_iam_instance_profile app-profile",
+      "group": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 496,
+      "y": 230,
+      "width": 172,
+      "height": 62
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "source": "n2",
+      "target": "n3",
+      "kind": "reference",
+      "status": "unchanged",
+      "points": [
+        {
+          "x": 370,
+          "y": 122
+        },
+        {
+          "x": 370,
+          "y": 158
+        },
+        {
+          "x": 370,
+          "y": 194
+        },
+        {
+          "x": 370,
+          "y": 230
+        }
+      ]
+    }
+  ],
+  "hidden": {
+    "count": 11,
+    "types": [
+      {
+        "type": "aws_route_table_association",
+        "count": 4
+      },
+      {
+        "type": "aws_iam_role_policy_attachment",
+        "count": 2
+      },
+      {
+        "type": "aws_lb_target_group_attachment",
+        "count": 2
+      },
+      {
+        "type": "aws_lambda_permission",
+        "count": 1
+      },
+      {
+        "type": "null_resource",
+        "count": 1
+      },
+      {
+        "type": "random_id",
+        "count": 1
+      }
+    ]
+  }
+}

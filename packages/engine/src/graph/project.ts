@@ -71,12 +71,23 @@ export type GraphView = {
   hidden: { count: number; types: { type: string; count: number }[] };
   /** Counts of what changed between base and head, with glue left out. */
   changes?: { nodesAdded: number; nodesRemoved: number; nodesChanged: number; edgesAdded: number; edgesRemoved: number };
+  /** Present when the picture was cut to its first `maxNodes` resources: how many cards and references were left out. */
+  cut?: { maxNodes: number; nodes: number; edges: number };
   /** How many findings were given, how many found nothing to attach to, and how many of each severity were placed. */
   findings?: { total: number; unplaced: number; bySeverity: Partial<Record<Severity, number>> };
 };
 
+/**
+ * The most cards a picture holds. A larger estate is cut to its first ones in the order of the picture
+ * (scope, environment, module path, address, key) and the view says so in `cut`: the layout is the costly part
+ * and no reader can use a canvas of more.
+ */
+export const MAX_GRAPH_NODES = 1000;
+
 export type ProjectOptions = {
   title?: string;
+  /** Cards to draw at most, from the start of the picture's order. Default: {@link MAX_GRAPH_NODES}. */
+  maxNodes?: number;
   /** Which resources to leave out as glue; `false` leaves out none. Default: {@link DEFAULT_GLUE}. */
   glue?: Readonly<GlueRule> | false;
   /** The estate before: compare it with the document, and mark what was added, removed or changed. */
@@ -361,7 +372,7 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
     if (n > 0) bySeverity[severity] = n;
   }
 
-  return {
+  const view: GraphView = {
     schema: "diagram.graph-view/v1",
     cloud: doc.cloud,
     ...(options.title !== undefined && { title: options.title }),
@@ -384,5 +395,27 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
       },
     }),
     ...(given.length > 0 && { findings: { total: given.length, unplaced: given.length - placement.placed.length, bySeverity } }),
+  };
+  return cutView(view, options.maxNodes ?? MAX_GRAPH_NODES);
+}
+
+/** The view's first `maxNodes` cards, the references between them and the boxes around them; `cut` says what was left out. */
+function cutView(view: GraphView, maxNodes: number): GraphView {
+  const limit = Math.max(0, Math.floor(maxNodes));
+  if (view.nodes.length <= limit) return view;
+  const nodes = view.nodes.slice(0, limit);
+  const kept = new Set(nodes.map((n) => n.id));
+  const edges = view.edges.filter((e) => kept.has(e.from) && kept.has(e.to));
+  const parentOf = new Map(view.groups.map((g) => [g.id, g.parent]));
+  const used = new Set<string>();
+  for (const node of nodes) {
+    for (let id: string | null | undefined = node.group; id !== null && id !== undefined && !used.has(id); id = parentOf.get(id)) used.add(id);
+  }
+  return {
+    ...view,
+    groups: view.groups.filter((g) => used.has(g.id)),
+    nodes,
+    edges,
+    cut: { maxNodes: limit, nodes: view.nodes.length - nodes.length, edges: view.edges.length - edges.length },
   };
 }

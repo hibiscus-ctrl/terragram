@@ -1,0 +1,578 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hibiscus-ctrl/terragram/schemas/graph-layout.v1.schema.json",
+  "title": "Estate graph layout (diagram.graph-layout/v1)",
+  "description": "An infraharvest graph/v1 estate laid out as plain data: nodes and boxes with their rectangles, edges with their routes, and the badges (change, findings) each carries. These are the coordinates the engine's SVG is drawn from, so a viewer that places them draws the same picture. Every string is plain text, never markup. At most 1000 nodes; `cut` says when an estate was cut.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "diagram.graph-layout/v1"
+    },
+    "cloud": {
+      "type": "string",
+      "enum": [
+        "aws",
+        "azure",
+        "google"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "full",
+        "delta"
+      ]
+    },
+    "compared": {
+      "type": "boolean",
+      "description": "A base graph was given, so `status` and `badges.change` say what changed."
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The size of the picture, margins included; 0 when nothing is drawn."
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "top": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The room the header lines take above the picture: the SVG moves everything down by it."
+    },
+    "cut": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "maxNodes": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "The most nodes a layout holds."
+            },
+            "nodes": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Nodes left out."
+            },
+            "edges": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Edges left out because an end was."
+            }
+          },
+          "required": [
+            "maxNodes",
+            "nodes",
+            "edges"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Null when the whole estate is here; otherwise how much of it was left out."
+    },
+    "header": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The lines above the picture."
+    },
+    "footer": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The lines below the picture: what was hidden or cut, and what the findings are."
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "scope",
+              "environment",
+              "module"
+            ],
+            "description": "An account, subscription or project; an environment; a module call."
+          },
+          "label": {
+            "type": "string"
+          },
+          "detail": {
+            "description": "A module call's version.",
+            "type": "string"
+          },
+          "heading": {
+            "type": "string",
+            "description": "The text the SVG writes on the box's top edge."
+          },
+          "parent": {
+            "description": "The id of the box this one is inside.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unchanged",
+              "context",
+              "added",
+              "removed",
+              "changed"
+            ]
+          },
+          "badges": {
+            "type": "object",
+            "properties": {
+              "change": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "added",
+                      "removed",
+                      "changed"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "What a comparison with the base graph found, or null."
+              },
+              "findings": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "How many findings sit on this node or box."
+                      },
+                      "worst": {
+                        "type": "string",
+                        "enum": [
+                          "critical",
+                          "high",
+                          "medium",
+                          "low",
+                          "info"
+                        ]
+                      },
+                      "bySeverity": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "enum": [
+                            "critical",
+                            "high",
+                            "medium",
+                            "low",
+                            "info"
+                          ]
+                        },
+                        "additionalProperties": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "description": "How many of each severity."
+                      }
+                    },
+                    "required": [
+                      "count",
+                      "worst",
+                      "bySeverity"
+                    ],
+                    "description": "Findings placed on a node, or on a box and what is inside it."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "change",
+              "findings"
+            ]
+          },
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "heading",
+          "parent",
+          "status",
+          "badges",
+          "x",
+          "y",
+          "width",
+          "height"
+        ]
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "The resource type, or `module call`."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "network",
+              "compute",
+              "storage",
+              "identity",
+              "data",
+              "other"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "description": "The short name of a card, at most 24 characters; the SVG draws the first 20."
+          },
+          "title": {
+            "type": "string",
+            "description": "The tooltip: type, label, region and status."
+          },
+          "group": {
+            "type": "string",
+            "description": "The id of the box this node is inside."
+          },
+          "region": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unchanged",
+              "context",
+              "added",
+              "removed",
+              "changed"
+            ]
+          },
+          "badges": {
+            "type": "object",
+            "properties": {
+              "change": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "added",
+                      "removed",
+                      "changed"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "What a comparison with the base graph found, or null."
+              },
+              "findings": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "How many findings sit on this node or box."
+                      },
+                      "worst": {
+                        "type": "string",
+                        "enum": [
+                          "critical",
+                          "high",
+                          "medium",
+                          "low",
+                          "info"
+                        ]
+                      },
+                      "bySeverity": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "enum": [
+                            "critical",
+                            "high",
+                            "medium",
+                            "low",
+                            "info"
+                          ]
+                        },
+                        "additionalProperties": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "description": "How many of each severity."
+                      }
+                    },
+                    "required": [
+                      "count",
+                      "worst",
+                      "bySeverity"
+                    ],
+                    "description": "Findings placed on a node, or on a box and what is inside it."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "change",
+              "findings"
+            ]
+          },
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "category",
+          "label",
+          "title",
+          "group",
+          "status",
+          "badges",
+          "x",
+          "y",
+          "width",
+          "height"
+        ]
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "The id of the node that refers to the other."
+          },
+          "target": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "const": "reference"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unchanged",
+              "added",
+              "removed"
+            ]
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ]
+            },
+            "description": "The route the SVG draws, from the source to the target; empty when none was found."
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "target",
+          "kind",
+          "status",
+          "points"
+        ]
+      }
+    },
+    "hidden": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Glue resources left out of the picture."
+        },
+        "types": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "type",
+              "count"
+            ]
+          }
+        }
+      },
+      "required": [
+        "count",
+        "types"
+      ]
+    },
+    "changes": {
+      "type": "object",
+      "properties": {
+        "nodesAdded": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "nodesRemoved": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "nodesChanged": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edgesAdded": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edgesRemoved": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "nodesAdded",
+        "nodesRemoved",
+        "nodesChanged",
+        "edgesAdded",
+        "edgesRemoved"
+      ]
+    },
+    "findings": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unplaced": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bySeverity": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "info"
+            ]
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "required": [
+        "total",
+        "unplaced",
+        "bySeverity"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "cloud",
+    "mode",
+    "compared",
+    "width",
+    "height",
+    "top",
+    "cut",
+    "header",
+    "footer",
+    "groups",
+    "nodes",
+    "edges",
+    "hidden"
+  ]
+}

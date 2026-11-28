@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { type Box, layoutGraph } from "./layout.ts";
-import { CATEGORY_COLOUR, clip, EDGE_STYLE, footerLines, GROUP_STYLE, headerLines, INK, MUTED, STATUS_STYLE } from "./svg.ts";
+import { CATEGORY_COLOUR, EDGE_STYLE, GROUP_STYLE, INK, MUTED, STATUS_STYLE } from "./svg.ts";
+import { clip, footerLines, headerLines } from "./text.ts";
 import type { GraphView, ViewGroup, ViewNode } from "./project.ts";
 
 /**

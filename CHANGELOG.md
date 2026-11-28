@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `terragram-engine/graph` returns the layout of an estate as data: `layoutGraphDocument(doc, { base, findings, delta, title, maxNodes })`
+  (or `layoutGraphView(view)`) gives a `diagram.graph-layout/v1` value with the boxes (account, environment, module call) and cards as
+  rectangles, the references with the routes the picture draws, a `badges` object on each card and box (what changed against a base graph, and the findings by severity),
+  the header and footer lines, and `cut`. These are the SVG's own coordinates, so a viewer that places them (the web app's React Flow canvas) draws the
+  same picture; the SVG is now drawn from the layout, so the two cannot drift, and its bytes are unchanged. Every string is plain text with the control characters
+  dropped and its length bounded, never markup. The same input gives the same layout in any order of the document. The schema is
+  `schemas/graph-layout.v1.schema.json`, generated from the engine's zod schema.
+- A graph of more than `MAX_GRAPH_NODES` (1000) resources is cut to its first ones in the picture's order, in every format (SVG, draw.io, Mermaid, JSON and the layout), and
+  says so: `cut` in the view and the layout (the limit and how many cards and references were left out), and a line below the picture. Smaller graphs are unchanged.
+  `terragram-engine` is now 0.2.0 (still private; not published or tagged).
 - A node whose own grants reach the node itself is now marked as a way to widen its own access, instead of being dropped. A role whose inline
   policy allows `iam:PutRolePolicy`, `iam:AttachRolePolicy` or `iam:UpdateAssumeRolePolicy` (any IAM action that is not a read) on its own ARN, a
   managed policy that covers IAM attached to it, an Azure identity with an administrator role over its own id, and a Google Cloud service account with

@@ -193,6 +193,17 @@ the CLI, so its output is a contract.
   → `normalizeGraph` (index-free keys, glue folded away) → `projectGraph` (the `GraphView`: groups,
   nodes, edges, statuses, finding tallies) → `renderGraphSvg` / `renderGraphDrawio` / `renderGraphMermaid`. Layout is
   dagre as a compound graph, boxes drawn around members (`graph/layout.ts`).
+- **The layout is a public API** (`graph/layout-view.ts`, `diagram.graph-layout/v1`, `schemas/graph-layout.v1.schema.json`).
+  `layoutGraphDocument(doc, options)` (or `layoutGraphView(view)`) returns the picture as plain data: `groups` and `nodes` with their
+  rectangles (whole numbers, the SVG's coordinates, shifted down by `top` when a title or summary sits above), `edges` with their routes,
+  badges (`change`, `findings`), header and footer lines, `cut`. The web app's React Flow canvas places these; it must not lay out again.
+  **`renderGraphSvg` is drawn from it**, never from `layoutGraph` and the view side by side, so the two cannot drift
+  (`tests/graph-layout.test.ts` reads the SVG's rectangles back against the layout); draw.io still places `layoutGraph`'s boxes, which are the same ones.
+  Every string is cleaned once there (control characters dropped, length bounded) and is *text*: nothing is XML-escaped in it, so the SVG
+  escapes it on writing and a viewer must render it as text, never as HTML. A field is added there (and to the zod schema, then `npm run schemas:gen`) before any
+  renderer or viewer reads it. The bound is `MAX_GRAPH_NODES` (1000, `projectGraph`'s `maxNodes`): a larger estate is cut to the first cards of
+  the picture's order in `projectGraph`, so every format shows the same part, and `view.cut` / `layout.cut` and a footer line say how much was left out.
+  Changing the shape is a new schema version.
 - **Deterministic by construction.** Every order is by key with `compareText` (never `localeCompare`; the receipt hash, the preview id and the variable order included),
   ids are assigned after sorting, coordinates are rounded, nothing reads the clock or the environment.
   The one order of a picture (`byPlace` in `graph/project.ts`) is scope, environment name, module path
