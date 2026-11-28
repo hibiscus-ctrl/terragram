@@ -368,11 +368,11 @@ describe("only what the generator writes is hidden as scaffolding", () => {
   member = "${member}"
 }
 `;
+  /** Whether the block is hidden; a block the file does not have is not. */
   const scaffold = (source: string, type: string, name: string) => {
     const blocks = parseHcl(source);
     const found = blocks.find((b) => b.labels[0] === type && b.labels[1] === name);
-    assert.ok(found, `${type}.${name}`);
-    return isScaffoldResource(found, blocks);
+    return found !== undefined && isScaffoldResource(found, blocks);
   };
   const buckets = (source: string) => {
     const parsed = parseTerraform(source);
@@ -447,21 +447,84 @@ ${extra}}
     for (const odd of [archive("  excludes = []\n"), archive().replace("/src/fn", "/../../etc"), archive().replace('"zip"', '"tar"')]) {
       assert.equal(isScaffoldResource(blocks(odd)[0] as never, blocks(odd)), false, odd);
     }
-    const service = `resource "google_project_service" "enabled" {\n  for_each = toset(["a.googleapis.com"])\n  service = each.value\n  disable_on_destroy = false\n}\n`;
-    assert.equal(scaffold(service, "google_project_service", "enabled"), true);
-    assert.equal(scaffold(service.replace("enabled", "mine"), "google_project_service", "mine"), false);
-    assert.equal(scaffold(service.replace("each.value", '"iam.googleapis.com"'), "google_project_service", "enabled"), false);
-    const address = (purpose: string) => `resource "google_compute_global_address" "private_services" {
+    const service = (extra = "", each = '["a.googleapis.com", "b.googleapis.com"]') =>
+      `resource "google_project_service" "enabled" {\n  for_each = toset(${each})\n  service = each.value\n  disable_on_destroy = false\n${extra}}\n`;
+    const project = 'resource "google_project" "p" {\n  name = "p"\n  project_id = "p"\n}\n';
+    assert.equal(scaffold(service(), "google_project_service", "enabled"), true);
+    assert.equal(scaffold(`${project}${service("  project = google_project.p.project_id\n")}`, "google_project_service", "enabled"), true);
+    for (const [label, odd] of [
+      ["a service that is not each.value", service().replace("each.value", '"iam.googleapis.com"')],
+      ["a project of its own", service('  project = "someone-elses"\n')],
+      ["a project that is not in the file", service("  project = google_project.gone.project_id\n")],
+      ["an extra argument", service("  count = 1\n")],
+      ["an extra block", service().replace(/\}\n$/, "  lifecycle {}\n}\n")],
+      ["a variable list", service("", "var.apis")],
+      ["a list with something that is not an API", service("", '["a.googleapis.com", "evil.example.com"]')],
+      ["an empty list", service("", "[]")],
+      ["a list with an expression", service("", '["a.googleapis.com", var.extra]')],
+      ["disable_on_destroy true", service().replace("= false", "= true")],
+    ] as const) {
+      assert.equal(scaffold(odd, "google_project_service", "enabled"), false, label);
+    }
+
+    assert.equal(scaffold(service().replace("enabled", "mine"), "google_project_service", "mine"), false, "another name");
+
+    // The private services range and connection, in use by an instance on their network, and every near miss.
+    const range = (extra = "") => `resource "google_compute_global_address" "private_services" {
   name          = "r"
-  purpose       = "${purpose}"
+  purpose       = "VPC_PEERING"
   address_type  = "INTERNAL"
   prefix_length = 20
-  network       = "n"
+  network       = google_compute_network.n.id
+${extra}}
+`;
+    const connection = (extra = "") => `resource "google_service_networking_connection" "private_services" {
+  network                 = google_compute_network.n.id
+  service                 = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [google_compute_global_address.private_services.name]
+  deletion_policy         = "ABANDON"
+${extra}}
+`;
+    const database = (network = "google_compute_network.n.id", waits = "[google_service_networking_connection.private_services]") => `resource "google_sql_database_instance" "db" {
+  name       = "db"
+  depends_on = ${waits}
+
+  settings {
+    tier = "db-custom-1-3840"
+
+    ip_configuration {
+      private_network = ${network}
+    }
+  }
 }
 `;
-    assert.equal(scaffold(address("VPC_PEERING"), "google_compute_global_address", "private_services"), true);
-    assert.equal(scaffold(address("PRIVATE_SERVICE_CONNECT"), "google_compute_global_address", "private_services"), false);
-    assert.equal(scaffold(address("VPC_PEERING").replace("private_services", "mine"), "google_compute_global_address", "mine"), false);
+    const cache = `resource "google_redis_instance" "c" {
+  name               = "c"
+  authorized_network = google_compute_network.n.id
+  depends_on         = [google_service_networking_connection.private_services]
+}
+`;
+    const used = `${range()}${connection()}${database()}`;
+    assert.equal(scaffold(used, "google_compute_global_address", "private_services"), true);
+    assert.equal(scaffold(used, "google_service_networking_connection", "private_services"), true);
+    assert.equal(scaffold(`${range()}${connection()}${cache}`, "google_service_networking_connection", "private_services"), true);
+    for (const [label, source] of [
+      ["no instance uses them", `${range()}${connection()}`],
+      ["the instance is on another network", `${range()}${connection()}${database("google_compute_network.other.id")}`],
+      ["the instance does not wait for the connection", `${range()}${connection()}${database(undefined, "[]")}`],
+      ["the range alone", `${range()}${database()}`],
+      ["the connection alone", `${connection()}${database()}`],
+      ["the range has an extra argument", `${range('  description = "mine"\n')}${connection()}${database()}`],
+      ["the connection has an extra argument", `${range()}${connection('  update_on_create_only = true\n')}${database()}`],
+      ["the connection names another range", `${range()}${connection().replace("[google_compute_global_address.private_services.name]", '["theirs"]')}${database()}`],
+      ["the connection is to another service", `${range()}${connection().replace("servicenetworking.googleapis.com", "other.googleapis.com")}${database()}`],
+      ["the range is on another network", `${range().replace("n.id", "x.id")}${connection()}${database()}`],
+      ["the range is not for peering", `${range().replace("VPC_PEERING", "PRIVATE_SERVICE_CONNECT")}${connection()}${database()}`],
+    ] as const) {
+      assert.equal(scaffold(source, "google_service_networking_connection", "private_services"), false, `connection: ${label}`);
+      assert.equal(scaffold(source, "google_compute_global_address", "private_services"), false, `range: ${label}`);
+    }
+    assert.equal(scaffold(used.replace("address\" \"private_services\"", "address\" \"mine\""), "google_compute_global_address", "mine"), false);
   });
 
   it("hides nothing in what a plan generates that a reviewer would need to see: every scaffold block is accounted for", () => {

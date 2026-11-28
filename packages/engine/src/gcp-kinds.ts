@@ -133,12 +133,13 @@ function expressionsIn(b: HclBlock): string[] {
 }
 
 /**
- * Whether a block carries these attributes and no others, each once. The one thing it may carry besides is the
+ * Whether a block carries these attributes and no others, each once, and no nested blocks unless `blocks` allows them
+ * (a bucket's versioning and logging). The one thing it may carry besides is the
  * plan's own wait for the APIs it enables, which `terraform.ts` adds to a resource that stands on nothing else.
  */
-function hasExactly(b: HclBlock, keys: readonly string[]): boolean {
+function hasExactly(b: HclBlock, keys: readonly string[], blocks = false): boolean {
   const own = b.attributes.filter((a) => !(a.key === "depends_on" && a.value.replace(/\s+/g, "") === "[google_project_service.enabled]"));
-  return own.length === keys.length && keys.every((k) => own.filter((a) => a.key === k).length === 1);
+  return (blocks || b.blocks.length === 0) && own.length === keys.length && keys.every((k) => own.filter((a) => a.key === k).length === 1);
 }
 
 const compact = (value: string | undefined): string => (value ?? "").replace(/\s+/g, "");
@@ -153,7 +154,7 @@ const compact = (value: string | undefined): string => (value ?? "").replace(/\s
 function isScaffoldBucket(all: readonly HclBlock[], name: string): boolean {
   const b = all.find((x) => x.type === "resource" && x.labels[0] === "google_storage_bucket" && x.labels[1] === name);
   if (!b) return false;
-  if (!hasExactly(b, ["name", "location", "storage_class", "uniform_bucket_level_access", "public_access_prevention", "force_destroy", "labels"])) return false;
+  if (!hasExactly(b, ["name", "location", "storage_class", "uniform_bucket_level_access", "public_access_prevention", "force_destroy", "labels"], true)) return false;
   const v = (key: string) => attributeOf(b, key);
   if (v("location") !== "var.region" || v("storage_class") !== '"STANDARD"' || v("uniform_bucket_level_access") !== "true") return false;
   if (v("public_access_prevention") !== '"enforced"' || !/^(true|false)$/.test(v("force_destroy") ?? "")) return false;
@@ -172,6 +173,35 @@ function isScaffoldBucket(all: readonly HclBlock[], name: string): boolean {
     );
   }
   return all.some((o) => o.type === "resource" && o.labels[0] === "google_cloudfunctions2_function" && expressionsIn(o).includes(ref));
+}
+
+/**
+ * Whether the private services range and connection the plan adds are what they look like: each exactly as
+ * written, on the same network, naming each other, with a Cloud SQL or Memorystore instance on that network that
+ * waits for the connection. Without that, they are a peering of the file's own and are drawn.
+ */
+function privateServicesInUse(all: readonly HclBlock[]): boolean {
+  const resource = (type: string) => all.find((o) => o.type === "resource" && o.labels.length === 2 && o.labels[0] === type && o.labels[1] === "private_services");
+  const address = resource("google_compute_global_address");
+  const connection = resource("google_service_networking_connection");
+  if (!address || !connection) return false;
+  const exact =
+    hasExactly(address, ["name", "purpose", "address_type", "prefix_length", "network"]) &&
+    attributeOf(address, "purpose") === '"VPC_PEERING"' &&
+    attributeOf(address, "address_type") === '"INTERNAL"' &&
+    hasExactly(connection, ["network", "service", "reserved_peering_ranges", "deletion_policy"]) &&
+    attributeOf(connection, "service") === '"servicenetworking.googleapis.com"' &&
+    attributeOf(connection, "reserved_peering_ranges") === "[google_compute_global_address.private_services.name]";
+  const network = compact(attributeOf(address, "network"));
+  if (!exact || network === "" || compact(attributeOf(connection, "network")) !== network) return false;
+  return all.some((o) => {
+    if (o.type !== "resource" || !["google_sql_database_instance", "google_redis_instance"].includes(o.labels[0] ?? "")) return false;
+    const on =
+      o.labels[0] === "google_redis_instance"
+        ? attributeOf(o, "authorized_network")
+        : o.blocks.find((c) => c.type === "settings")?.blocks.find((c) => c.type === "ip_configuration")?.attributes.find((a) => a.key === "private_network")?.value;
+    return compact(on) === network && compact(attributeOf(o, "depends_on")).includes("google_service_networking_connection.private_services");
+  });
 }
 
 /** The bucket a `google_storage_bucket.<name>.name` reference names, when it is one. */
@@ -202,27 +232,35 @@ export function isGcpScaffold(b: HclBlock, all: readonly HclBlock[]): boolean {
   }
   if (b.type !== "resource" || b.labels.length !== 2 || name === undefined) return false;
   switch (type) {
-    case "google_project_service":
+    case "google_project_service": {
+      // The plan's one switch for the APIs its components use, in the project it works in: the provider's own, or
+      // a project the file creates. A literal list of Google API names and nothing else, so it enables only APIs.
+      const project = attributeOf(b, "project");
+      const created = /^google_project\.([a-z0-9_]+)\.project_id$/.exec(project ?? "")?.[1];
       return (
         name === "enabled" &&
-        b.attributes.every((a) => ["for_each", "project", "service", "disable_on_destroy"].includes(a.key)) &&
+        hasExactly(b, project === undefined ? ["for_each", "service", "disable_on_destroy"] : ["for_each", "project", "service", "disable_on_destroy"]) &&
+        (project === undefined || (created !== undefined && all.some((o) => o.type === "resource" && o.labels[0] === "google_project" && o.labels[1] === created))) &&
         attributeOf(b, "service") === "each.value" &&
         attributeOf(b, "disable_on_destroy") === "false" &&
-        (attributeOf(b, "for_each") ?? "").startsWith("toset([")
+        /^toset\(\["[a-z0-9.-]+\.googleapis\.com"(,"[a-z0-9.-]+\.googleapis\.com")*\]\)$/.test(compact(attributeOf(b, "for_each")))
       );
+    }
     case "google_compute_global_address":
       return (
         name === "private_services" &&
         hasExactly(b, ["name", "purpose", "address_type", "prefix_length", "network"]) &&
         attributeOf(b, "purpose") === '"VPC_PEERING"' &&
-        attributeOf(b, "address_type") === '"INTERNAL"'
+        attributeOf(b, "address_type") === '"INTERNAL"' &&
+        privateServicesInUse(all)
       );
     case "google_service_networking_connection":
       return (
         name === "private_services" &&
         hasExactly(b, ["network", "service", "reserved_peering_ranges", "deletion_policy"]) &&
         attributeOf(b, "service") === '"servicenetworking.googleapis.com"' &&
-        attributeOf(b, "reserved_peering_ranges") === "[google_compute_global_address.private_services.name]"
+        attributeOf(b, "reserved_peering_ranges") === "[google_compute_global_address.private_services.name]" &&
+        privateServicesInUse(all)
       );
     case "google_storage_bucket":
       return isScaffoldBucket(all, name);
