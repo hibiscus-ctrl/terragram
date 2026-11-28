@@ -379,10 +379,10 @@ describe("a node whose only change is its access to itself", () => {
 
   it("is said in those words, not as a change of kind", () => {
     const added = report(plain, admin);
-    assert.match(added, /- `entra-id` can now widen its own access: admin$/m);
-    assert.match(report(plain, conditional), /- `entra-id` may now widen its own access: admin, conditional$/m);
-    assert.match(report(admin, plain), /- `entra-id` no longer can widen its own access \(was admin\)$/m);
-    assert.match(report(admin, conditional), /- `entra-id` may widen its own access: admin to admin, conditional$/m);
+    assert.match(added, /- entra-id can now widen its own access: admin$/m);
+    assert.match(report(plain, conditional), /- entra-id may now widen its own access: admin, conditional$/m);
+    assert.match(report(admin, plain), /- entra-id no longer can widen its own access \(was admin\)$/m);
+    assert.match(report(admin, conditional), /- entra-id may widen its own access: admin to admin, conditional$/m);
     for (const text of [added, report(admin, plain), report(admin, conditional)]) assert.doesNotMatch(text, /changed: /);
   });
 
@@ -391,7 +391,7 @@ describe("a node whose only change is its access to itself", () => {
     const node = renamed.nodes.find((n) => n.selfAccess);
     assert.ok(node);
     node.label = "Renamed";
-    assert.match(report(admin, renamed), /`entra-id` changed: "Managed Identity" to "Renamed"/);
+    assert.match(report(admin, renamed), /entra-id changed: "Managed Identity" to "Renamed"/);
   });
 });
 

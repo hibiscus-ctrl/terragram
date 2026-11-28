@@ -441,6 +441,16 @@ describe("the access changes in the report", () => {
     ]);
   });
 
+  it("does not let a node id open markup, a link or a mention, or break the line, in a line about a node's own access or its change", () => {
+    const hostile = "a`b\n[x](https://evil.example)<i>@octocat";
+    const first = n(hostile, "Role", "entra-id");
+    const selfLines = report(model([first], []), model([{ ...first, selfAccess: "admin" }], [])).split("\n").filter((l) => /widen its own access/.test(l));
+    const changed = report(model([first], []), model([{ ...first, kind: "functions" }], [])).split("\n").filter((l) => /changed:/.test(l));
+    assert.equal(selfLines.length, 1);
+    assert.equal(changed.length, 1);
+    for (const line of [...selfLines, ...changed]) assert.doesNotMatch(line, /[<>[\]`@]|:\/\//, line);
+  });
+
   it("neutralises links, autolinks and mentions in names taken from the model file", () => {
     const labels = ["https://evil.example/x", "see www.evil.example", "WWW.EVIL.EXAMPLE", "ftp://evil.example", "@octocat and @org/team", "a@evil.example", "mailto:a@evil.example", "<https://evil.example>", "[x](https://evil.example)", "&#64;octocat &commat;octocat"];
     for (const label of labels) {

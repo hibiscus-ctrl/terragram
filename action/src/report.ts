@@ -196,7 +196,7 @@ function accessLines(diff: ModelDiff): string[] {
 
 /** A node whose only change is its access to itself: said in those words, not as a change of kind. "may" when the access is conditional or could not be read closely. */
 function selfOnlyLine(before: ModelNode, after: ModelNode): string {
-  const id = `\`${before.id.replaceAll("`", "'")}\``;
+  const id = markdownText(before.id);
   const was = selfAccessLabel(before);
   const now = selfAccessLabel(after);
   const may = after.selfConditional || after.selfAccess === "unscoped" ? "may" : "can";
@@ -259,7 +259,7 @@ function modelSection(input: ReportInput): string[] {
           before.label !== after.label
             ? `"${markdownText(before.label)}" to "${markdownText(after.label)}"`
             : `${markdownText(before.kind)} to ${markdownText(after.kind)}`;
-        return `\`${before.id.replaceAll("`", "'")}\` changed: ${what}`;
+        return `${markdownText(before.id)} changed: ${what}`;
       }),
       "",
     );
