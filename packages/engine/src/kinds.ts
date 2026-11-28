@@ -14,6 +14,14 @@ import {
 import type { Cloud, GeneratedCloud, ModelNode, NodeCategory, ReviewFlag } from "./model.ts";
 import { MODULE_VERSIONS, type ModuleKey } from "./module-versions.ts";
 import { PROVIDER_VERSIONS } from "./provider-versions.ts";
+import {
+  functionRuntimeFrom,
+  GCP,
+  type GcpPlan,
+  isGcpScaffold,
+  redisSkuFrom,
+  runSizeFrom,
+} from "./gcp-kinds.ts";
 
 /**
  * The kind registry — the single place a resource kind is defined.
@@ -100,8 +108,10 @@ export type EmitContext = {
   attr: (key: string) => string;
   /** The model's network on this cloud, or null when it has none. */
   net: NetworkRefs | null;
-  /** The Azure plan's private network, which every Azure plan has; null on AWS. */
+  /** The Azure plan's private network, which every Azure plan has; null elsewhere. */
   private: PrivateNetwork | null;
+  /** What a Google Cloud kind asks of the plan around it (APIs, private service access); null elsewhere. */
+  gcp: GcpPlan | null;
 };
 
 /**
@@ -169,6 +179,8 @@ export type SettingsTarget = {
   nestedBlock?: string;
   /** The map attribute that holds the settings. */
   attribute: string;
+  /** Where the provider has no map for them (Cloud Run's repeated `env` blocks), how an entry is written instead. */
+  append?: (host: HclBlock, entry: { key: string; value: string }) => void;
 };
 
 type CloudEmit = {
@@ -231,6 +243,9 @@ export type CloudSpec = {
  */
 export type ReadSpec = Pick<CloudSpec, "type" | "matches" | "matchBlock" | "read" | "moduleSource" | "moduleMatches">;
 
+/** A Google Cloud kind's spec: what it reads back from, and, when Terragram builds it, how. */
+type GcpSpec = ReadSpec & Partial<Omit<CloudSpec, keyof ReadSpec>>;
+
 /** A hostname the plan's own DNS zone publishes, and where that zone's records go. */
 export type CustomDomain = {
   /** Terraform name for the blocks the domain adds. */
@@ -261,8 +276,8 @@ export type KindDefinition = {
   fields: readonly KindField[];
   azure: CloudSpec | null;
   aws: CloudSpec | null;
-  /** Google Cloud: read only. A kind with only this is drawn and explained, never built. */
-  gcp?: ReadSpec | null;
+  /** Google Cloud. With an `emit` the kind is built; without one it is read, drawn and explained only. */
+  gcp?: GcpSpec | null;
 };
 
 /* ----------------------------------------------------------- option tables -- */
@@ -1087,6 +1102,29 @@ function hasWebsite(b: HclBlock): boolean {
   return b.blocks.some((x) => x.type === "website") || attr(b, "website") !== undefined;
 }
 
+/** The plan a Google Cloud kind asks things of; `terraform.ts` supplies it, and a context built without one asks nothing. */
+function gcpPlan(c: EmitContext): GcpPlan {
+  return c.gcp ?? { api: () => undefined, privateServices: () => "" };
+}
+
+/** A block nested under `b` by the labels in `path`, the first of each. */
+function childBlock(b: HclBlock, ...path: string[]): HclBlock | undefined {
+  let at: HclBlock | undefined = b;
+  for (const type of path) at = at?.blocks.find((x) => x.type === type);
+  return at;
+}
+
+/** Cloud Run takes its environment as repeated `env` blocks of the container, not a map. */
+function appendRunEnv(host: HclBlock, entry: { key: string; value: string }): void {
+  const template = host.blocks.find((x) => x.type === "template");
+  const container = template?.blocks.find((x) => x.type === "containers");
+  if (!container) return;
+  container.blocks.push(block("env", [], [
+    { key: "name", value: quote(entry.key) },
+    { key: "value", value: entry.value },
+  ]));
+}
+
 export const KIND_DEFINITIONS: readonly KindDefinition[] = [
   {
     kind: "internet",
@@ -1152,6 +1190,7 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       type: "google_dns_managed_zone",
       matches: ["google_dns_record_set"],
       moduleSource: GCP_MODULES.dns,
+      emit: (c) => GCP.dns.emit({ ...c, gcp: gcpPlan(c) }),
       read: (b) => readOne(b, "dns_name", "Zone name", (v) => (/^[A-Za-z0-9.-]{1,120}$/.test(v) ? withoutTrailingDot(v) : undefined)),
     },
   },
@@ -1857,6 +1896,13 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       type: "google_cloud_run_v2_service",
       matches: ["google_cloud_run_service", "google_cloud_run_v2_job"],
       moduleSource: GCP_MODULES.cloudRun,
+      emit: (c) => GCP.containers.emit({ ...c, gcp: gcpPlan(c) }),
+      read: (b) => {
+        const limits = childBlock(b, "template", "containers", "resources");
+        return readOne(limits ?? b, "limits", "Container size", (v) => runSizeFrom(/cpu\s*=\s*"([^"]+)"/.exec(v)?.[1]));
+      },
+      settings: { attribute: "", append: appendRunEnv },
+      hostname: (ref) => `trimprefix(${refAddress(ref, "uri")}, "https://")`,
     },
   },
 
@@ -2023,6 +2069,10 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     gcp: {
       type: "google_cloudfunctions2_function",
       matches: ["google_cloudfunctions_function"],
+      emit: (c) => GCP.functions.emit({ ...c, gcp: gcpPlan(c) }),
+      read: (b) => readOne(childBlock(b, "build_config") ?? b, "runtime", "Runtime", (v) => functionRuntimeFrom(v)),
+      settings: { nestedBlock: "service_config", attribute: "environment_variables" },
+      hostname: (ref) => `trimprefix(${refAddress(ref)}.service_config[0].uri, "https://")`,
     },
   },
 
@@ -2171,6 +2221,8 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       type: "google_pubsub_topic",
       matches: ["google_pubsub_subscription"],
       moduleSource: GCP_MODULES.pubsub,
+      emit: (c) => GCP.queue.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "PUBSUB_TOPIC", value: refAddress(ref, "id") }),
     },
   },
 
@@ -2252,8 +2304,19 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     },
     gcp: {
       type: "google_compute_network",
-      matches: ["google_compute_subnetwork"],
+      matches: [
+        "google_compute_subnetwork",
+        "google_compute_firewall",
+        "google_compute_router",
+        "google_compute_router_nat",
+      ],
       moduleSource: GCP_MODULES.network,
+      emit: (c) => GCP.network.emit({ ...c, gcp: gcpPlan(c) }),
+      read: (b) =>
+        // The subnet is cidrsubnet(<space>, 8, 1) of the space the model drew; the network holds neither.
+        readOne(b, "ip_cidr_range", "Address space", (v) => /^cidrsubnet\(\s*"([^"]+)"/.exec(v)?.[1]),
+      connection: (ref) => ({ key: "VPC_ID", value: refAddress(ref, "id") }),
+      network: (name) => GCP.network.refs(name),
     },
   },
 
@@ -2325,6 +2388,14 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     gcp: {
       type: "google_redis_instance",
       matches: ["google_redis_cluster", "google_memcache_instance"],
+      emit: (c) => GCP.redis.emit({ ...c, gcp: gcpPlan(c) }),
+      read: (b) => {
+        const tier = stringValue(attr(b, "tier"));
+        const size = attr(b, "memory_size_gb")?.trim();
+        const label = redisSkuFrom(tier, size);
+        return label ? { "Cache SKU": label } : {};
+      },
+      connection: (ref) => ({ key: "REDIS_HOST", value: refAddress(ref, "host") }),
     },
   },
 
@@ -2441,7 +2512,10 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       type: "google_sql_database_instance",
       matchBlock: (b) => (stringValue(attr(b, "database_version")) ?? "").startsWith("POSTGRES_"),
       moduleSource: GCP_MODULES.postgres,
+      matches: ["google_sql_database", "google_sql_user"],
+      emit: (c) => GCP.postgres.emit({ ...c, gcp: gcpPlan(c) }),
       read: (b) => readOne(b, "database_version", "PostgreSQL version", (v) => PG_VERSION.from(v.replace(/^POSTGRES_/, ""))),
+      connection: (ref) => ({ key: "DATABASE_HOST", value: refAddress(ref, "private_ip_address") }),
     },
   },
 
@@ -2532,6 +2606,8 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       type: "google_sql_database_instance",
       matchBlock: (b) => (stringValue(attr(b, "database_version")) ?? "").startsWith("MYSQL_"),
       moduleSource: GCP_MODULES.mysql,
+      emit: (c) => GCP.mysql.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "MYSQL_HOST", value: refAddress(ref, "private_ip_address") }),
       read: (b) =>
         readOne(b, "database_version", "MySQL version", (v) => MYSQL_VERSION_AWS.from(v.replace(/^MYSQL_/, "").replace("_", "."))),
     },
@@ -2598,6 +2674,8 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     gcp: {
       type: "google_firestore_database",
       matches: ["google_bigtable_instance", "google_bigtable_table"],
+      emit: (c) => GCP.nosql.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "FIRESTORE_DATABASE", value: refAddress(ref, "name") }),
     },
   },
 
@@ -2674,6 +2752,8 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       type: "google_storage_bucket",
       matchBlock: (b) => !hasWebsite(b),
       moduleSource: GCP_MODULES.bucket,
+      emit: (c) => GCP.objectStorage.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "STORAGE_BUCKET", value: refAddress(ref, "name") }),
     },
   },
 
@@ -2719,6 +2799,8 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     gcp: {
       type: "google_service_account",
       moduleSource: GCP_MODULES.serviceAccounts,
+      emit: (c) => GCP.identity.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "SERVICE_ACCOUNT", value: refAddress(ref, "email") }),
     },
   },
 
@@ -2792,8 +2874,10 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     },
     gcp: {
       type: "google_secret_manager_secret",
-      matches: ["google_kms_key_ring", "google_kms_crypto_key"],
+      matches: ["google_kms_key_ring", "google_kms_crypto_key", "google_project_service_identity"],
       moduleSource: GCP_MODULES.kms,
+      emit: (c) => GCP.keyVault.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "SECRET_ID", value: refAddress(ref, "id") }),
     },
   },
 
@@ -2866,10 +2950,12 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     gcp: {
       type: "google_monitoring_alert_policy",
       matches: ["google_monitoring_notification_channel", "google_logging_metric", "google_logging_project_bucket_config"],
+      emit: (c) => GCP.monitoring.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "LOG_BUCKET", value: refAddress(ref, "bucket_id") }),
+      read: (b) => readOne(b, "retention_days", "Log retention", (v) => RETENTION.from(v)),
     },
   },
-  // Google Cloud resources with no counterpart in the two generated clouds yet: read, drawn and
-  // explained, never built, and not offered to a translator (see MODEL_KIND_IDS).
+  // Kinds only Google Cloud has: built there, left out (and reported as not buildable) on the other two.
   {
     kind: "project",
     category: "identity",
@@ -2879,7 +2965,12 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     fields: [],
     azure: null,
     aws: null,
-    gcp: { type: "google_project", moduleSource: GCP_MODULES.project },
+    gcp: {
+      type: "google_project",
+      matches: ["google_project_iam_audit_config"],
+      moduleSource: GCP_MODULES.project,
+      emit: (c) => GCP.project.emit({ ...c, gcp: gcpPlan(c) }),
+    },
   },
 
   {
@@ -2888,10 +2979,15 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     label: "Kubernetes Cluster",
     role: "serving",
     keywords: [],
-    fields: [],
+    fields: [ENVIRONMENT_FIELD],
     azure: null,
     aws: null,
-    gcp: { type: "google_container_cluster", matches: ["google_container_node_pool"], moduleSource: GCP_MODULES.gke },
+    gcp: {
+      type: "google_container_cluster",
+      matches: ["google_container_node_pool"],
+      moduleSource: GCP_MODULES.gke,
+      emit: (c) => GCP.kubernetes.emit({ ...c, gcp: gcpPlan(c) }),
+    },
   },
 
   {
@@ -2911,6 +3007,7 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
         "google_compute_instance_group_manager",
         "google_compute_region_instance_group_manager",
       ],
+      emit: (c) => GCP.virtualMachine.emit({ ...c, gcp: gcpPlan(c) }),
     },
   },
 
@@ -2920,10 +3017,15 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     label: "Data Warehouse",
     role: "leaf",
     keywords: [],
-    fields: [],
+    fields: [ENVIRONMENT_FIELD],
     azure: null,
     aws: null,
-    gcp: { type: "google_bigquery_dataset", matches: ["google_bigquery_table"], moduleSource: GCP_MODULES.bigquery },
+    gcp: {
+      type: "google_bigquery_dataset",
+      matches: ["google_bigquery_table"],
+      moduleSource: GCP_MODULES.bigquery,
+      emit: (c) => GCP.dataWarehouse.emit({ ...c, gcp: gcpPlan(c) }),
+    },
   },
 ];
 
@@ -2979,10 +3081,10 @@ export const KIND_BY_ID: ReadonlyMap<string, KindDefinition> = new Map(
 
 /** Kinds a translator may select. `internet` is the conceptual ingress the spine
  *  adds itself and `external` is what the parser emits for a block it could not
- *  translate, so neither is ever part of the vocabulary a model chooses from. Nor is a kind
- *  only Google Cloud has: it can be read, but nothing it chose could be built. */
+ *  translate, so neither is ever part of the vocabulary a model chooses from. A kind that nothing
+ *  builds on any cloud is read only and is not offered either. */
 export const MODEL_KIND_IDS: readonly string[] = KIND_DEFINITIONS.filter(
-  (k) => k.role !== "conceptual" && k.role !== "external" && (k.azure !== null || k.aws !== null),
+  (k) => k.role !== "conceptual" && k.role !== "external" && (k.azure !== null || k.aws !== null || k.gcp?.emit !== undefined),
 ).map((k) => k.kind);
 
 export const KIND_LABELS: Record<string, string> = Object.fromEntries(
@@ -2993,10 +3095,11 @@ export function kindDefinition(kind: string): KindDefinition | undefined {
   return KIND_BY_ID.get(kind);
 }
 
-/** What a kind emits on a cloud Terragram generates for; null on one it only reads (`gcp`). */
+/** What a kind emits on a cloud: null when it has no way to build there, though it may still be read (`gcp`). */
 export function cloudSpec(kind: string, cloud: Cloud): CloudSpec | null {
   const def = KIND_BY_ID.get(kind);
-  if (!def || cloud === "gcp") return null;
+  if (!def) return null;
+  if (cloud === "gcp") return def.gcp?.emit ? (def.gcp as CloudSpec) : null;
   return (cloud === "azure" ? def.azure : def.aws) ?? null;
 }
 
@@ -3122,6 +3225,16 @@ export function isScaffoldModule(b: HclBlock): boolean {
 }
 
 /** Whether the derived spine fronts this kind with an edge tier by default. */
+/**
+ * Whether a resource block is something a Google Cloud plan adds around a component (the
+ * API switches, a log or source bucket, the private service connection) rather than a
+ * component of its own, so reading the plan back does not draw it. Only exactly what the
+ * generator writes, tied to the component that uses it, counts (`isGcpScaffold`); a lookalike is drawn.
+ */
+export function isScaffoldResource(b: HclBlock, all: readonly HclBlock[]): boolean {
+  return isGcpScaffold(b, all);
+}
+
 export function isFronted(kind: string): boolean {
   return KIND_BY_ID.get(kind)?.fronted !== false;
 }

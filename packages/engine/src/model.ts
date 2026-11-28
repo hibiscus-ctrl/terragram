@@ -20,17 +20,17 @@ const NODE_CATEGORIES = [
 ] as const;
 export type NodeCategory = (typeof NODE_CATEGORIES)[number];
 
-/** Every cloud a model can describe. Google Cloud is read (parsed, drawn, explained, diffed) but not generated. */
+/** Every cloud a model can describe. */
 export const CLOUDS = ["azure", "aws", "gcp"] as const;
 export type Cloud = (typeof CLOUDS)[number];
 
 /** The clouds Terragram writes Terraform for: what `generate`, a brief and a picture can target. */
-export const GENERATED_CLOUDS = ["azure", "aws"] as const;
+export const GENERATED_CLOUDS = ["azure", "aws", "gcp"] as const;
 export type GeneratedCloud = (typeof GENERATED_CLOUDS)[number];
 
 /** The schemas' words for a document's `cloud`: `gcp` joined the enum inside `diagram.model/v1` and `diagram.receipt/v3`. */
 export const CLOUD_DESCRIPTION =
-  "The cloud the document describes. `gcp` is read only: such a model is drawn and explained, no Terraform is generated for it and its receipt has an empty plan. A reader that validates this field against a closed list must accept `gcp`; documents for `azure` and `aws` are unchanged.";
+  "The cloud the document describes: `azure`, `aws` or `gcp` (Google Cloud). A reader that validates this field against a closed list must accept `gcp`; documents for `azure` and `aws` are unchanged.";
 
 /** A low-confidence attribute the model surfaces at the review gate. */
 const reviewFlagSchema = z.object({

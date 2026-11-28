@@ -20378,7 +20378,7 @@ var NODE_CATEGORIES = [
   "edge"
 ];
 var CLOUDS = ["azure", "aws", "gcp"];
-var CLOUD_DESCRIPTION = "The cloud the document describes. `gcp` is read only: such a model is drawn and explained, no Terraform is generated for it and its receipt has an empty plan. A reader that validates this field against a closed list must accept `gcp`; documents for `azure` and `aws` are unchanged.";
+var CLOUD_DESCRIPTION = "The cloud the document describes: `azure`, `aws` or `gcp` (Google Cloud). A reader that validates this field against a closed list must accept `gcp`; documents for `azure` and `aws` are unchanged.";
 var reviewFlagSchema = external_exports.object({
   reason: external_exports.string().max(400)
 });
@@ -20556,8 +20556,932 @@ var PROVIDER_VERSIONS = {
     name: "aws",
     source: "hashicorp/aws",
     version: "~> 6.73"
+  },
+  gcp: {
+    name: "google",
+    source: "hashicorp/google",
+    version: "~> 8.12"
+  },
+  "gcp-beta": {
+    name: "google-beta",
+    source: "hashicorp/google-beta",
+    version: "~> 8.12"
+  },
+  archive: {
+    name: "archive",
+    source: "hashicorp/archive",
+    version: "~> 2.8"
   }
 };
+
+// ../packages/engine/src/gcp-kinds.ts
+var NAME_PREFIX = {
+  name: "name_prefix",
+  type: "string",
+  description: "Short prefix applied to every resource name.",
+  default: quote("infra-prod")
+};
+var NETWORK_ID = {
+  name: "network_id",
+  type: "string",
+  description: "VPC network the resources are placed in. Add a Virtual Network to the model to generate one."
+};
+var SUBNETWORK_ID = {
+  name: "subnetwork_id",
+  type: "string",
+  description: "Subnetwork instances and clusters are placed in. Add a Virtual Network to the model to generate one."
+};
+var GCP_LABELS = {
+  name: "labels",
+  type: "map(string)",
+  description: "Labels added to every resource \u2014 owner and cost_centre are what a reviewer asks for first. Merged over the plan's own labels, so a key set here wins. Keys and values are lowercase letters, digits, hyphens and underscores.",
+  default: "{}"
+};
+function cloudName(prefix, slug) {
+  return quoteTemplate`${prefix}-\${var.name_prefix}-${slug}`;
+}
+function accountId(slug) {
+  return `trim(substr(${quoteTemplate`sa-\${var.name_prefix}-${slug}`}, 0, 30), "-")`;
+}
+function production(c) {
+  return c.attr("Environment") === "Production";
+}
+function netOrVars(net) {
+  if (net) return { vpc: net.vpcId, subnet: net.privateSubnets, variables: [] };
+  return { vpc: "var.network_id", subnet: "var.subnetwork_id", variables: [NETWORK_ID, SUBNETWORK_ID] };
+}
+function serviceAccount(name, id, description) {
+  return block("resource", ["google_service_account", name], [
+    { key: "account_id", value: accountId(id) },
+    { key: "display_name", value: quote(description) }
+  ]);
+}
+function projectRole(name, role, account) {
+  return block("resource", ["google_project_iam_member", name], [
+    { key: "project", value: "var.project_id" },
+    { key: "role", value: quote(role) },
+    { key: "member", value: `"serviceAccount:\${${account}.email}"` }
+  ]);
+}
+var GCP_BETA_REF = "google-beta";
+function bucketWithLogs(c, opts) {
+  const logs = `${c.name}_logs`;
+  const purpose = opts.purpose ? [{ key: "labels", value: mapExpression([{ key: "purpose", value: quote(opts.purpose) }]) }] : [];
+  const bucket = block("resource", ["google_storage_bucket", c.name], [
+    { key: "name", value: `"\${var.project_id}-${opts.prefix}-\${var.name_prefix}-${c.slug}"` },
+    { key: "location", value: "var.region" },
+    { key: "storage_class", value: quote("STANDARD") },
+    { key: "uniform_bucket_level_access", value: "true" },
+    { key: "public_access_prevention", value: quote("enforced") },
+    { key: "force_destroy", value: production(c) ? "false" : "true" },
+    ...purpose
+  ], [
+    block("versioning", [], [{ key: "enabled", value: "true" }]),
+    block("logging", [], [
+      { key: "log_bucket", value: `google_storage_bucket.${logs}.name` },
+      { key: "log_object_prefix", value: quote("access/") }
+    ])
+  ]);
+  const logBucket = block("resource", ["google_storage_bucket", logs], [
+    { key: "name", value: `"\${var.project_id}-logs-\${var.name_prefix}-${c.slug}"` },
+    { key: "location", value: "var.region" },
+    { key: "storage_class", value: quote("STANDARD") },
+    { key: "uniform_bucket_level_access", value: "true" },
+    { key: "public_access_prevention", value: quote("enforced") },
+    { key: "force_destroy", value: "true" },
+    { key: "labels", value: mapExpression([{ key: "purpose", value: quote("access-logs") }]) }
+  ], [
+    block("versioning", [], [{ key: "enabled", value: "true" }]),
+    block("lifecycle_rule", [], [], [
+      block("condition", [], [{ key: "age", value: "365" }]),
+      block("action", [], [{ key: "type", value: quote("Delete") }])
+    ])
+  ]);
+  const grant = block("resource", ["google_storage_bucket_iam_member", `${logs}_delivery`], [
+    { key: "bucket", value: `google_storage_bucket.${logs}.name` },
+    { key: "role", value: quote("roles/storage.objectCreator") },
+    { key: "member", value: quote("group:cloud-storage-analytics@google.com") }
+  ]);
+  return { bucket, blocks: [bucket, logBucket, grant] };
+}
+var POSTGRES = {
+  iamFlag: "cloudsql.iam_authentication",
+  userName: (account) => `trimsuffix(${account}.email, ".gserviceaccount.com")`,
+  flags: [
+    ["log_checkpoints", "on"],
+    ["log_connections", "on"],
+    ["log_disconnections", "on"],
+    ["log_lock_waits", "on"],
+    ["log_min_messages", "error"],
+    ["log_temp_files", "0"],
+    ["log_min_duration_statement", "-1"],
+    ["log_min_error_statement", "error"],
+    ["log_hostname", "on"],
+    ["log_duration", "on"],
+    ["log_statement", "ddl"],
+    ["cloudsql.enable_pgaudit", "on"],
+    ["pgaudit.log", "ddl,write"]
+  ],
+  backup: [{ key: "point_in_time_recovery_enabled", value: "true" }]
+};
+var MYSQL = {
+  iamFlag: "cloudsql_iam_authentication",
+  userName: (account) => `split("@", ${account}.email)[0]`,
+  flags: [
+    ["local_infile", "off"],
+    ["skip_show_database", "on"]
+  ],
+  backup: [{ key: "binary_log_enabled", value: "true" }]
+};
+function sqlInstance(c, engine, prefix) {
+  c.gcp.api("sqladmin.googleapis.com", "servicenetworking.googleapis.com", "compute.googleapis.com");
+  const { vpc, variables } = netOrVars(c.net);
+  const connection2 = c.gcp.privateServices(vpc);
+  const prod = production(c);
+  const instance = block("resource", ["google_sql_database_instance", c.name], [
+    { key: "name", value: cloudName(prefix, c.slug) },
+    { key: "database_version", value: quote(engine.version) },
+    { key: "region", value: "var.region" },
+    { key: "deletion_protection", value: "true" }
+  ], [
+    block("settings", [], [
+      { key: "tier", value: quote(prod ? "db-custom-2-7680" : "db-custom-1-3840") },
+      { key: "edition", value: quote("ENTERPRISE") },
+      { key: "availability_type", value: quote(prod ? "REGIONAL" : "ZONAL") },
+      { key: "disk_type", value: quote("PD_SSD") },
+      { key: "disk_autoresize", value: "true" },
+      { key: "deletion_protection_enabled", value: "true" }
+    ], [
+      block("ip_configuration", [], [
+        { key: "ipv4_enabled", value: "false" },
+        { key: "private_network", value: vpc },
+        { key: "ssl_mode", value: quote("TRUSTED_CLIENT_CERTIFICATE_REQUIRED") }
+      ]),
+      block("backup_configuration", [], [
+        { key: "enabled", value: "true" },
+        { key: "start_time", value: quote("03:00") },
+        ...engine.backup
+      ], [
+        block("backup_retention_settings", [], [{ key: "retained_backups", value: prod ? "35" : "7" }])
+      ]),
+      block("insights_config", [], [{ key: "query_insights_enabled", value: "true" }]),
+      block("maintenance_window", [], [
+        { key: "day", value: "7" },
+        { key: "hour", value: "3" }
+      ]),
+      block("database_flags", [], [
+        { key: "name", value: quote(engine.iamFlag) },
+        { key: "value", value: quote("on") }
+      ]),
+      ...engine.flags.map(
+        ([name, value]) => block("database_flags", [], [
+          { key: "name", value: quote(name) },
+          { key: "value", value: quote(value) }
+        ])
+      )
+    ])
+  ]);
+  instance.attributes.push({ key: "depends_on", value: `[${connection2}]` });
+  const appAccount = `${c.name}_app`;
+  const database = block("resource", ["google_sql_database", c.name], [
+    { key: "name", value: quote("app") },
+    { key: "instance", value: `google_sql_database_instance.${c.name}.name` }
+  ]);
+  const user = block("resource", ["google_sql_user", c.name], [
+    { key: "name", value: engine.userName(`google_service_account.${appAccount}`) },
+    { key: "instance", value: `google_sql_database_instance.${c.name}.name` },
+    { key: "type", value: quote("CLOUD_IAM_SERVICE_ACCOUNT") }
+  ]);
+  return {
+    blocks: [
+      instance,
+      serviceAccount(appAccount, `${c.slug}-app`, `Connects to the ${c.slug} database with IAM authentication`),
+      projectRole(`${c.name}_app_instance_user`, "roles/cloudsql.instanceUser", `google_service_account.${appAccount}`),
+      projectRole(`${c.name}_app_client`, "roles/cloudsql.client", `google_service_account.${appAccount}`),
+      database,
+      user
+    ],
+    variables: [NAME_PREFIX, ...variables],
+    outputs: [
+      { name: `${c.name}_private_ip`, value: `google_sql_database_instance.${c.name}.private_ip_address` },
+      { name: `${c.name}_app_account`, value: `google_service_account.${appAccount}.email` }
+    ]
+  };
+}
+var PG_DATABASE_VERSION = {
+  "PostgreSQL 16": "POSTGRES_16",
+  "PostgreSQL 15": "POSTGRES_15",
+  "PostgreSQL 14": "POSTGRES_14"
+};
+var MYSQL_DATABASE_VERSION = {
+  "MySQL 8.4": "MYSQL_8_4",
+  "MySQL 8.0": "MYSQL_8_0",
+  "MySQL 5.7": "MYSQL_5_7"
+};
+var REDIS_TIER = {
+  "Basic (C0)": { tier: "BASIC", size: "1" },
+  "Standard (C1)": { tier: "STANDARD_HA", size: "1" },
+  "Premium (P1)": { tier: "STANDARD_HA", size: "5" }
+};
+function redisSkuFrom(tier, size) {
+  return Object.entries(REDIS_TIER).find(([, v]) => v.tier === tier && v.size === size)?.[0];
+}
+var RUN_SIZE = {
+  "Small (0.5 vCPU)": { cpu: "500m", memory: "512Mi" },
+  "Medium (1 vCPU)": { cpu: "1000m", memory: "1Gi" },
+  "Large (2 vCPU)": { cpu: "2000m", memory: "2Gi" }
+};
+function runSizeFrom(cpu) {
+  return Object.entries(RUN_SIZE).find(([, v]) => v.cpu === cpu)?.[0];
+}
+var FUNCTION_RUNTIME = {
+  "Node.js 22": {
+    runtime: "nodejs22",
+    entry: "handler",
+    file: "index.js",
+    stub: [
+      "// Placeholder handler \u2014 replace with your function's code.",
+      "// An HTTP function is the one exported under the entry point named in main.tf.",
+      "exports.handler = (req, res) => {",
+      '  res.status(200).json({ ok: true, message: "Replace this placeholder with your function." });',
+      "};",
+      ""
+    ].join("\n"),
+    extra: [{ file: "package.json", stub: `${JSON.stringify({ name: "function", version: "1.0.0", main: "index.js" }, null, 2)}
+` }]
+  },
+  "Python 3.12": {
+    runtime: "python312",
+    entry: "handler",
+    file: "main.py",
+    stub: [
+      `"""Placeholder handler \u2014 replace with your function's code."""`,
+      "",
+      "import functions_framework",
+      "",
+      "",
+      "@functions_framework.http",
+      "def handler(request):",
+      '    return {"ok": True, "message": "Replace this placeholder with your function."}',
+      ""
+    ].join("\n"),
+    extra: [{ file: "requirements.txt", stub: "functions-framework==3.*\n" }]
+  },
+  "Java 21": {
+    runtime: "java21",
+    entry: "example.Handler",
+    file: "src/main/java/example/Handler.java",
+    stub: [
+      "package example;",
+      "",
+      "// Placeholder handler. Add the Functions Framework dependency to a pom.xml beside this",
+      "// source, then deploy; the source is here so the plan can package a directory.",
+      "import com.google.cloud.functions.HttpFunction;",
+      "import com.google.cloud.functions.HttpRequest;",
+      "import com.google.cloud.functions.HttpResponse;",
+      "",
+      "public class Handler implements HttpFunction {",
+      "  @Override",
+      "  public void service(HttpRequest request, HttpResponse response) throws java.io.IOException {",
+      '    response.getWriter().write("ok");',
+      "  }",
+      "}",
+      ""
+    ].join("\n")
+  }
+};
+function functionRuntimeFrom(runtime) {
+  return Object.entries(FUNCTION_RUNTIME).find(([, v]) => v.runtime === runtime)?.[0];
+}
+var GCP = {
+  /** A public DNS zone with DNSSEC on and query logging. */
+  dns: {
+    emit: (c) => {
+      c.gcp.api("dns.googleapis.com");
+      return {
+        blocks: [
+          block("resource", ["google_dns_managed_zone", c.name], [
+            { key: "name", value: cloudName("zone", c.slug) },
+            { key: "dns_name", value: quoteTemplate`${c.attr("Zone name")}.` },
+            { key: "visibility", value: quote("public") },
+            { key: "force_destroy", value: "false" }
+          ], [
+            block("dnssec_config", [], [{ key: "state", value: quote("on") }]),
+            block("cloud_logging_config", [], [{ key: "enable_logging", value: "true" }])
+          ])
+        ],
+        variables: [NAME_PREFIX],
+        outputs: [{ name: `${c.name}_name_servers`, value: `google_dns_managed_zone.${c.name}.name_servers` }]
+      };
+    }
+  },
+  /**
+   * A custom-mode network: one regional subnetwork with flow logs and private access to
+   * Google APIs, a router with NAT so private workloads reach the internet and are not
+   * reachable from it, and the two ingress rules a private network needs.
+   */
+  network: {
+    emit: (c) => {
+      c.gcp.api("compute.googleapis.com");
+      const cidr = quote(c.attr("Address space"));
+      const subnet = `cidrsubnet(${cidr}, 8, 1)`;
+      return {
+        blocks: [
+          block("resource", ["google_compute_network", c.name], [
+            { key: "name", value: cloudName("vpc", c.slug) },
+            { key: "auto_create_subnetworks", value: "false" },
+            { key: "routing_mode", value: quote("REGIONAL") }
+          ]),
+          block("resource", ["google_compute_subnetwork", c.name], [
+            { key: "name", value: cloudName("subnet", c.slug) },
+            { key: "network", value: `google_compute_network.${c.name}.id` },
+            { key: "region", value: "var.region" },
+            { key: "ip_cidr_range", value: subnet },
+            { key: "private_ip_google_access", value: "true" }
+          ], [
+            block("log_config", [], [
+              { key: "aggregation_interval", value: quote("INTERVAL_5_SEC") },
+              { key: "flow_sampling", value: "0.5" },
+              { key: "metadata", value: quote("INCLUDE_ALL_METADATA") }
+            ])
+          ]),
+          block("resource", ["google_compute_router", c.name], [
+            { key: "name", value: cloudName("router", c.slug) },
+            { key: "network", value: `google_compute_network.${c.name}.id` },
+            { key: "region", value: "var.region" }
+          ]),
+          block("resource", ["google_compute_router_nat", c.name], [
+            { key: "name", value: cloudName("nat", c.slug) },
+            { key: "router", value: `google_compute_router.${c.name}.name` },
+            { key: "region", value: "var.region" },
+            { key: "nat_ip_allocate_option", value: quote("AUTO_ONLY") },
+            { key: "source_subnetwork_ip_ranges_to_nat", value: quote("ALL_SUBNETWORKS_ALL_IP_RANGES") }
+          ], [
+            block("log_config", [], [
+              { key: "enable", value: "true" },
+              { key: "filter", value: quote("ERRORS_ONLY") }
+            ])
+          ]),
+          // What the network's own members say to each other.
+          block("resource", ["google_compute_firewall", `${c.name}_internal`], [
+            { key: "name", value: cloudName("allow-internal", c.slug) },
+            { key: "network", value: `google_compute_network.${c.name}.name` },
+            { key: "direction", value: quote("INGRESS") },
+            { key: "source_ranges", value: `[${cidr}]` }
+          ], [
+            block("allow", [], [{ key: "protocol", value: quote("tcp") }]),
+            block("allow", [], [{ key: "protocol", value: quote("udp") }]),
+            block("allow", [], [{ key: "protocol", value: quote("icmp") }]),
+            block("log_config", [], [{ key: "metadata", value: quote("INCLUDE_ALL_METADATA") }])
+          ]),
+          // SSH only through Identity-Aware Proxy, whose range is Google's: no instance needs an address of its own.
+          block("resource", ["google_compute_firewall", `${c.name}_iap_ssh`], [
+            { key: "name", value: cloudName("allow-iap-ssh", c.slug) },
+            { key: "network", value: `google_compute_network.${c.name}.name` },
+            { key: "direction", value: quote("INGRESS") },
+            { key: "source_ranges", value: `["35.235.240.0/20"]` }
+          ], [
+            block("allow", [], [
+              { key: "protocol", value: quote("tcp") },
+              { key: "ports", value: `["22"]` }
+            ]),
+            block("log_config", [], [{ key: "metadata", value: quote("INCLUDE_ALL_METADATA") }])
+          ])
+        ],
+        variables: [NAME_PREFIX],
+        outputs: [{ name: `${c.name}_id`, value: `google_compute_network.${c.name}.id` }]
+      };
+    },
+    refs: (name) => ({
+      vpcId: `google_compute_network.${name}.id`,
+      publicSubnets: `google_compute_subnetwork.${name}.id`,
+      privateSubnets: `google_compute_subnetwork.${name}.id`
+    })
+  },
+  /** An instance with no public address, Shielded VM, OS Login, no project-wide SSH keys and its own service account. */
+  virtualMachine: {
+    emit: (c) => {
+      c.gcp.api("compute.googleapis.com");
+      const { subnet, variables } = netOrVars(c.net);
+      return {
+        blocks: [
+          block("resource", ["google_compute_instance", c.name], [
+            { key: "name", value: cloudName("vm", c.slug) },
+            { key: "machine_type", value: quote("e2-medium") },
+            { key: "zone", value: `"\${var.region}-a"` },
+            { key: "can_ip_forward", value: "false" },
+            {
+              key: "metadata",
+              value: mapExpression([
+                { key: "block-project-ssh-keys", value: quote("true") },
+                { key: "enable-oslogin", value: quote("TRUE") },
+                { key: "serial-port-enable", value: quote("false") }
+              ])
+            }
+          ], [
+            block("boot_disk", [], [], [
+              block("initialize_params", [], [
+                { key: "image", value: quote("debian-cloud/debian-12") },
+                { key: "size", value: "20" },
+                { key: "type", value: quote("pd-balanced") }
+              ])
+            ]),
+            block("network_interface", [], [{ key: "subnetwork", value: subnet }]),
+            block("service_account", [], [
+              { key: "email", value: `google_service_account.${c.name}.email` },
+              { key: "scopes", value: `["cloud-platform"]` }
+            ]),
+            block("shielded_instance_config", [], [
+              { key: "enable_secure_boot", value: "true" },
+              { key: "enable_vtpm", value: "true" },
+              { key: "enable_integrity_monitoring", value: "true" }
+            ])
+          ]),
+          serviceAccount(c.name, c.slug, `Runs the ${c.slug} instance`),
+          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
+          projectRole(`${c.name}_metric_writer`, "roles/monitoring.metricWriter", `google_service_account.${c.name}`)
+        ],
+        variables: [NAME_PREFIX, ...variables],
+        outputs: [{ name: `${c.name}_internal_ip`, value: `google_compute_instance.${c.name}.network_interface[0].network_ip` }]
+      };
+    }
+  },
+  /**
+   * A private, regional-in-production GKE cluster on a node pool of its own: private nodes,
+   * authorised networks only, Workload Identity, Shielded Nodes, network policy and a
+   * release channel, with nodes that run as a service account holding only what they need.
+   */
+  kubernetes: {
+    emit: (c) => {
+      c.gcp.api("container.googleapis.com", "compute.googleapis.com");
+      const { vpc, subnet, variables } = netOrVars(c.net);
+      const prod = production(c);
+      const location = prod ? "var.region" : `"\${var.region}-a"`;
+      const nodes = `${c.name}_nodes`;
+      return {
+        blocks: [
+          block("resource", ["google_container_cluster", c.name], [
+            { key: "name", value: cloudName("gke", c.slug) },
+            { key: "location", value: location },
+            { key: "network", value: vpc },
+            { key: "subnetwork", value: subnet },
+            { key: "networking_mode", value: quote("VPC_NATIVE") },
+            // The node pool below is the only one; the cluster starts with none of its own.
+            { key: "initial_node_count", value: "0" },
+            { key: "enable_shielded_nodes", value: "true" },
+            { key: "enable_intranode_visibility", value: "true" },
+            { key: "enable_legacy_abac", value: "false" },
+            { key: "deletion_protection", value: prod ? "true" : "false" },
+            { key: "resource_labels", value: "local.labels" }
+          ], [
+            block("ip_allocation_policy", [], []),
+            block("private_cluster_config", [], [
+              { key: "enable_private_nodes", value: "true" },
+              { key: "enable_private_endpoint", value: "false" },
+              { key: "master_ipv4_cidr_block", value: quote("172.16.0.0/28") }
+            ]),
+            block("master_authorized_networks_config", [], [], [
+              block("cidr_blocks", [], [
+                { key: "cidr_block", value: "var.gke_authorized_cidr" },
+                { key: "display_name", value: quote("administrators") }
+              ])
+            ]),
+            block("master_auth", [], [], [
+              block("client_certificate_config", [], [{ key: "issue_client_certificate", value: "false" }])
+            ]),
+            block("workload_identity_config", [], [{ key: "workload_pool", value: `"\${var.project_id}.svc.id.goog"` }]),
+            block("release_channel", [], [{ key: "channel", value: quote("REGULAR") }]),
+            block("network_policy", [], [
+              { key: "enabled", value: "true" },
+              { key: "provider", value: quote("CALICO") }
+            ]),
+            block("addons_config", [], [], [
+              block("network_policy_config", [], [{ key: "disabled", value: "false" }])
+            ]),
+            block("binary_authorization", [], [{ key: "evaluation_mode", value: quote("PROJECT_SINGLETON_POLICY_ENFORCE") }])
+          ]),
+          block("resource", ["google_container_node_pool", nodes], [
+            { key: "name", value: quote("default") },
+            { key: "cluster", value: `google_container_cluster.${c.name}.id` },
+            { key: "location", value: location },
+            { key: "node_count", value: "1" }
+          ], [
+            block("management", [], [
+              { key: "auto_repair", value: "true" },
+              { key: "auto_upgrade", value: "true" }
+            ]),
+            block("node_config", [], [
+              { key: "machine_type", value: quote("e2-standard-2") },
+              { key: "image_type", value: quote("COS_CONTAINERD") },
+              { key: "service_account", value: `google_service_account.${nodes}.email` },
+              { key: "oauth_scopes", value: `["https://www.googleapis.com/auth/cloud-platform"]` },
+              { key: "metadata", value: mapExpression([{ key: "disable-legacy-endpoints", value: quote("true") }]) }
+            ], [
+              block("workload_metadata_config", [], [{ key: "mode", value: quote("GKE_METADATA") }]),
+              block("shielded_instance_config", [], [
+                { key: "enable_secure_boot", value: "true" },
+                { key: "enable_integrity_monitoring", value: "true" }
+              ])
+            ])
+          ]),
+          serviceAccount(nodes, `${c.slug}-nodes`, `Runs the ${c.slug} cluster's nodes`),
+          projectRole(`${nodes}_log_writer`, "roles/logging.logWriter", `google_service_account.${nodes}`),
+          projectRole(`${nodes}_metric_writer`, "roles/monitoring.metricWriter", `google_service_account.${nodes}`),
+          projectRole(`${nodes}_monitoring_viewer`, "roles/monitoring.viewer", `google_service_account.${nodes}`),
+          projectRole(`${nodes}_artifact_reader`, "roles/artifactregistry.reader", `google_service_account.${nodes}`)
+        ],
+        variables: [
+          NAME_PREFIX,
+          ...variables,
+          {
+            name: "gke_authorized_cidr",
+            type: "string",
+            description: "CIDR block allowed to reach the cluster's control plane: your office or VPN range."
+          }
+        ],
+        outputs: [{ name: `${c.name}_endpoint`, value: `google_container_cluster.${c.name}.endpoint` }]
+      };
+    }
+  },
+  /** A Cloud Run service on its own service account, closed to the world until a grant or a load balancer opens it. */
+  containers: {
+    emit: (c) => {
+      c.gcp.api("run.googleapis.com");
+      const size = RUN_SIZE[c.attr("Container size")] ?? RUN_SIZE["Medium (1 vCPU)"];
+      return {
+        blocks: [
+          block("resource", ["google_cloud_run_v2_service", c.name], [
+            { key: "name", value: cloudName("svc", c.slug) },
+            { key: "location", value: "var.region" },
+            { key: "ingress", value: quote("INGRESS_TRAFFIC_ALL") },
+            { key: "deletion_protection", value: "false" }
+          ], [
+            block("template", [], [
+              { key: "service_account", value: `google_service_account.${c.name}.email` },
+              { key: "execution_environment", value: quote("EXECUTION_ENVIRONMENT_GEN2") }
+            ], [
+              block("scaling", [], [
+                { key: "min_instance_count", value: "1" },
+                { key: "max_instance_count", value: "10" }
+              ]),
+              block("containers", [], [{ key: "image", value: quote("us-docker.pkg.dev/cloudrun/container/hello") }], [
+                block("ports", [], [{ key: "container_port", value: "8080" }]),
+                block("resources", [], [
+                  {
+                    key: "limits",
+                    value: mapExpression([
+                      { key: "cpu", value: quote(size.cpu) },
+                      { key: "memory", value: quote(size.memory) }
+                    ])
+                  }
+                ])
+              ]),
+              ...c.net ? [
+                block("vpc_access", [], [{ key: "egress", value: quote("PRIVATE_RANGES_ONLY") }], [
+                  block("network_interfaces", [], [
+                    { key: "network", value: c.net.vpcId },
+                    { key: "subnetwork", value: c.net.privateSubnets }
+                  ])
+                ])
+              ] : []
+            ])
+          ]),
+          serviceAccount(c.name, c.slug, `Runs the ${c.slug} service`),
+          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`)
+        ],
+        variables: [NAME_PREFIX],
+        outputs: [{ name: `${c.name}_url`, value: `google_cloud_run_v2_service.${c.name}.uri` }]
+      };
+    }
+  },
+  /**
+   * A second-generation Cloud Function, packaged from a directory written beside the plan.
+   * Its source goes to a private bucket of its own, and it runs as its own service account.
+   */
+  functions: {
+    emit: (c) => {
+      c.gcp.api("cloudfunctions.googleapis.com", "run.googleapis.com", "cloudbuild.googleapis.com", "artifactregistry.googleapis.com", "storage.googleapis.com");
+      const runtime = FUNCTION_RUNTIME[c.attr("Runtime")] ?? FUNCTION_RUNTIME["Node.js 22"];
+      const source = `${c.name}_source`;
+      const sourceBucket = bucketWithLogs({ ...c, name: source }, { prefix: "src", purpose: "function-source" });
+      return {
+        blocks: [
+          block("resource", ["google_cloudfunctions2_function", c.name], [
+            { key: "name", value: cloudName("fn", c.slug) },
+            { key: "location", value: "var.region" }
+          ], [
+            block("build_config", [], [
+              { key: "runtime", value: quote(runtime.runtime) },
+              { key: "entry_point", value: quote(runtime.entry) }
+            ], [
+              block("source", [], [], [
+                block("storage_source", [], [
+                  { key: "bucket", value: `google_storage_bucket.${source}.name` },
+                  { key: "object", value: `google_storage_bucket_object.${source}.name` }
+                ])
+              ])
+            ]),
+            block("service_config", [], [
+              { key: "available_memory", value: quote("256M") },
+              { key: "timeout_seconds", value: "60" },
+              { key: "max_instance_count", value: "10" },
+              { key: "ingress_settings", value: quote("ALLOW_INTERNAL_AND_GCLB") },
+              { key: "service_account_email", value: `google_service_account.${c.name}.email` }
+            ])
+          ]),
+          serviceAccount(c.name, c.slug, `Runs the ${c.slug} function`),
+          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
+          block("data", ["archive_file", c.name], [
+            { key: "type", value: quote("zip") },
+            { key: "source_dir", value: quoteTemplate`\${path.module}/src/${c.slug}` },
+            { key: "output_path", value: quoteTemplate`\${path.module}/.terraform/${c.slug}.zip` }
+          ]),
+          ...sourceBucket.blocks,
+          block("resource", ["google_storage_bucket_object", source], [
+            { key: "name", value: `"\${data.archive_file.${c.name}.output_md5}.zip"` },
+            { key: "bucket", value: `google_storage_bucket.${source}.name` },
+            { key: "source", value: `data.archive_file.${c.name}.output_path` }
+          ])
+        ],
+        variables: [NAME_PREFIX],
+        outputs: [{ name: `${c.name}_url`, value: `google_cloudfunctions2_function.${c.name}.service_config[0].uri` }],
+        files: [
+          { name: `src/${c.slug}/${runtime.file}`, content: runtime.stub },
+          ...(runtime.extra ?? []).map((f) => ({ name: `src/${c.slug}/${f.file}`, content: f.stub }))
+        ]
+      };
+    }
+  },
+  /** A bucket, hardened and logged; wired to the plan's key store it is encrypted under that store's key. */
+  objectStorage: {
+    emit: (c) => {
+      c.gcp.api("storage.googleapis.com");
+      const { bucket, blocks } = bucketWithLogs(c, { prefix: "data" });
+      return {
+        blocks,
+        referent: blocks.indexOf(bucket),
+        consumer: blocks.indexOf(bucket),
+        variables: [NAME_PREFIX]
+      };
+    }
+  },
+  /** A Pub/Sub topic with a subscription, and a dead-letter topic for what the subscription gives up on. */
+  queue: {
+    emit: (c) => {
+      c.gcp.api("pubsub.googleapis.com");
+      const exactlyOnce = c.attr("Delivery") === "Exactly once (FIFO)";
+      const dead = `${c.name}_dead_letter`;
+      return {
+        blocks: [
+          block("resource", ["google_pubsub_topic", c.name], [
+            { key: "name", value: cloudName("topic", c.slug) },
+            { key: "message_retention_duration", value: quote("604800s") }
+          ]),
+          block("resource", ["google_pubsub_topic", dead], [
+            { key: "name", value: cloudName("dlq", c.slug) },
+            { key: "message_retention_duration", value: quote("604800s") }
+          ]),
+          block("resource", ["google_pubsub_subscription", c.name], [
+            { key: "name", value: cloudName("sub", c.slug) },
+            { key: "topic", value: `google_pubsub_topic.${c.name}.id` },
+            { key: "ack_deadline_seconds", value: "30" },
+            { key: "message_retention_duration", value: quote("604800s") },
+            { key: "enable_message_ordering", value: String(exactlyOnce) },
+            { key: "enable_exactly_once_delivery", value: String(exactlyOnce) }
+          ], [
+            block("dead_letter_policy", [], [
+              { key: "dead_letter_topic", value: `google_pubsub_topic.${dead}.id` },
+              { key: "max_delivery_attempts", value: "5" }
+            ]),
+            block("expiration_policy", [], [{ key: "ttl", value: quote("") }])
+          ])
+        ],
+        variables: [NAME_PREFIX]
+      };
+    }
+  },
+  /** Secret Manager's secret under a Cloud KMS key of its own, which rotates every 90 days. No value is ever written. */
+  keyVault: {
+    emit: (c) => {
+      c.gcp.api("secretmanager.googleapis.com", "cloudkms.googleapis.com");
+      return {
+        blocks: [
+          block("resource", ["google_secret_manager_secret", c.name], [
+            { key: "secret_id", value: cloudName("secret", c.slug) }
+          ], [
+            block("replication", [], [], [
+              block("user_managed", [], [], [
+                block("replicas", [], [
+                  { key: "location", value: "var.region" }
+                ], [
+                  block("customer_managed_encryption", [], [
+                    { key: "kms_key_name", value: `google_kms_crypto_key.${c.name}.id` }
+                  ])
+                ])
+              ])
+            ])
+          ]),
+          block("resource", ["google_kms_key_ring", c.name], [
+            { key: "name", value: cloudName("keyring", c.slug) },
+            { key: "location", value: "var.region" }
+          ]),
+          block("resource", ["google_kms_crypto_key", c.name], [
+            { key: "name", value: cloudName("key", c.slug) },
+            { key: "key_ring", value: `google_kms_key_ring.${c.name}.id` },
+            { key: "purpose", value: quote("ENCRYPT_DECRYPT") },
+            { key: "rotation_period", value: quote("7776000s") }
+          ], [
+            block("version_template", [], [
+              { key: "algorithm", value: quote("GOOGLE_SYMMETRIC_ENCRYPTION") },
+              { key: "protection_level", value: quote("SOFTWARE") }
+            ])
+          ]),
+          // Secret Manager reads the key as its own service identity.
+          block("resource", ["google_project_service_identity", `${c.name}_secretmanager`], [
+            { key: "provider", value: GCP_BETA_REF },
+            { key: "service", value: quote("secretmanager.googleapis.com") }
+          ]),
+          block("resource", ["google_kms_crypto_key_iam_member", c.name], [
+            { key: "crypto_key_id", value: `google_kms_crypto_key.${c.name}.id` },
+            { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+            { key: "member", value: `"serviceAccount:\${google_project_service_identity.${c.name}_secretmanager.email}"` }
+          ])
+        ],
+        variables: [NAME_PREFIX]
+      };
+    }
+  },
+  /** A service account: the identity workloads run as. */
+  identity: {
+    emit: (c) => {
+      c.gcp.api("iam.googleapis.com");
+      return { blocks: [serviceAccount(c.name, c.slug, `Identity for ${c.slug}`)], variables: [NAME_PREFIX] };
+    }
+  },
+  /** The project's default log bucket kept for the chosen retention, and an alert that emails on error logs. */
+  monitoring: {
+    emit: (c) => {
+      c.gcp.api("monitoring.googleapis.com", "logging.googleapis.com");
+      const days = { "30 days": "30", "90 days": "90", "1 year": "365" }[c.attr("Log retention")] ?? "30";
+      return {
+        blocks: [
+          block("resource", ["google_monitoring_notification_channel", c.name], [
+            { key: "display_name", value: cloudName("alerts", c.slug) },
+            { key: "type", value: quote("email") },
+            { key: "labels", value: mapExpression([{ key: "email_address", value: "var.alert_email" }]) }
+          ]),
+          block("resource", ["google_monitoring_alert_policy", c.name], [
+            { key: "display_name", value: cloudName("errors", c.slug) },
+            { key: "combiner", value: quote("OR") },
+            { key: "notification_channels", value: `[google_monitoring_notification_channel.${c.name}.id]` }
+          ], [
+            block("conditions", [], [{ key: "display_name", value: quote("Error logs") }], [
+              block("condition_matched_log", [], [{ key: "filter", value: quote("severity>=ERROR") }])
+            ]),
+            block("alert_strategy", [], [], [
+              block("notification_rate_limit", [], [{ key: "period", value: quote("300s") }])
+            ])
+          ]),
+          block("resource", ["google_logging_project_bucket_config", c.name], [
+            { key: "project", value: "var.project_id" },
+            { key: "location", value: quote("global") },
+            { key: "bucket_id", value: quote("_Default") },
+            { key: "retention_days", value: days }
+          ])
+        ],
+        referent: 2,
+        variables: [
+          NAME_PREFIX,
+          { name: "alert_email", type: "string", description: "Address the plan's alert policy emails when error logs appear." }
+        ]
+      };
+    }
+  },
+  postgres: {
+    emit: (c) => sqlInstance(c, { ...POSTGRES, version: PG_DATABASE_VERSION[c.attr("PostgreSQL version")] ?? "POSTGRES_16" }, "pg")
+  },
+  mysql: {
+    emit: (c) => sqlInstance(c, { ...MYSQL, version: MYSQL_DATABASE_VERSION[c.attr("MySQL version")] ?? "MYSQL_8_4" }, "mysql")
+  },
+  /** Memorystore for Redis on the plan's network, with AUTH and TLS on. */
+  redis: {
+    emit: (c) => {
+      c.gcp.api("redis.googleapis.com", "servicenetworking.googleapis.com", "compute.googleapis.com");
+      const { vpc, variables } = netOrVars(c.net);
+      const connection2 = c.gcp.privateServices(vpc);
+      const sku = REDIS_TIER[c.attr("Cache SKU")] ?? REDIS_TIER["Standard (C1)"];
+      return {
+        blocks: [
+          block("resource", ["google_redis_instance", c.name], [
+            { key: "name", value: cloudName("redis", c.slug) },
+            { key: "region", value: "var.region" },
+            { key: "tier", value: quote(sku.tier) },
+            { key: "memory_size_gb", value: sku.size },
+            { key: "redis_version", value: quote("REDIS_7_2") },
+            { key: "authorized_network", value: vpc },
+            { key: "connect_mode", value: quote("PRIVATE_SERVICE_ACCESS") },
+            { key: "auth_enabled", value: "true" },
+            { key: "transit_encryption_mode", value: quote("SERVER_AUTHENTICATION") },
+            { key: "depends_on", value: `[${connection2}]` }
+          ])
+        ],
+        variables: [NAME_PREFIX, ...variables],
+        outputs: [{ name: `${c.name}_host`, value: `google_redis_instance.${c.name}.host` }]
+      };
+    }
+  },
+  /** A Firestore database in native mode with point-in-time recovery. */
+  nosql: {
+    emit: (c) => {
+      c.gcp.api("firestore.googleapis.com");
+      return {
+        blocks: [
+          block("resource", ["google_firestore_database", c.name], [
+            { key: "name", value: cloudName("fs", c.slug) },
+            { key: "location_id", value: "var.region" },
+            { key: "type", value: quote("FIRESTORE_NATIVE") },
+            { key: "point_in_time_recovery_enablement", value: quote("POINT_IN_TIME_RECOVERY_ENABLED") },
+            { key: "delete_protection_state", value: quote(production(c) ? "DELETE_PROTECTION_ENABLED" : "DELETE_PROTECTION_DISABLED") },
+            { key: "deletion_policy", value: quote(production(c) ? "ABANDON" : "DELETE") }
+          ])
+        ],
+        variables: [NAME_PREFIX]
+      };
+    }
+  },
+  /** A BigQuery dataset: encrypted by Google, no public grant, deletable only when empty in production. */
+  dataWarehouse: {
+    emit: (c) => {
+      c.gcp.api("bigquery.googleapis.com");
+      return {
+        blocks: [
+          block("resource", ["google_bigquery_dataset", c.name], [
+            { key: "dataset_id", value: `replace(${cloudName("dw", c.slug)}, "-", "_")` },
+            { key: "location", value: "var.region" },
+            { key: "delete_contents_on_destroy", value: production(c) ? "false" : "true" }
+          ])
+        ],
+        variables: [NAME_PREFIX]
+      };
+    }
+  },
+  /** A project the plan creates, with data-access audit logs on and no default network. */
+  project: {
+    emit: (c) => {
+      c.gcp.api("cloudresourcemanager.googleapis.com", "serviceusage.googleapis.com");
+      return {
+        blocks: [
+          block("resource", ["google_project", c.name], [
+            { key: "name", value: "var.project_id" },
+            { key: "project_id", value: "var.project_id" },
+            { key: "org_id", value: "var.org_id" },
+            { key: "billing_account", value: "var.billing_account" },
+            { key: "auto_create_network", value: "false" }
+          ]),
+          block("resource", ["google_project_iam_audit_config", c.name], [
+            { key: "project", value: `google_project.${c.name}.project_id` },
+            { key: "service", value: quote("allServices") }
+          ], [
+            block("audit_log_config", [], [{ key: "log_type", value: quote("ADMIN_READ") }]),
+            block("audit_log_config", [], [{ key: "log_type", value: quote("DATA_READ") }]),
+            block("audit_log_config", [], [{ key: "log_type", value: quote("DATA_WRITE") }])
+          ])
+        ],
+        variables: [
+          {
+            name: "billing_account",
+            type: "string",
+            description: "Billing account the project is billed to, such as 012345-6789AB-CDEF01."
+          },
+          {
+            name: "org_id",
+            type: "string",
+            description: "Organisation the project is created in; leave null for a project with no organisation.",
+            default: "null"
+          }
+        ],
+        outputs: [{ name: `${c.name}_number`, value: `google_project.${c.name}.number` }]
+      };
+    }
+  }
+};
+function privateServicesBlocks(networkId) {
+  return [
+    block("resource", ["google_compute_global_address", "private_services"], [
+      { key: "name", value: cloudName("private-services", "range") },
+      { key: "purpose", value: quote("VPC_PEERING") },
+      { key: "address_type", value: quote("INTERNAL") },
+      { key: "prefix_length", value: "20" },
+      { key: "network", value: networkId }
+    ]),
+    block("resource", ["google_service_networking_connection", "private_services"], [
+      { key: "network", value: networkId },
+      { key: "service", value: quote("servicenetworking.googleapis.com") },
+      { key: "reserved_peering_ranges", value: "[google_compute_global_address.private_services.name]" },
+      { key: "deletion_policy", value: quote("ABANDON") }
+    ])
+  ];
+}
 
 // ../packages/engine/src/kinds.ts
 function moduleBlock(key, name, inputs, subdir) {
@@ -20813,7 +21737,7 @@ var DNS_ZONE_FIELD = {
   validate: hostnameProblem,
   normalize: withoutTrailingDot
 };
-var NAME_PREFIX = {
+var NAME_PREFIX2 = {
   name: "name_prefix",
   type: "string",
   description: "Short prefix applied to every resource name.",
@@ -20858,7 +21782,7 @@ var PRIVATE_SUBNET_IDS = {
   type: "list(string)",
   description: "Private subnets (two or more) for tasks, caches and databases."
 };
-function netOrVars(net) {
+function netOrVars2(net) {
   if (net) return { refs: net, variables: [] };
   return {
     refs: {
@@ -20924,20 +21848,20 @@ var AZ_IDENTITY = {
   key: "managed_identities",
   value: mapExpression([{ key: "system_assigned", value: "true" }])
 };
-function azDbPosture(production) {
+function azDbPosture(production2) {
   return [
-    { key: "backup_retention_days", value: production ? "35" : "7" },
-    { key: "geo_redundant_backup_enabled", value: production ? "true" : "false" },
+    { key: "backup_retention_days", value: production2 ? "35" : "7" },
+    { key: "geo_redundant_backup_enabled", value: production2 ? "true" : "false" },
     {
       key: "high_availability",
-      value: production ? mapExpression([{ key: "mode", value: quote("ZoneRedundant") }]) : "null"
+      value: production2 ? mapExpression([{ key: "mode", value: quote("ZoneRedundant") }]) : "null"
     }
   ];
 }
-function awsDbPosture(production) {
+function awsDbPosture(production2) {
   return [
-    { key: "backup_retention_period", value: production ? "35" : "7" },
-    { key: "skip_final_snapshot", value: production ? "false" : "true" }
+    { key: "backup_retention_period", value: production2 ? "35" : "7" },
+    { key: "skip_final_snapshot", value: production2 ? "false" : "true" }
   ];
 }
 var AWS_DB_HARDENING = [
@@ -20947,7 +21871,7 @@ var AWS_DB_HARDENING = [
   { key: "performance_insights_enabled", value: "true" },
   { key: "performance_insights_retention_period", value: "7" }
 ];
-function cloudName(prefix, slug) {
+function cloudName2(prefix, slug) {
   return quoteTemplate`${prefix}-\${var.name_prefix}-${slug}`;
 }
 var AWS_US_EAST_1 = { alias: "us_east_1", region: "us-east-1", ref: "aws.us_east_1" };
@@ -21038,7 +21962,7 @@ function s3AccessLogs(c) {
       ])
     },
     bucket: moduleBlock("aws/s3-bucket", name, [
-      { key: "bucket", value: cloudName("logs", c.slug) },
+      { key: "bucket", value: cloudName2("logs", c.slug) },
       { key: "control_object_ownership", value: "true" },
       { key: "object_ownership", value: quote("BucketOwnerEnforced") },
       ...S3_PUBLIC_ACCESS_BLOCK,
@@ -21131,7 +22055,7 @@ function frontDoorSecurityPolicies(slug, domainKeys) {
     {
       key: "default",
       value: mapExpression([
-        { key: "name", value: cloudName("fdsp", slug) },
+        { key: "name", value: cloudName2("fdsp", slug) },
         {
           key: "firewall",
           value: mapExpression([
@@ -21167,6 +22091,23 @@ var GCP_MODULES = {
 };
 function hasWebsite(b) {
   return b.blocks.some((x) => x.type === "website") || attr(b, "website") !== void 0;
+}
+function gcpPlan(c) {
+  return c.gcp ?? { api: () => void 0, privateServices: () => "" };
+}
+function childBlock(b, ...path) {
+  let at = b;
+  for (const type of path) at = at?.blocks.find((x) => x.type === type);
+  return at;
+}
+function appendRunEnv(host, entry) {
+  const template = host.blocks.find((x) => x.type === "template");
+  const container = template?.blocks.find((x) => x.type === "containers");
+  if (!container) return;
+  container.blocks.push(block("env", [], [
+    { key: "name", value: quote(entry.key) },
+    { key: "value", value: entry.value }
+  ]));
 }
 var KIND_DEFINITIONS = [
   {
@@ -21210,7 +22151,7 @@ var KIND_DEFINITIONS = [
             AZ_TAGS
           ])
         ],
-        variables: [NAME_PREFIX],
+        variables: [NAME_PREFIX2],
         outputs: [{ name: `${c.name}_name_servers`, value: `module.${c.name}.name_servers` }]
       }),
       read: (b) => readOne(b, "name", "Zone name", (v) => v)
@@ -21231,6 +22172,7 @@ var KIND_DEFINITIONS = [
       type: "google_dns_managed_zone",
       matches: ["google_dns_record_set"],
       moduleSource: GCP_MODULES.dns,
+      emit: (c) => GCP.dns.emit({ ...c, gcp: gcpPlan(c) }),
       read: (b) => readOne(b, "dns_name", "Zone name", (v) => /^[A-Za-z0-9.-]{1,120}$/.test(v) ? withoutTrailingDot(v) : void 0)
     }
   },
@@ -21253,7 +22195,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("azure/cdn-profile", c.name, [
-            { key: "name", value: cloudName("fd", c.slug) },
+            { key: "name", value: cloudName2("fd", c.slug) },
             ...AZ_GROUP,
             { key: "sku", value: quote("Premium_AzureFrontDoor") },
             {
@@ -21261,7 +22203,7 @@ var KIND_DEFINITIONS = [
               value: mapExpression([
                 {
                   key: "default",
-                  value: mapExpression([{ key: "name", value: cloudName("fde", c.slug) }])
+                  value: mapExpression([{ key: "name", value: cloudName2("fde", c.slug) }])
                 }
               ])
             },
@@ -21272,7 +22214,7 @@ var KIND_DEFINITIONS = [
                   key: "default",
                   value: mapExpression([
                     // A firewall policy name is alphanumeric only — no hyphens.
-                    { key: "name", value: `replace(${cloudName("waf", c.slug)}, "-", "")` },
+                    { key: "name", value: `replace(${cloudName2("waf", c.slug)}, "-", "")` },
                     { key: "resource_group_name", value: `${RG_MODULE}.name` },
                     { key: "sku_name", value: quote("Premium_AzureFrontDoor") },
                     { key: "mode", value: quote("Prevention") },
@@ -21298,7 +22240,7 @@ var KIND_DEFINITIONS = [
             AZ_TAGS
           ])
         ],
-        variables: [NAME_PREFIX],
+        variables: [NAME_PREFIX2],
         outputs: [
           {
             name: `${c.name}_hostname`,
@@ -21312,7 +22254,7 @@ var KIND_DEFINITIONS = [
       finalize: (host, c) => {
         const variables = [];
         if (!host.attributes.some((a) => a.key === "front_door_origins")) {
-          frontDoorOrigin(host, `${c.slug}-origin`, cloudName("origin", c.slug), "var.origin_domain_name");
+          frontDoorOrigin(host, `${c.slug}-origin`, cloudName2("origin", c.slug), "var.origin_domain_name");
           variables.push({
             name: "origin_domain_name",
             type: "string",
@@ -21402,7 +22344,7 @@ var KIND_DEFINITIONS = [
         blocks: [
           block("resource", ["aws_wafv2_web_acl", c.name], [
             { key: "provider", value: AWS_US_EAST_1.ref },
-            { key: "name", value: cloudName("waf", c.slug) },
+            { key: "name", value: cloudName2("waf", c.slug) },
             { key: "scope", value: quote("CLOUDFRONT") }
           ], [
             block("default_action", [], [], [block("allow", [], [])]),
@@ -21437,7 +22379,7 @@ var KIND_DEFINITIONS = [
           // log: what was asked for, from where, and which rule let it through.
           block("resource", ["aws_cloudwatch_log_group", `${c.name}_waf`], [
             { key: "provider", value: AWS_US_EAST_1.ref },
-            { key: "name", value: cloudName(WAF_LOG_PREFIX, c.slug) },
+            { key: "name", value: cloudName2(WAF_LOG_PREFIX, c.slug) },
             { key: "retention_in_days", value: "365" }
           ]),
           block("resource", ["aws_wafv2_web_acl_logging_configuration", c.name], [
@@ -21448,7 +22390,7 @@ var KIND_DEFINITIONS = [
         ],
         referent: 1,
         consumer: 1,
-        variables: [NAME_PREFIX],
+        variables: [NAME_PREFIX2],
         outputs: [
           {
             name: `${c.name}_domain`,
@@ -21544,7 +22486,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("azure/load-balancer", c.name, [
-            { key: "name", value: cloudName("lb", c.slug) },
+            { key: "name", value: cloudName2("lb", c.slug) },
             ...AZ_GROUP,
             { key: "sku", value: quote("Standard") },
             {
@@ -21571,7 +22513,7 @@ var KIND_DEFINITIONS = [
             AZ_TAGS
           ])
         ],
-        variables: [NAME_PREFIX],
+        variables: [NAME_PREFIX2],
         outputs: [
           {
             name: `${c.name}_ip`,
@@ -21591,11 +22533,11 @@ var KIND_DEFINITIONS = [
       // target group is `app`, IP-typed so Fargate tasks and instances both fit;
       // whatever the edge points at registers itself (see terraform.ts).
       emit: (c) => {
-        const { refs, variables } = netOrVars(c.net);
+        const { refs, variables } = netOrVars2(c.net);
         return {
           blocks: [
             moduleBlock("aws/alb", c.name, [
-              { key: "name", value: cloudName("lb", c.slug) },
+              { key: "name", value: cloudName2("lb", c.slug) },
               { key: "vpc_id", value: refs.vpcId },
               { key: "subnets", value: refs.publicSubnets },
               { key: "enable_deletion_protection", value: "false" },
@@ -21635,7 +22577,7 @@ var KIND_DEFINITIONS = [
               }
             ])
           ],
-          variables: [NAME_PREFIX, ...variables],
+          variables: [NAME_PREFIX2, ...variables],
           outputs: [{ name: `${c.name}_dns`, value: `module.${c.name}.dns_name` }]
         };
       },
@@ -21685,7 +22627,7 @@ var KIND_DEFINITIONS = [
         return {
           blocks: [
             moduleBlock("azure/service-plan", `${c.name}_plan`, [
-              { key: "name", value: cloudName("asp", c.slug) },
+              { key: "name", value: cloudName2("asp", c.slug) },
               ...AZ_PARENT,
               { key: "os_type", value: quote("Linux") },
               { key: "sku_name", value: quote(APP_TIER_AZURE.to(tier, "Standard (P1v3)")) },
@@ -21695,7 +22637,7 @@ var KIND_DEFINITIONS = [
               AZ_TAGS
             ]),
             moduleBlock("azure/web-site", c.name, [
-              { key: "name", value: cloudName("app", c.slug) },
+              { key: "name", value: cloudName2("app", c.slug) },
               ...AZ_PARENT,
               { key: "kind", value: quote("webapp") },
               { key: "os_type", value: quote("Linux") },
@@ -21715,7 +22657,7 @@ var KIND_DEFINITIONS = [
           ],
           referent: 1,
           consumer: 1,
-          variables: [NAME_PREFIX],
+          variables: [NAME_PREFIX2],
           outputs: [{ name: `${c.name}_hostname`, value: `module.${c.name}.resource_uri` }]
         };
       },
@@ -21732,11 +22674,11 @@ var KIND_DEFINITIONS = [
       // Public subnet with a public address: this tier sits directly behind the
       // CDN when no load balancer is in the model.
       emit: (c) => {
-        const { refs, variables } = netOrVars(c.net);
+        const { refs, variables } = netOrVars2(c.net);
         return {
           blocks: [
             moduleBlock("aws/ec2-instance", c.name, [
-              { key: "name", value: cloudName("web", c.slug) },
+              { key: "name", value: cloudName2("web", c.slug) },
               {
                 key: "instance_type",
                 value: quote(APP_TIER_AWS.to(c.attr("Compute tier"), "Standard (P1v3)"))
@@ -21777,7 +22719,7 @@ var KIND_DEFINITIONS = [
               tagsBlock(c.slug)
             ])
           ],
-          variables: [NAME_PREFIX, ...variables],
+          variables: [NAME_PREFIX2, ...variables],
           outputs: [{ name: `${c.name}_public_dns`, value: `module.${c.name}.public_dns` }]
         };
       },
@@ -21805,7 +22747,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("azure/container-environment", `${c.name}_environment`, [
-            { key: "name", value: cloudName("cae", c.slug) },
+            { key: "name", value: cloudName2("cae", c.slug) },
             ...AZ_GROUP,
             { key: "zone_redundant", value: "false" },
             // A workload-profiles environment in its own subnet of the plan's
@@ -21830,7 +22772,7 @@ var KIND_DEFINITIONS = [
             AZ_TAGS
           ]),
           moduleBlock("azure/container-app", c.name, [
-            { key: "name", value: cloudName("ca", c.slug) },
+            { key: "name", value: cloudName2("ca", c.slug) },
             { key: "resource_group_name", value: `${RG_MODULE}.name` },
             {
               key: "container_app_environment_resource_id",
@@ -21863,7 +22805,7 @@ var KIND_DEFINITIONS = [
         ],
         referent: 1,
         consumer: 1,
-        variables: [NAME_PREFIX]
+        variables: [NAME_PREFIX2]
       }),
       // The module returns the revision FQDN already prefixed with the scheme;
       // everything that consumes a hostname wants the bare host.
@@ -21879,15 +22821,15 @@ var KIND_DEFINITIONS = [
       // registers (`load_balancer`, added by the edge). Tasks sit in private
       // subnets; nothing reaches them except what an edge lets in.
       emit: (c) => {
-        const { refs, variables } = netOrVars(c.net);
+        const { refs, variables } = netOrVars2(c.net);
         const cpu = CONTAINER_SIZE_AWS.to(c.attr("Container size"), "Medium (1 vCPU)");
         return {
           blocks: [
             moduleBlock("aws/ecs", `${c.name}_cluster`, [
-              { key: "name", value: cloudName("ecs", c.slug) }
+              { key: "name", value: cloudName2("ecs", c.slug) }
             ], "modules/cluster"),
             moduleBlock("aws/ecs", c.name, [
-              { key: "name", value: cloudName("svc", c.slug) },
+              { key: "name", value: cloudName2("svc", c.slug) },
               { key: "cluster_arn", value: `module.${c.name}_cluster.arn` },
               { key: "cpu", value: cpu },
               { key: "memory", value: "2048" },
@@ -21912,7 +22854,7 @@ var KIND_DEFINITIONS = [
           ],
           referent: 1,
           consumer: 1,
-          variables: [NAME_PREFIX, ...variables]
+          variables: [NAME_PREFIX2, ...variables]
         };
       },
       read: (b) => readOne(b, "cpu", "Container size", (v) => CONTAINER_SIZE_AWS.from(v))
@@ -21920,7 +22862,14 @@ var KIND_DEFINITIONS = [
     gcp: {
       type: "google_cloud_run_v2_service",
       matches: ["google_cloud_run_service", "google_cloud_run_v2_job"],
-      moduleSource: GCP_MODULES.cloudRun
+      moduleSource: GCP_MODULES.cloudRun,
+      emit: (c) => GCP.containers.emit({ ...c, gcp: gcpPlan(c) }),
+      read: (b) => {
+        const limits = childBlock(b, "template", "containers", "resources");
+        return readOne(limits ?? b, "limits", "Container size", (v) => runSizeFrom(/cpu\s*=\s*"([^"]+)"/.exec(v)?.[1]));
+      },
+      settings: { attribute: "", append: appendRunEnv },
+      hostname: (ref) => `trimprefix(${refAddress(ref, "uri")}, "https://")`
     }
   },
   {
@@ -21963,7 +22912,7 @@ var KIND_DEFINITIONS = [
               AZ_TAGS
             ]),
             moduleBlock("azure/service-plan", `${c.name}_plan`, [
-              { key: "name", value: cloudName("aspfn", c.slug) },
+              { key: "name", value: cloudName2("aspfn", c.slug) },
               ...AZ_PARENT,
               { key: "os_type", value: quote("Linux") },
               { key: "sku_name", value: quote("FC1") },
@@ -21974,7 +22923,7 @@ var KIND_DEFINITIONS = [
               AZ_TAGS
             ]),
             moduleBlock("azure/web-site", c.name, [
-              { key: "name", value: cloudName("fn", c.slug) },
+              { key: "name", value: cloudName2("fn", c.slug) },
               ...AZ_PARENT,
               { key: "kind", value: quote("functionapp") },
               { key: "os_type", value: quote("Linux") },
@@ -22010,7 +22959,7 @@ var KIND_DEFINITIONS = [
           ],
           referent: 2,
           consumer: 2,
-          variables: [NAME_PREFIX],
+          variables: [NAME_PREFIX2],
           outputs: [{ name: `${c.name}_hostname`, value: `module.${c.name}.resource_uri` }]
         };
       },
@@ -22045,7 +22994,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("aws/lambda", c.name, [
-            { key: "function_name", value: cloudName("fn", c.slug) },
+            { key: "function_name", value: cloudName2("fn", c.slug) },
             { key: "handler", value: quote(lambdaRuntime(c.attr("Runtime")).handler) },
             { key: "runtime", value: quote(lambdaRuntime(c.attr("Runtime")).runtime) },
             { key: "source_path", value: quoteTemplate`\${path.module}/src/${c.slug}` },
@@ -22055,7 +23004,7 @@ var KIND_DEFINITIONS = [
             { key: "attach_tracing_policy", value: "true" }
           ])
         ],
-        variables: [NAME_PREFIX],
+        variables: [NAME_PREFIX2],
         outputs: [{ name: `${c.name}_url`, value: `module.${c.name}.lambda_function_url` }],
         files: [
           {
@@ -22076,7 +23025,11 @@ var KIND_DEFINITIONS = [
     },
     gcp: {
       type: "google_cloudfunctions2_function",
-      matches: ["google_cloudfunctions_function"]
+      matches: ["google_cloudfunctions_function"],
+      emit: (c) => GCP.functions.emit({ ...c, gcp: gcpPlan(c) }),
+      read: (b) => readOne(childBlock(b, "build_config") ?? b, "runtime", "Runtime", (v) => functionRuntimeFrom(v)),
+      settings: { nestedBlock: "service_config", attribute: "environment_variables" },
+      hostname: (ref) => `trimprefix(${refAddress(ref)}.service_config[0].uri, "https://")`
     }
   },
   {
@@ -22092,13 +23045,13 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("azure/static-site", c.name, [
-            { key: "name", value: cloudName("swa", c.slug) },
+            { key: "name", value: cloudName2("swa", c.slug) },
             ...AZ_GROUP,
             AZ_TELEMETRY,
             AZ_TAGS
           ])
         ],
-        variables: [NAME_PREFIX],
+        variables: [NAME_PREFIX2],
         outputs: [{ name: `${c.name}_hostname`, value: `module.${c.name}.resource_uri` }]
       }),
       hostname: (ref) => `module.${ref.name}.resource_uri`
@@ -22112,7 +23065,7 @@ var KIND_DEFINITIONS = [
         return {
           blocks: [
             moduleBlock("aws/s3-bucket", c.name, [
-              { key: "bucket", value: cloudName("site", c.slug) },
+              { key: "bucket", value: cloudName2("site", c.slug) },
               { key: "control_object_ownership", value: "true" },
               { key: "object_ownership", value: quote("BucketOwnerPreferred") },
               ...S3_PUBLIC_ACCESS_BLOCK,
@@ -22129,7 +23082,7 @@ var KIND_DEFINITIONS = [
             ]),
             logs.bucket
           ],
-          variables: [NAME_PREFIX],
+          variables: [NAME_PREFIX2],
           outputs: [{ name: `${c.name}_endpoint`, value: `module.${c.name}.s3_bucket_website_endpoint` }]
         };
       },
@@ -22156,7 +23109,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("azure/servicebus", c.name, [
-            { key: "name", value: cloudName("sb", c.slug) },
+            { key: "name", value: cloudName2("sb", c.slug) },
             ...AZ_GROUP,
             { key: "sku", value: quote("Standard") },
             { key: "minimum_tls_version", value: quote("1.2") },
@@ -22169,7 +23122,7 @@ var KIND_DEFINITIONS = [
                 {
                   key: "main",
                   value: mapExpression([
-                    { key: "name", value: cloudName("q", c.slug) },
+                    { key: "name", value: cloudName2("q", c.slug) },
                     {
                       key: "requires_duplicate_detection",
                       value: DELIVERY.to(c.attr("Delivery"), "At least once")
@@ -22183,7 +23136,7 @@ var KIND_DEFINITIONS = [
             AZ_TAGS
           ])
         ],
-        variables: [NAME_PREFIX]
+        variables: [NAME_PREFIX2]
       }),
       read: (b) => {
         const main = mapEntries(attr(b, "queues")).find((e) => e.key === "main")?.value;
@@ -22211,7 +23164,7 @@ var KIND_DEFINITIONS = [
               { key: "create_dlq", value: "true" }
             ])
           ],
-          variables: [NAME_PREFIX]
+          variables: [NAME_PREFIX2]
         };
       },
       read: (b) => readOne(b, "fifo_queue", "Delivery", (v) => DELIVERY.from(v)),
@@ -22220,7 +23173,9 @@ var KIND_DEFINITIONS = [
     gcp: {
       type: "google_pubsub_topic",
       matches: ["google_pubsub_subscription"],
-      moduleSource: GCP_MODULES.pubsub
+      moduleSource: GCP_MODULES.pubsub,
+      emit: (c) => GCP.queue.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "PUBSUB_TOPIC", value: refAddress(ref, "id") })
     }
   },
   {
@@ -22237,7 +23192,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("azure/virtual-network", c.name, [
-            { key: "name", value: cloudName("vnet", c.slug) },
+            { key: "name", value: cloudName2("vnet", c.slug) },
             ...AZ_PARENT,
             { key: "address_space", value: `[${quote(c.attr("Address space"))}]` },
             {
@@ -22256,7 +23211,7 @@ var KIND_DEFINITIONS = [
             AZ_TAGS
           ])
         ],
-        variables: [NAME_PREFIX],
+        variables: [NAME_PREFIX2],
         outputs: [{ name: `${c.name}_id`, value: `module.${c.name}.resource_id` }]
       }),
       read: (b) => {
@@ -22274,7 +23229,7 @@ var KIND_DEFINITIONS = [
         return {
           blocks: [
             moduleBlock("aws/vpc", c.name, [
-              { key: "name", value: cloudName("vpc", c.slug) },
+              { key: "name", value: cloudName2("vpc", c.slug) },
               { key: "cidr", value: cidr },
               { key: "azs", value: `["\${var.region}a", "\${var.region}b"]` },
               { key: "private_subnets", value: `[cidrsubnet(${cidr}, 8, 1), cidrsubnet(${cidr}, 8, 2)]` },
@@ -22287,7 +23242,7 @@ var KIND_DEFINITIONS = [
               { key: "flow_log_max_aggregation_interval", value: "60" }
             ])
           ],
-          variables: [NAME_PREFIX],
+          variables: [NAME_PREFIX2],
           outputs: [{ name: `${c.name}_id`, value: `module.${c.name}.vpc_id` }]
         };
       },
@@ -22301,8 +23256,20 @@ var KIND_DEFINITIONS = [
     },
     gcp: {
       type: "google_compute_network",
-      matches: ["google_compute_subnetwork"],
-      moduleSource: GCP_MODULES.network
+      matches: [
+        "google_compute_subnetwork",
+        "google_compute_firewall",
+        "google_compute_router",
+        "google_compute_router_nat"
+      ],
+      moduleSource: GCP_MODULES.network,
+      emit: (c) => GCP.network.emit({ ...c, gcp: gcpPlan(c) }),
+      read: (b) => (
+        // The subnet is cidrsubnet(<space>, 8, 1) of the space the model drew; the network holds neither.
+        readOne(b, "ip_cidr_range", "Address space", (v) => /^cidrsubnet\(\s*"([^"]+)"/.exec(v)?.[1])
+      ),
+      connection: (ref) => ({ key: "VPC_ID", value: refAddress(ref, "id") }),
+      network: (name) => GCP.network.refs(name)
     }
   },
   {
@@ -22322,7 +23289,7 @@ var KIND_DEFINITIONS = [
         return {
           blocks: [
             moduleBlock("azure/redis", c.name, [
-              { key: "name", value: cloudName("redis", c.slug) },
+              { key: "name", value: cloudName2("redis", c.slug) },
               ...AZ_GROUP,
               { key: "sku_name", value: quote(sku) },
               { key: "capacity", value: REDIS_CAPACITY_AZURE[choice]?.capacity ?? "1" },
@@ -22335,7 +23302,7 @@ var KIND_DEFINITIONS = [
               AZ_TAGS
             ])
           ],
-          variables: [NAME_PREFIX]
+          variables: [NAME_PREFIX2]
         };
       },
       read: (b) => readOne(b, "sku_name", "Cache SKU", (v) => REDIS_SKU_AZURE.from(v)),
@@ -22346,11 +23313,11 @@ var KIND_DEFINITIONS = [
       matches: ["aws_elasticache_replication_group"],
       moduleSource: MODULE_VERSIONS["aws/elasticache"].source,
       emit: (c) => {
-        const { refs, variables } = netOrVars(c.net);
+        const { refs, variables } = netOrVars2(c.net);
         return {
           blocks: [
             moduleBlock("aws/elasticache", c.name, [
-              { key: "replication_group_id", value: cloudName("redis", c.slug) },
+              { key: "replication_group_id", value: cloudName2("redis", c.slug) },
               { key: "engine", value: quote("redis") },
               { key: "engine_version", value: quote("7.1") },
               { key: "node_type", value: quote(REDIS_NODE_AWS.to(c.attr("Cache SKU"), "Standard (C1)")) },
@@ -22361,7 +23328,7 @@ var KIND_DEFINITIONS = [
               { key: "subnet_ids", value: refs.privateSubnets }
             ])
           ],
-          variables: [NAME_PREFIX, ...variables]
+          variables: [NAME_PREFIX2, ...variables]
         };
       },
       read: (b) => readOne(b, "node_type", "Cache SKU", (v) => REDIS_NODE_AWS.from(v)),
@@ -22372,7 +23339,15 @@ var KIND_DEFINITIONS = [
     },
     gcp: {
       type: "google_redis_instance",
-      matches: ["google_redis_cluster", "google_memcache_instance"]
+      matches: ["google_redis_cluster", "google_memcache_instance"],
+      emit: (c) => GCP.redis.emit({ ...c, gcp: gcpPlan(c) }),
+      read: (b) => {
+        const tier = stringValue(attr(b, "tier"));
+        const size = attr(b, "memory_size_gb")?.trim();
+        const label = redisSkuFrom(tier, size);
+        return label ? { "Cache SKU": label } : {};
+      },
+      connection: (ref) => ({ key: "REDIS_HOST", value: refAddress(ref, "host") })
     }
   },
   {
@@ -22388,11 +23363,11 @@ var KIND_DEFINITIONS = [
       matches: ["azurerm_postgresql_server"],
       moduleSource: MODULE_VERSIONS["azure/postgres"].source,
       emit: (c) => {
-        const production = isProduction(c);
+        const production2 = isProduction(c);
         return {
           blocks: [
             moduleBlock("azure/postgres", c.name, [
-              { key: "name", value: cloudName("pg", c.slug) },
+              { key: "name", value: cloudName2("pg", c.slug) },
               ...AZ_GROUP,
               {
                 key: "server_version",
@@ -22408,7 +23383,7 @@ var KIND_DEFINITIONS = [
               { key: "public_network_access_enabled", value: "false" },
               { key: "firewall_rules", value: "{}" },
               privateEndpoint(c, "privatelink.postgres.database.azure.com"),
-              ...azDbPosture(production),
+              ...azDbPosture(production2),
               // Who connected, when the server checkpointed, and a brake on
               // repeated failed logins — the server's own audit trail, off by default.
               {
@@ -22431,7 +23406,7 @@ var KIND_DEFINITIONS = [
               AZ_TAGS
             ])
           ],
-          variables: [NAME_PREFIX, DB_USERNAME, DB_PASSWORD],
+          variables: [NAME_PREFIX2, DB_USERNAME, DB_PASSWORD],
           outputs: [{ name: `${c.name}_fqdn`, value: `module.${c.name}.fqdn` }]
         };
       },
@@ -22460,7 +23435,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("aws/rds", c.name, [
-            { key: "identifier", value: cloudName("pg", c.slug) },
+            { key: "identifier", value: cloudName2("pg", c.slug) },
             { key: "engine", value: quote("postgres") },
             { key: "engine_version", value: quote(PG_VERSION.to(c.attr("PostgreSQL version"), "PostgreSQL 16")) },
             { key: "family", value: quote(`postgres${PG_VERSION.to(c.attr("PostgreSQL version"), "PostgreSQL 16")}`) },
@@ -22482,7 +23457,7 @@ var KIND_DEFINITIONS = [
             c.net ? { key: "subnet_ids", value: c.net.privateSubnets } : null
           ])
         ],
-        variables: [NAME_PREFIX, DB_USERNAME],
+        variables: [NAME_PREFIX2, DB_USERNAME],
         outputs: [{ name: `${c.name}_endpoint`, value: `module.${c.name}.db_instance_endpoint` }]
       }),
       read: (b) => readOne(b, "engine_version", "PostgreSQL version", (v) => PG_VERSION.from(v)),
@@ -22492,7 +23467,10 @@ var KIND_DEFINITIONS = [
       type: "google_sql_database_instance",
       matchBlock: (b) => (stringValue(attr(b, "database_version")) ?? "").startsWith("POSTGRES_"),
       moduleSource: GCP_MODULES.postgres,
-      read: (b) => readOne(b, "database_version", "PostgreSQL version", (v) => PG_VERSION.from(v.replace(/^POSTGRES_/, "")))
+      matches: ["google_sql_database", "google_sql_user"],
+      emit: (c) => GCP.postgres.emit({ ...c, gcp: gcpPlan(c) }),
+      read: (b) => readOne(b, "database_version", "PostgreSQL version", (v) => PG_VERSION.from(v.replace(/^POSTGRES_/, ""))),
+      connection: (ref) => ({ key: "DATABASE_HOST", value: refAddress(ref, "private_ip_address") })
     }
   },
   {
@@ -22506,11 +23484,11 @@ var KIND_DEFINITIONS = [
       type: "azurerm_mysql_flexible_server",
       moduleSource: MODULE_VERSIONS["azure/mysql"].source,
       emit: (c) => {
-        const production = isProduction(c);
+        const production2 = isProduction(c);
         return {
           blocks: [
             moduleBlock("azure/mysql", c.name, [
-              { key: "name", value: cloudName("mysql", c.slug) },
+              { key: "name", value: cloudName2("mysql", c.slug) },
               ...AZ_GROUP,
               {
                 key: "mysql_version",
@@ -22523,12 +23501,12 @@ var KIND_DEFINITIONS = [
               // nowhere else.
               { key: "public_network_access", value: quote("Disabled") },
               privateEndpoint(c, "privatelink.mysql.database.azure.com", "mysqlServer"),
-              ...azDbPosture(production),
+              ...azDbPosture(production2),
               AZ_TELEMETRY,
               AZ_TAGS
             ])
           ],
-          variables: [NAME_PREFIX, DB_USERNAME, DB_PASSWORD]
+          variables: [NAME_PREFIX2, DB_USERNAME, DB_PASSWORD]
         };
       },
       read: (b) => ({
@@ -22562,7 +23540,7 @@ var KIND_DEFINITIONS = [
         return {
           blocks: [
             moduleBlock("aws/rds", c.name, [
-              { key: "identifier", value: cloudName("mysql", c.slug) },
+              { key: "identifier", value: cloudName2("mysql", c.slug) },
               { key: "engine", value: quote("mysql") },
               { key: "engine_version", value: quote(version2) },
               { key: "family", value: quote(`mysql${version2}`) },
@@ -22578,7 +23556,7 @@ var KIND_DEFINITIONS = [
               c.net ? { key: "subnet_ids", value: c.net.privateSubnets } : null
             ])
           ],
-          variables: [NAME_PREFIX, DB_USERNAME]
+          variables: [NAME_PREFIX2, DB_USERNAME]
         };
       },
       read: (b) => readOne(b, "engine_version", "MySQL version", (v) => MYSQL_VERSION_AWS.from(v)),
@@ -22588,6 +23566,8 @@ var KIND_DEFINITIONS = [
       type: "google_sql_database_instance",
       matchBlock: (b) => (stringValue(attr(b, "database_version")) ?? "").startsWith("MYSQL_"),
       moduleSource: GCP_MODULES.mysql,
+      emit: (c) => GCP.mysql.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "MYSQL_HOST", value: refAddress(ref, "private_ip_address") }),
       read: (b) => readOne(b, "database_version", "MySQL version", (v) => MYSQL_VERSION_AWS.from(v.replace(/^MYSQL_/, "").replace("_", ".")))
     }
   },
@@ -22604,7 +23584,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("azure/cosmos", c.name, [
-            { key: "name", value: cloudName("cosmos", c.slug) },
+            { key: "name", value: cloudName2("cosmos", c.slug) },
             ...AZ_GROUP,
             {
               key: "consistency_policy",
@@ -22626,7 +23606,7 @@ var KIND_DEFINITIONS = [
             AZ_TAGS
           ])
         ],
-        variables: [NAME_PREFIX]
+        variables: [NAME_PREFIX2]
       }),
       connection: (ref) => ({ key: "COSMOS_ENDPOINT", value: refAddress(ref, "endpoint") })
     },
@@ -22636,7 +23616,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("aws/dynamodb-table", c.name, [
-            { key: "name", value: cloudName("ddb", c.slug) },
+            { key: "name", value: cloudName2("ddb", c.slug) },
             { key: "billing_mode", value: quote("PAY_PER_REQUEST") },
             { key: "hash_key", value: quote("id") },
             { key: "attributes", value: `[
@@ -22647,13 +23627,15 @@ var KIND_DEFINITIONS = [
             { key: "deletion_protection_enabled", value: isProduction(c) ? "true" : "false" }
           ])
         ],
-        variables: [NAME_PREFIX]
+        variables: [NAME_PREFIX2]
       }),
       connection: (ref) => ({ key: "DYNAMODB_TABLE", value: refAddress(ref, "dynamodb_table_id") })
     },
     gcp: {
       type: "google_firestore_database",
-      matches: ["google_bigtable_instance", "google_bigtable_table"]
+      matches: ["google_bigtable_instance", "google_bigtable_table"],
+      emit: (c) => GCP.nosql.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "FIRESTORE_DATABASE", value: refAddress(ref, "name") })
     }
   },
   {
@@ -22685,7 +23667,7 @@ var KIND_DEFINITIONS = [
             AZ_TAGS
           ])
         ],
-        variables: [NAME_PREFIX]
+        variables: [NAME_PREFIX2]
       }),
       read: (b) => {
         const sku = stringValue(attr(b, "account_sku_name"))?.replace(/^Standard_/, "");
@@ -22707,7 +23689,7 @@ var KIND_DEFINITIONS = [
         return {
           blocks: [
             moduleBlock("aws/s3-bucket", c.name, [
-              { key: "bucket", value: cloudName("data", c.slug) },
+              { key: "bucket", value: cloudName2("data", c.slug) },
               { key: "control_object_ownership", value: "true" },
               { key: "object_ownership", value: quote("BucketOwnerEnforced") },
               ...S3_PUBLIC_ACCESS_BLOCK,
@@ -22719,7 +23701,7 @@ var KIND_DEFINITIONS = [
             ]),
             logs.bucket
           ],
-          variables: [NAME_PREFIX]
+          variables: [NAME_PREFIX2]
         };
       },
       connection: (ref) => ({ key: "STORAGE_BUCKET", value: refAddress(ref, "s3_bucket_id") })
@@ -22727,7 +23709,9 @@ var KIND_DEFINITIONS = [
     gcp: {
       type: "google_storage_bucket",
       matchBlock: (b) => !hasWebsite(b),
-      moduleSource: GCP_MODULES.bucket
+      moduleSource: GCP_MODULES.bucket,
+      emit: (c) => GCP.objectStorage.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "STORAGE_BUCKET", value: refAddress(ref, "name") })
     }
   },
   {
@@ -22743,13 +23727,13 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("azure/user-assigned-identity", c.name, [
-            { key: "name", value: cloudName("id", c.slug) },
+            { key: "name", value: cloudName2("id", c.slug) },
             ...AZ_GROUP,
             AZ_TELEMETRY,
             AZ_TAGS
           ])
         ],
-        variables: [NAME_PREFIX]
+        variables: [NAME_PREFIX2]
       }),
       connection: (ref) => ({ key: "IDENTITY_CLIENT_ID", value: refAddress(ref, "client_id") })
     },
@@ -22758,7 +23742,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           block("resource", ["aws_iam_role", c.name], [
-            { key: "name", value: cloudName("role", c.slug) },
+            { key: "name", value: cloudName2("role", c.slug) },
             {
               key: "assume_role_policy",
               value: `jsonencode({
@@ -22772,13 +23756,15 @@ var KIND_DEFINITIONS = [
             }
           ])
         ],
-        variables: [NAME_PREFIX]
+        variables: [NAME_PREFIX2]
       }),
       connection: (ref) => ({ key: "ROLE_ARN", value: refAddress(ref, "arn") })
     },
     gcp: {
       type: "google_service_account",
-      moduleSource: GCP_MODULES.serviceAccounts
+      moduleSource: GCP_MODULES.serviceAccounts,
+      emit: (c) => GCP.identity.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "SERVICE_ACCOUNT", value: refAddress(ref, "email") })
     }
   },
   {
@@ -22794,7 +23780,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("azure/key-vault", c.name, [
-            { key: "name", value: cloudName("kv", c.slug) },
+            { key: "name", value: cloudName2("kv", c.slug) },
             ...AZ_GROUP,
             { key: "tenant_id", value: "var.tenant_id" },
             { key: "sku_name", value: quote("standard") },
@@ -22818,7 +23804,7 @@ var KIND_DEFINITIONS = [
             AZ_TAGS
           ])
         ],
-        variables: [NAME_PREFIX, TENANT_ID]
+        variables: [NAME_PREFIX2, TENANT_ID]
       }),
       connection: (ref) => ({ key: "KEY_VAULT_URI", value: refAddress(ref, "uri") })
     },
@@ -22828,7 +23814,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           block("resource", ["aws_secretsmanager_secret", c.name], [
-            { key: "name", value: cloudName("secret", c.slug) },
+            { key: "name", value: cloudName2("secret", c.slug) },
             { key: "kms_key_id", value: `aws_kms_key.${c.name}.arn` }
           ]),
           // The secret's own key rather than the account-wide `aws/secretsmanager`
@@ -22854,14 +23840,16 @@ var KIND_DEFINITIONS = [
           ]),
           block("data", ["aws_caller_identity", c.name], [])
         ],
-        variables: [NAME_PREFIX]
+        variables: [NAME_PREFIX2]
       }),
       connection: (ref) => ({ key: "SECRET_ARN", value: refAddress(ref, "arn") })
     },
     gcp: {
       type: "google_secret_manager_secret",
-      matches: ["google_kms_key_ring", "google_kms_crypto_key"],
-      moduleSource: GCP_MODULES.kms
+      matches: ["google_kms_key_ring", "google_kms_crypto_key", "google_project_service_identity"],
+      moduleSource: GCP_MODULES.kms,
+      emit: (c) => GCP.keyVault.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "SECRET_ID", value: refAddress(ref, "id") })
     }
   },
   {
@@ -22879,7 +23867,7 @@ var KIND_DEFINITIONS = [
       emit: (c) => ({
         blocks: [
           moduleBlock("azure/log-analytics", `${c.name}_workspace`, [
-            { key: "name", value: cloudName("log", c.slug) },
+            { key: "name", value: cloudName2("log", c.slug) },
             ...AZ_GROUP,
             { key: "log_analytics_workspace_sku", value: quote("PerGB2018") },
             {
@@ -22890,7 +23878,7 @@ var KIND_DEFINITIONS = [
             AZ_TAGS
           ]),
           moduleBlock("azure/app-insights", c.name, [
-            { key: "name", value: cloudName("appi", c.slug) },
+            { key: "name", value: cloudName2("appi", c.slug) },
             ...AZ_GROUP,
             { key: "workspace_id", value: `module.${c.name}_workspace.resource_id` },
             { key: "application_type", value: quote("web") },
@@ -22904,7 +23892,7 @@ var KIND_DEFINITIONS = [
         ],
         referent: 1,
         consumer: 1,
-        variables: [NAME_PREFIX]
+        variables: [NAME_PREFIX2]
       }),
       read: (b) => readOne(b, "retention_in_days", "Log retention", (v) => RETENTION.from(v)),
       connection: (ref) => ({
@@ -22921,22 +23909,24 @@ var KIND_DEFINITIONS = [
           block("module", [c.name], [
             { key: "source", value: quote(`${MODULE_VERSIONS["aws/cloudwatch"].source}//modules/log-group`) },
             { key: "version", value: quote(MODULE_VERSIONS["aws/cloudwatch"].version) },
-            { key: "name", value: cloudName("log", c.slug) },
+            { key: "name", value: cloudName2("log", c.slug) },
             { key: "retention_in_days", value: RETENTION.to(c.attr("Log retention"), "30 days") }
           ])
         ],
-        variables: [NAME_PREFIX]
+        variables: [NAME_PREFIX2]
       }),
       read: (b) => readOne(b, "retention_in_days", "Log retention", (v) => RETENTION.from(v)),
       connection: (ref) => ({ key: "LOG_GROUP", value: refAddress(ref, "cloudwatch_log_group_name") })
     },
     gcp: {
       type: "google_monitoring_alert_policy",
-      matches: ["google_monitoring_notification_channel", "google_logging_metric", "google_logging_project_bucket_config"]
+      matches: ["google_monitoring_notification_channel", "google_logging_metric", "google_logging_project_bucket_config"],
+      emit: (c) => GCP.monitoring.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "LOG_BUCKET", value: refAddress(ref, "bucket_id") }),
+      read: (b) => readOne(b, "retention_days", "Log retention", (v) => RETENTION.from(v))
     }
   },
-  // Google Cloud resources with no counterpart in the two generated clouds yet: read, drawn and
-  // explained, never built, and not offered to a translator (see MODEL_KIND_IDS).
+  // Kinds only Google Cloud has: built there, left out (and reported as not buildable) on the other two.
   {
     kind: "project",
     category: "identity",
@@ -22946,7 +23936,12 @@ var KIND_DEFINITIONS = [
     fields: [],
     azure: null,
     aws: null,
-    gcp: { type: "google_project", moduleSource: GCP_MODULES.project }
+    gcp: {
+      type: "google_project",
+      matches: ["google_project_iam_audit_config"],
+      moduleSource: GCP_MODULES.project,
+      emit: (c) => GCP.project.emit({ ...c, gcp: gcpPlan(c) })
+    }
   },
   {
     kind: "kubernetes",
@@ -22954,10 +23949,15 @@ var KIND_DEFINITIONS = [
     label: "Kubernetes Cluster",
     role: "serving",
     keywords: [],
-    fields: [],
+    fields: [ENVIRONMENT_FIELD],
     azure: null,
     aws: null,
-    gcp: { type: "google_container_cluster", matches: ["google_container_node_pool"], moduleSource: GCP_MODULES.gke }
+    gcp: {
+      type: "google_container_cluster",
+      matches: ["google_container_node_pool"],
+      moduleSource: GCP_MODULES.gke,
+      emit: (c) => GCP.kubernetes.emit({ ...c, gcp: gcpPlan(c) })
+    }
   },
   {
     kind: "virtual-machine",
@@ -22975,7 +23975,8 @@ var KIND_DEFINITIONS = [
         "google_compute_instance_group",
         "google_compute_instance_group_manager",
         "google_compute_region_instance_group_manager"
-      ]
+      ],
+      emit: (c) => GCP.virtualMachine.emit({ ...c, gcp: gcpPlan(c) })
     }
   },
   {
@@ -22984,10 +23985,15 @@ var KIND_DEFINITIONS = [
     label: "Data Warehouse",
     role: "leaf",
     keywords: [],
-    fields: [],
+    fields: [ENVIRONMENT_FIELD],
     azure: null,
     aws: null,
-    gcp: { type: "google_bigquery_dataset", matches: ["google_bigquery_table"], moduleSource: GCP_MODULES.bigquery }
+    gcp: {
+      type: "google_bigquery_dataset",
+      matches: ["google_bigquery_table"],
+      moduleSource: GCP_MODULES.bigquery,
+      emit: (c) => GCP.dataWarehouse.emit({ ...c, gcp: gcpPlan(c) })
+    }
   }
 ];
 function attr(b, key) {
@@ -23011,7 +24017,7 @@ var KIND_BY_ID = new Map(
   KIND_DEFINITIONS.map((k) => [k.kind, k])
 );
 var MODEL_KIND_IDS = KIND_DEFINITIONS.filter(
-  (k) => k.role !== "conceptual" && k.role !== "external" && (k.azure !== null || k.aws !== null)
+  (k) => k.role !== "conceptual" && k.role !== "external" && (k.azure !== null || k.aws !== null || k.gcp?.emit !== void 0)
 ).map((k) => k.kind);
 var KIND_LABELS = Object.fromEntries(
   KIND_DEFINITIONS.map((k) => [k.kind, k.label])
@@ -23021,7 +24027,8 @@ function kindDefinition(kind) {
 }
 function cloudSpec(kind, cloud) {
   const def = KIND_BY_ID.get(kind);
-  if (!def || cloud === "gcp") return null;
+  if (!def) return null;
+  if (cloud === "gcp") return def.gcp?.emit ? def.gcp : null;
   return (cloud === "azure" ? def.azure : def.aws) ?? null;
 }
 function fieldsForKind(kind) {
@@ -23189,22 +24196,7 @@ var NEAREST = [
 function suggestionFor(node2) {
   return matchKinds(node2.label)[0] ?? NEAREST.find((n) => n.pattern.test(node2.label))?.kind ?? null;
 }
-var READ_ONLY_SUMMARY = {
-  gcp: "Google Cloud models are read, drawn and explained here; Terraform is not generated for them, so nothing is left out."
-};
 function assessFeasibility(model, cloud) {
-  const readOnly = READ_ONLY_SUMMARY[cloud];
-  if (readOnly) {
-    const components2 = model.nodes.filter((node2) => !isConceptualEdge(node2)).map((node2) => ({
-      id: node2.id,
-      label: node2.label,
-      kind: node2.kind,
-      status: node2.flag ? "needs-review" : "buildable",
-      reason: node2.flag?.reason ?? null,
-      suggestion: null
-    }));
-    return { verdict: "full", components: components2, omitted: [], summary: readOnly };
-  }
   const components = [];
   for (const node2 of model.nodes) {
     if (isConceptualEdge(node2)) continue;
@@ -23232,7 +24224,7 @@ function assessFeasibility(model, cloud) {
   const omitted = components.filter((c) => c.status === "unsupported").map((c) => c.label);
   const built = components.length - omitted.length;
   const verdict = components.length === 0 || built === 0 ? "none" : omitted.length > 0 ? "partial" : "full";
-  const cloudLabel = cloud === "aws" ? "AWS" : "Azure";
+  const cloudLabel = cloud === "aws" ? "AWS" : cloud === "gcp" ? "Google Cloud" : "Azure";
   const review = components.filter((c) => c.status === "needs-review").length;
   let summary;
   if (verdict === "none") {
@@ -23342,6 +24334,10 @@ function referenceTo(referentBlock, fallback) {
   };
 }
 function addSetting(host, target, entry) {
+  if (target.append) {
+    target.append(host, entry);
+    return;
+  }
   let owner = host;
   if (target.nestedBlock) {
     const found = owner.blocks.find((b) => b.type === target.nestedBlock);
@@ -23448,6 +24444,19 @@ function wireEdge(source, target, cloud, plan) {
     if (target.spec.customDomain) {
       plan.domains.set(target.node.id, domain2.fqdn);
       plan.notes.push(customDomainNote(domain2, cloud, refAddress(source.referent), `${source.name}_name_servers`));
+    }
+    if (cloud === "gcp") {
+      const address = target.spec.addressResource?.(target.referent);
+      return [
+        block("resource", ["google_dns_record_set", originName], [
+          { key: "managed_zone", value: refAddress(source.referent, "name") },
+          { key: "name", value: `"${domain2.record}.\${${refAddress(source.referent, "dns_name")}}"` },
+          { key: "type", value: quote(address ? "A" : "CNAME") },
+          { key: "ttl", value: "300" },
+          { key: "rrdatas", value: address ? `[${address}]` : `["\${${hostname3}}."]` }
+        ]),
+        ...served
+      ];
     }
     if (cloud === "azure") {
       const address = target.spec.addressResource?.(target.referent);
@@ -23598,6 +24607,22 @@ function customDomainNote(domain2, cloud, zoneAddress, nameServersOutput) {
     waits
   ].join("\n");
 }
+function addressOf(b) {
+  return b.type === "resource" && b.labels.length === 2 ? `${b.labels[0]}.${b.labels[1]}` : null;
+}
+function expressionsOf(b) {
+  return [...b.attributes.map((a) => a.value), ...b.blocks.flatMap(expressionsOf)];
+}
+function waitForApis(group, project) {
+  const own2 = new Set(group.map(addressOf).filter((a) => a !== null));
+  for (const b of group) {
+    const address = addressOf(b);
+    if (!address || address === (project ? `google_project.${project}` : "")) continue;
+    const references = expressionsOf(b).flatMap((e) => e.match(/\bgoogle_[a-z0-9_]+\.[A-Za-z0-9_]+/g) ?? []);
+    if (references.some((r) => r !== address && own2.has(r))) continue;
+    addDependsOn(b, "google_project_service.enabled");
+  }
+}
 var ModelAttributeError = class extends Error {
   problems;
   constructor(problems) {
@@ -23611,9 +24636,6 @@ function emitTerraform(model, cloud, tool = "terraform") {
   const problems = attributeProblems(resourceNodes(model));
   if (problems.length > 0) throw new ModelAttributeError(problems);
   const config2 = CLOUD_CONFIG[cloud];
-  if (cloud === "gcp") {
-    return { provider: "", providerVersion: "", region: config2.region, regionLabel: config2.regionLabel, tool, files: [], modules: [] };
-  }
   const provider = providerFor(cloud);
   const emitted = [];
   const notes = [];
@@ -23634,6 +24656,17 @@ function emitTerraform(model, cloud, tool = "terraform") {
   const net = networkNode ? cloudSpec(networkNode.kind, cloud)?.network?.(names.get(networkNode.id) ?? tfName(networkNode.id)) ?? null : null;
   const azureNetworkNode = cloud === "azure" ? resourceNodes(model).find((n) => n.kind === "vnet") : void 0;
   const privateNet = cloud === "azure" ? privateNetwork(azureNetworkNode ? names.get(azureNetworkNode.id) ?? tfName(azureNetworkNode.id) : PLAN_NETWORK) : null;
+  const gcpApis = /* @__PURE__ */ new Set();
+  const gcpPrivateServices = /* @__PURE__ */ new Map();
+  const gcp = cloud === "gcp" ? {
+    api: (...services) => {
+      for (const service of services) gcpApis.add(service);
+    },
+    privateServices: (networkId) => {
+      if (!gcpPrivateServices.has(networkId)) gcpPrivateServices.set(networkId, "google_service_networking_connection.private_services");
+      return "google_service_networking_connection.private_services";
+    }
+  } : null;
   for (const node2 of resourceNodes(model)) {
     const spec = cloudSpec(node2.kind, cloud);
     if (!spec) continue;
@@ -23649,7 +24682,8 @@ function emitTerraform(model, cloud, tool = "terraform") {
         return field?.normalize?.(value) ?? value;
       },
       net,
-      private: privateNet?.api ?? null
+      private: privateNet?.api ?? null,
+      gcp
     };
     const result = spec.emit(context);
     for (const variable of result.variables ?? []) variables.set(variable.name, variable);
@@ -23739,20 +24773,33 @@ function emitTerraform(model, cloud, tool = "terraform") {
     if (privateNet.zones.size > 0) notes.push(privateNetworkNote(`module.${network.labels[0]}`, privateNet.zones.keys()));
   }
   const requiredVersion = cloud === "azure" ? ">= 1.11, < 2.0" : ">= 1.6, < 2.0";
+  const needsArchive = [...emitted.flatMap((e) => e.blocks), ...wireBlocks].some(
+    (b) => b.type === "data" && b.labels[0] === "archive_file"
+  );
+  const needsBeta = [...emitted.flatMap((e) => e.blocks), ...wireBlocks].some(
+    (b) => b.attributes.some((a) => a.key === "provider" && a.value === GCP_BETA_REF)
+  );
+  const pins = [
+    provider,
+    ...needsArchive ? [PROVIDER_VERSIONS.archive] : [],
+    ...needsBeta ? [PROVIDER_VERSIONS["gcp-beta"]] : []
+  ];
   const scaffold = [
     block("terraform", [], [{ key: "required_version", value: quote(requiredVersion) }], [
-      block("required_providers", [], [
-        {
-          key: provider.name,
-          value: mapExpression([
-            { key: "source", value: quote(provider.source) },
-            { key: "version", value: quote(provider.version) }
-          ])
-        }
-      ])
+      block("required_providers", [], pins.map((pin) => ({
+        key: pin.name,
+        value: mapExpression([
+          { key: "source", value: quote(pin.source) },
+          { key: "version", value: quote(pin.version) }
+        ])
+      })))
     ])
   ];
-  if (emitted.length > 0) {
+  if (emitted.length > 0 && cloud === "gcp") {
+    variables.set(GCP_LABELS.name, GCP_LABELS);
+    const base = `{ managed_by = "diagram", environment = "${modelIsProduction(model.nodes) ? "production" : "dev"}" }`;
+    scaffold.push(block("locals", [], [{ key: "labels", value: `merge(${base}, var.labels)` }]));
+  } else if (emitted.length > 0) {
     variables.set(TAGS.name, TAGS);
     const base = `{ ManagedBy = "diagram", Environment = "${modelIsProduction(model.nodes) ? "production" : "dev"}" }`;
     scaffold.push(block("locals", [], [{ key: "tags", value: `merge(${base}, var.tags)` }]));
@@ -23775,6 +24822,34 @@ function emitTerraform(model, cloud, tool = "terraform") {
       name: "location",
       type: "string",
       description: "Azure region every resource is created in.",
+      default: quote(config2.region)
+    });
+  } else if (cloud === "gcp") {
+    scaffold.push(
+      block("provider", ["google"], [
+        { key: "project", value: "var.project_id" },
+        { key: "region", value: "var.region" },
+        emitted.length > 0 ? { key: "default_labels", value: "local.labels" } : void 0
+      ])
+    );
+    if (needsBeta) {
+      scaffold.push(
+        block("provider", [GCP_BETA_REF], [
+          { key: "project", value: "var.project_id" },
+          { key: "region", value: "var.region" },
+          { key: "default_labels", value: "local.labels" }
+        ])
+      );
+    }
+    variables.set("project_id", {
+      name: "project_id",
+      type: "string",
+      description: "ID of the project every resource is created in."
+    });
+    variables.set("region", {
+      name: "region",
+      type: "string",
+      description: "Google Cloud region every resource is created in.",
       default: quote(config2.region)
     });
   } else {
@@ -23804,7 +24879,28 @@ function emitTerraform(model, cloud, tool = "terraform") {
       default: quote(config2.region)
     });
   }
-  const resourceBlocks = [...networkBlocks, ...emitted.flatMap((e) => e.blocks)];
+  const gcpBlocks = [];
+  if (cloud === "gcp") {
+    const groups = emitted.map((e) => e.blocks);
+    for (const networkId of gcpPrivateServices.keys()) {
+      const blocks = privateServicesBlocks(networkId);
+      gcpBlocks.push(...blocks);
+      groups.push(blocks);
+    }
+    if (gcpApis.size > 0) {
+      const project = emitted.find((e) => e.node.kind === "project");
+      gcpBlocks.unshift(
+        block("resource", ["google_project_service", "enabled"], [
+          { key: "for_each", value: `toset([${[...gcpApis].sort(compareText).map(quote).join(", ")}])` },
+          project ? { key: "project", value: `google_project.${project.name}.project_id` } : void 0,
+          { key: "service", value: "each.value" },
+          { key: "disable_on_destroy", value: "false" }
+        ])
+      );
+      for (const group of groups) waitForApis(group, project?.name);
+    }
+  }
+  const resourceBlocks = [...networkBlocks, ...emitted.flatMap((e) => e.blocks), ...gcpBlocks];
   const modules = resourceBlocks.filter((b) => b.type === "module").map((b) => ({
     name: b.labels[0] ?? "",
     source: stringValue(attributeOf(b, "source")) ?? "",
@@ -23841,6 +24937,7 @@ ${renderDocument([...scaffold, ...resourceBlocks, ...wireBlocks])}`;
     regionLabel: config2.regionLabel,
     tool,
     modules,
+    extraProviders: pins.slice(1).map((pin) => ({ name: pin.name, version: pin.version })),
     files: [
       { name: "main.tf", content: mainTf },
       {
@@ -23876,6 +24973,7 @@ async function buildEvidenceReceipt(model, cloud, engine, approver, nowIso, opti
   const sbom = [
     { name: ENGINE_NAME, version: ENGINE_VERSION },
     ...terraform.provider ? [{ name: terraform.provider, version: terraform.providerVersion }] : [],
+    ...terraform.extraProviders,
     ...terraform.modules.map((m) => ({ name: m.source, version: m.version }))
   ];
   const { omitted } = assessFeasibility(model, cloud);

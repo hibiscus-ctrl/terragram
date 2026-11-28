@@ -1,0 +1,484 @@
+// Copyright 2026 Gabriel Ignat
+// SPDX-License-Identifier: AGPL-3.0-only
+
+import assert from "node:assert/strict";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { describe, it } from "node:test";
+
+import { composeFromPrompt, detectCloud } from "terragram-engine/engine";
+import { explainModel } from "terragram-engine/explain";
+import { assessFeasibility } from "terragram-engine/feasibility";
+import { addNode, connectNodes as addEdge, setNodeAttribute } from "terragram-engine/inspector";
+import { EMPTY_MODEL, type InfraModel } from "terragram-engine/model";
+import { parseHcl } from "terragram-engine/hcl";
+import { isScaffoldResource } from "terragram-engine/kinds";
+import { parseTerraform } from "terragram-engine/parse";
+import { emitTerraform } from "terragram-engine/terraform";
+
+/**
+ * Google Cloud is generated like the other two: the plan around the resources (provider, labels, the
+ * APIs it switches on, private service access) and what each kind writes. The fixture's own model is
+ * the golden, so a change to any kind's output shows up as a diff a reviewer reads.
+ */
+
+const FIXTURE = readFileSync(new URL("./fixtures/gcp/main.tf", import.meta.url), "utf8");
+const golden = (name: string) => new URL(`./fixtures/gcp/golden/emit/${name}`, import.meta.url);
+
+function check(name: string, actual: string): void {
+  const path = golden(name);
+  if (process.env.UPDATE_GOLDEN === "1") {
+    mkdirSync(dirname(path.pathname), { recursive: true });
+    writeFileSync(path, actual);
+    return;
+  }
+  assert.equal(actual, readFileSync(path, "utf8"), `${name} differs from its golden; UPDATE_GOLDEN=1 rewrites it`);
+}
+
+/** A model of the given kinds, added in order, each a node of its own. */
+function modelOf(...kinds: string[]): { model: InfraModel; ids: string[] } {
+  let model = EMPTY_MODEL;
+  const ids: string[] = [];
+  for (const kind of kinds) {
+    const added = addNode(model, kind);
+    assert.ok(added, kind);
+    model = added.model;
+    ids.push(added.id);
+  }
+  return { model, ids };
+}
+
+function plan(model: InfraModel): { main: string; variables: string; outputs: string; files: string[] } {
+  const out = emitTerraform(model, "gcp");
+  const read = (name: string) => out.files.find((f) => f.name === name)?.content ?? "";
+  return { main: read("main.tf"), variables: read("variables.tf"), outputs: read("outputs.tf"), files: out.files.map((f) => f.name) };
+}
+
+describe("the Google Cloud plan generated from the fixture", () => {
+  const parsed = parseTerraform(FIXTURE);
+  assert.ok(parsed.ok);
+  const out = emitTerraform(parsed.model, "gcp");
+
+  for (const file of out.files) {
+    it(`writes ${file.name}, with a golden`, () => {
+      check(file.name.replaceAll("/", "__"), file.content);
+    });
+  }
+
+  it("is the same every time", () => {
+    assert.deepEqual(emitTerraform(parsed.model, "gcp").files, out.files);
+  });
+
+  it("reads back to the components it was written from, with none of the plan's own scaffolding drawn", () => {
+    const main = out.files[0]?.content ?? "";
+    const back = parseTerraform(main);
+    assert.ok(back.ok);
+    const kinds = back.model.nodes.filter((n) => n.kind !== "internet" && n.kind !== "external").map((n) => n.kind);
+    assert.ok(back.untranslated.every((t) => !/^google_(project_service|storage_bucket_object)\./.test(t)), back.untranslated.join(", "));
+    const wrote = parsed.model.nodes.filter((n) => n.kind !== "internet").map((n) => n.kind);
+    // Everything the model drew that is built comes back; what the plan adds around it (API switches,
+    // log and source buckets, the private service connection) does not.
+    for (const kind of new Set(kinds)) assert.ok(wrote.includes(kind), `${kind} was not drawn`);
+    assert.equal(kinds.filter((k) => k === "object-storage").length, 2, "one node per bucket the model drew, not per bucket the plan added");
+    // The only other nodes are the ones a project-wide grant draws: the stand-ins for a principal and for "any resource".
+    const others = back.model.nodes.filter((n) => n.kind === "external").map((n) => n.id);
+    assert.ok(others.every((id) => id === "any-resource" || id.startsWith("principal-")), others.join(", "));
+  });
+
+  it("puts no secret in any file", () => {
+    const text = out.files.map((f) => f.content).join("\n");
+    assert.doesNotMatch(text, /\bpassword\b|private_key|secret_data|auth_string|client_secret/i);
+    // Variables that name an account or an address are asked for, none holds a credential.
+    assert.doesNotMatch(out.files.find((f) => f.name === "variables.tf")?.content ?? "", /sensitive/);
+  });
+});
+
+describe("the plan around the resources", () => {
+  const { model } = modelOf("postgres", "object-storage");
+  const { main, variables } = plan(model);
+
+  it("pins the provider and says which project and region it works in", () => {
+    assert.match(main, /google = \{\n\s+source\s+= "hashicorp\/google"\n\s+version = "~> \d+\.\d+"/);
+    assert.match(main, /provider "google" \{\n\s+project\s+= var\.project_id\n\s+region\s+= var\.region\n\s+default_labels = local\.labels/);
+    assert.match(main, /required_version = ">= 1\.6, < 2\.0"/);
+    assert.doesNotMatch(main, /google-beta|archive/);
+  });
+
+  it("asks for the project and gives the region, the prefix and the labels a default", () => {
+    assert.match(variables, /variable "project_id" \{\n\s+type\s+= string\n\s+description = "[^"]+"\n\}/);
+    assert.match(variables, /variable "region" \{[^}]*default\s+= "europe-west2"/);
+    assert.match(variables, /variable "labels" \{[^}]*default\s+= \{\}/);
+    assert.match(main, /labels = merge\(\{ managed_by = "diagram", environment = "dev" \}, var\.labels\)/);
+  });
+
+  it("names the environment from the model", () => {
+    const chosen = setNodeAttribute(model, model.nodes.find((n) => n.kind === "postgres")?.id ?? "", "Environment", "Production");
+    assert.match(plan(chosen).main, /environment = "production"/);
+  });
+
+  it("switches on exactly the APIs its components use, sorted, once", () => {
+    const apis = /for_each\s+= toset\(\[([^\]]*)\]\)/.exec(main)?.[1] ?? "";
+    assert.equal(
+      apis,
+      '"compute.googleapis.com", "servicenetworking.googleapis.com", "sqladmin.googleapis.com", "storage.googleapis.com"',
+    );
+    assert.equal(main.match(/resource "google_project_service" "enabled"/g)?.length, 1);
+    assert.match(main, /disable_on_destroy = false/);
+  });
+
+  it("makes a resource that stands on nothing else wait for the APIs, and no other", () => {
+    assert.match(main, /resource "google_storage_bucket" "object_storage" \{[\s\S]*?depends_on\s+= \[google_project_service\.enabled\]/);
+    // The log bucket's grant stands on the log bucket, which already waits.
+    const grant = /resource "google_storage_bucket_iam_member" "object_storage_logs_delivery" \{[^}]*\}/.exec(main)?.[0] ?? "";
+    assert.doesNotMatch(grant, /depends_on/);
+  });
+
+  it("gives a plan with nothing in it a provider and no APIs", () => {
+    const empty = plan(EMPTY_MODEL);
+    assert.match(empty.main, /provider "google"/);
+    assert.doesNotMatch(empty.main, /default_labels|google_project_service/);
+  });
+});
+
+describe("a database or a cache reaches its network through private service access", () => {
+  it("makes one range and one connection for the plan, however many ask", () => {
+    const { main } = plan(modelOf("vnet", "postgres", "mysql", "redis-cache").model);
+    assert.equal(main.match(/resource "google_service_networking_connection"/g)?.length, 1);
+    assert.equal(main.match(/resource "google_compute_global_address" "private_services"/g)?.length, 1);
+    assert.match(main, /network\s+= google_compute_network\.vnet\.id/);
+    assert.match(main, /deletion_policy\s+= "ABANDON"/);
+    for (const resource of ["google_sql_database_instance\" \"postgres", "google_sql_database_instance\" \"mysql", "google_redis_instance\" \"redis_cache"]) {
+      assert.match(main, new RegExp(`resource "${resource}" \\{[\\s\\S]*?depends_on[^\\n]*google_service_networking_connection\\.private_services`));
+    }
+  });
+
+  it("asks for a network when the model draws none, and says what it is for", () => {
+    const { main, variables } = plan(modelOf("postgres").model);
+    assert.match(main, /private_network\s+= var\.network_id/);
+    assert.match(variables, /variable "network_id" \{\n\s+type\s+= string\n\s+description = "VPC network the resources are placed in\. Add a Virtual Network/);
+    assert.doesNotMatch(variables, /variable "network_id" \{[^}]*default/);
+  });
+
+  it("is not drawn when the plan is read back", () => {
+    const back = parseTerraform(plan(modelOf("vnet", "postgres").model).main);
+    assert.ok(back.ok);
+    assert.deepEqual(
+      back.model.nodes.filter((n) => n.kind !== "internet" && n.kind !== "external").map((n) => n.kind).sort(),
+      ["entra-id", "postgres", "vnet"],
+    );
+  });
+});
+
+describe("what each kind asks the reviewer for", () => {
+  it("a database, a cache and a cluster ask for a network when there is none", () => {
+    for (const kind of ["redis-cache", "kubernetes", "virtual-machine"]) {
+      const { main, variables } = plan(modelOf(kind).model);
+      assert.match(variables, /variable "network_id"/, kind);
+      assert.match(main, /var\.network_id|var\.subnetwork_id/, kind);
+    }
+  });
+
+  it("a cluster asks for the range that may reach its control plane, with no default", () => {
+    const { variables } = plan(modelOf("kubernetes").model);
+    assert.match(variables, /variable "gke_authorized_cidr" \{\n\s+type\s+= string\n\s+description = "[^"]+"\n\}/);
+  });
+
+  it("a project asks for its billing account and its organisation, never a password or a key", () => {
+    const { main, variables } = plan(modelOf("project").model);
+    assert.match(variables, /variable "billing_account" \{\n\s+type\s+= string\n\s+description = "[^"]+"\n\}/);
+    assert.match(variables, /variable "org_id" \{[^}]*default\s+= null/);
+    assert.match(main, /auto_create_network\s+= false/);
+    assert.match(main, /resource "google_project_iam_audit_config" "project"/);
+    // The project is where the APIs are enabled, and does not wait for them.
+    assert.match(main, /resource "google_project_service" "enabled" \{[^}]*project\s+= google_project\.project\.project_id/);
+    assert.doesNotMatch(/resource "google_project" "project" \{[\s\S]*?\n\}/.exec(main)?.[0] ?? "", /depends_on/);
+  });
+
+  it("monitoring asks where alerts go", () => {
+    const { main, variables } = plan(modelOf("monitoring").model);
+    assert.match(variables, /variable "alert_email"/);
+    assert.match(main, /email_address = var\.alert_email/);
+    assert.match(main, /retention_days\s+= 30/);
+    const year = setNodeAttribute(modelOf("monitoring").model, "monitoring", "Log retention", "1 year");
+    assert.match(plan(year).main, /retention_days\s+= 365/);
+  });
+});
+
+describe("choices the reviewer makes in the inspector reach the plan", () => {
+  const choose = (kind: string, key: string, value: string) => {
+    const { model, ids } = modelOf(kind);
+    return plan(setNodeAttribute(model, ids[0] ?? "", key, value)).main;
+  };
+
+  it("the PostgreSQL and MySQL versions", () => {
+    assert.match(choose("postgres", "PostgreSQL version", "PostgreSQL 14"), /database_version\s+= "POSTGRES_14"/);
+    assert.match(choose("postgres", "PostgreSQL version", "PostgreSQL 15"), /database_version\s+= "POSTGRES_15"/);
+    assert.match(choose("mysql", "MySQL version", "MySQL 8.0"), /database_version\s+= "MYSQL_8_0"/);
+    assert.match(choose("mysql", "MySQL version", "MySQL 5.7"), /database_version\s+= "MYSQL_5_7"/);
+    assert.match(plan(modelOf("mysql").model).main, /database_version\s+= "MYSQL_8_4"/);
+  });
+
+  it("the cache's size", () => {
+    assert.match(choose("redis-cache", "Cache SKU", "Basic (C0)"), /tier\s+= "BASIC"[\s\S]*memory_size_gb\s+= 1/);
+    assert.match(choose("redis-cache", "Cache SKU", "Premium (P1)"), /tier\s+= "STANDARD_HA"[\s\S]*memory_size_gb\s+= 5/);
+  });
+
+  it("the container's size", () => {
+    assert.match(choose("containers", "Container size", "Small (0.5 vCPU)"), /cpu\s+= "500m"[\s\S]*memory = "512Mi"/);
+    assert.match(choose("containers", "Container size", "Large (2 vCPU)"), /cpu\s+= "2000m"[\s\S]*memory = "2Gi"/);
+  });
+
+  it("the function's runtime, with a source file written beside the plan for each", () => {
+    const cases: Array<[string, RegExp, string]> = [
+      ["Node.js 22", /runtime\s+= "nodejs22"/, "src/functions/index.js"],
+      ["Python 3.12", /runtime\s+= "python312"/, "src/functions/main.py"],
+      ["Java 21", /runtime\s+= "java21"[\s\S]*entry_point\s+= "example\.Handler"/, "src/functions/src/main/java/example/Handler.java"],
+    ];
+    for (const [label, runtime, file] of cases) {
+      const { model, ids } = modelOf("functions");
+      const out = plan(setNodeAttribute(model, ids[0] ?? "", "Runtime", label));
+      assert.match(out.main, runtime, label);
+      assert.ok(out.files.includes(file), `${label}: ${out.files.join(", ")}`);
+    }
+    assert.match(plan(modelOf("functions").model).main, /source_dir\s+= "\$\{path\.module\}\/src\/functions"/);
+  });
+
+  it("the delivery guarantee of a queue", () => {
+    assert.match(choose("queue", "Delivery", "Exactly once (FIFO)"), /enable_exactly_once_delivery\s+= true/);
+    assert.match(plan(modelOf("queue").model).main, /enable_exactly_once_delivery\s+= false/);
+  });
+
+  it("the address space of the network", () => {
+    const main = choose("vnet", "Address space", "192.168.0.0/16");
+    assert.match(main, /ip_cidr_range\s+= cidrsubnet\("192\.168\.0\.0\/16", 8, 1\)/);
+    assert.match(main, /source_ranges\s+= \["192\.168\.0\.0\/16"\]/);
+  });
+
+  it("the name of the zone", () => {
+    assert.match(choose("dns", "Zone name", "example.org"), /dns_name\s+= "example\.org\."/);
+  });
+});
+
+describe("a function is packaged from the plan's own directory", () => {
+  const { main } = plan(modelOf("functions").model);
+
+  it("declares the archive provider for it, and only then", () => {
+    assert.match(main, /archive = \{\n\s+source\s+= "hashicorp\/archive"/);
+    assert.doesNotMatch(plan(modelOf("queue").model).main, /archive/);
+  });
+
+  it("keeps the source in a private bucket of its own and the function on its own service account", () => {
+    assert.match(main, /resource "google_storage_bucket" "functions_source" \{[\s\S]*?labels\s+= \{\n\s+purpose = "function-source"/);
+    assert.match(main, /service_account_email\s+= google_service_account\.functions\.email/);
+  });
+
+  it("is not drawn as a bucket or a data source of its own", () => {
+    const back = parseTerraform(main);
+    assert.ok(back.ok);
+    assert.deepEqual(back.model.nodes.filter((n) => n.kind !== "external").map((n) => n.kind).sort(), ["entra-id", "functions", "internet"]);
+  });
+});
+
+describe("a bucket wired to the plan, and a service wired to its dependencies", () => {
+  it("a container is given its database's address as an environment variable", () => {
+    const { model, ids } = modelOf("containers", "postgres");
+    const wired = addEdge(model, ids[0] ?? "", ids[1] ?? "");
+    const { main } = plan(wired);
+    assert.match(main, /env \{\n\s+name\s+= "DATABASE_HOST"\n\s+value = google_sql_database_instance\.postgres\.private_ip_address/);
+  });
+
+  it("a function is given its queue and its bucket in its environment", () => {
+    const { model, ids } = modelOf("functions", "queue", "object-storage");
+    const wired = addEdge(addEdge(model, ids[0] ?? "", ids[1] ?? ""), ids[0] ?? "", ids[2] ?? "");
+    const { main } = plan(wired);
+    assert.match(main, /environment_variables = \{[^}]*PUBSUB_TOPIC\s+= google_pubsub_topic\.queue\.id/);
+    assert.match(main, /STORAGE_BUCKET\s+= google_storage_bucket\.object_storage\.name/);
+  });
+
+  it("a DNS zone publishes a record for the tier behind it", () => {
+    const { model, ids } = modelOf("dns", "containers");
+    const { main } = plan(addEdge(model, ids[0] ?? "", ids[1] ?? ""));
+    assert.match(main, /resource "google_dns_record_set" "dns_to_containers" \{/);
+    assert.match(main, /managed_zone\s+= google_dns_managed_zone\.dns\.name/);
+    assert.match(main, /name\s+= "www\.\$\{google_dns_managed_zone\.dns\.dns_name\}"/);
+    assert.match(main, /type\s+= "CNAME"/);
+    assert.match(main, /rrdatas\s+= \["\$\{trimprefix\(google_cloud_run_v2_service\.containers\.uri, "https:\/\/"\)\}\."\]/);
+  });
+
+  it("anything else is an explicit dependency", () => {
+    const { model, ids } = modelOf("virtual-machine", "key-vault");
+    const { main } = plan(addEdge(model, ids[0] ?? "", ids[1] ?? ""));
+    assert.match(main, /depends_on\s+= \[google_project_service\.enabled, google_secret_manager_secret\.key_vault\]|depends_on\s+= \[google_secret_manager_secret\.key_vault/);
+  });
+});
+
+describe("a Google Cloud brief", () => {
+  it("is recognised by the services it names", () => {
+    assert.equal(detectCloud("A GKE cluster with Cloud SQL"), "gcp");
+    assert.equal(detectCloud("Deploy to Google Cloud"), "gcp");
+    assert.equal(detectCloud("Move from Azure to GCP"), "gcp");
+    assert.equal(detectCloud("Move from GCP to Azure"), "azure");
+    assert.equal(detectCloud("Move our Azure app and AWS Lambda to Google Cloud"), "gcp");
+  });
+
+  it("composes and generates", () => {
+    const composed = composeFromPrompt("A containerised API with a Postgres database, on Google Cloud");
+    assert.equal(composed.cloud, "gcp");
+    assert.match(composed.reply, /targeting Google Cloud/);
+    const { main } = plan(composed.model);
+    assert.match(main, /resource "google_cloud_run_v2_service"/);
+    assert.match(main, /resource "google_sql_database_instance"/);
+  });
+
+  it("is explained and judged buildable by the same rules as the other two", () => {
+    const { model } = modelOf("postgres", "containers", "project", "kubernetes");
+    assert.equal(assessFeasibility(model, "gcp").verdict, "full");
+    assert.match(explainModel(model, "gcp", "London (europe-west2)"), /^This design targets Google Cloud in London/);
+    // A kind only Google Cloud has is left out, and said so, on the other two.
+    const aws = assessFeasibility(model, "aws");
+    assert.equal(aws.verdict, "partial");
+    assert.deepEqual(aws.omitted, ["Project", "Kubernetes Cluster"]);
+  });
+});
+
+describe("only what the generator writes is hidden as scaffolding", () => {
+  /** The bucket a plan adds to log another's access, as written, and the bucket it logs. */
+  const LOGS = `resource "google_storage_bucket" "logs" {
+  name                        = "\${var.project_id}-logs-\${var.name_prefix}-data"
+  location                    = var.region
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  force_destroy               = true
+  labels                      = { purpose = "access-logs" }
+}
+`;
+  const DATA = `resource "google_storage_bucket" "data" {
+  name     = "data"
+  location = "EU"
+
+  logging {
+    log_bucket = google_storage_bucket.logs.name
+  }
+}
+`;
+  const grant = (role: string, member: string, bucket = "logs") => `resource "google_storage_bucket_iam_member" "logs_delivery" {
+  bucket = google_storage_bucket.${bucket}.name
+  role   = "${role}"
+  member = "${member}"
+}
+`;
+  const scaffold = (source: string, type: string, name: string) => {
+    const blocks = parseHcl(source);
+    const found = blocks.find((b) => b.labels[0] === type && b.labels[1] === name);
+    assert.ok(found, `${type}.${name}`);
+    return isScaffoldResource(found, blocks);
+  };
+  const buckets = (source: string) => {
+    const parsed = parseTerraform(source);
+    assert.ok(parsed.ok);
+    return parsed.model.nodes.filter((n) => n.kind === "object-storage" || n.kind === "static-site").length;
+  };
+
+  it("hides the log bucket of a bucket, and the grant that lets Cloud Storage write to it", () => {
+    const source = `${DATA}${LOGS}${grant("roles/storage.objectCreator", "group:cloud-storage-analytics@google.com")}`;
+    assert.equal(scaffold(source, "google_storage_bucket", "logs"), true);
+    assert.equal(scaffold(source, "google_storage_bucket_iam_member", "logs_delivery"), true);
+    assert.equal(scaffold(source, "google_storage_bucket", "data"), false);
+    assert.equal(buckets(source), 1);
+  });
+
+  it("draws a bucket that only carries the label, or is named like one, when nothing logs into it", () => {
+    assert.equal(scaffold(LOGS, "google_storage_bucket", "logs"), false);
+    assert.equal(buckets(LOGS), 1);
+    const named = `resource "google_storage_bucket" "app_source" {\n  name = "app"\n  location = "EU"\n}\n`;
+    assert.equal(buckets(named), 1);
+    assert.equal(buckets(`${named.replace("app_source", "app_logs")}`), 1);
+  });
+
+  it("draws a lookalike log bucket that differs in anything it writes", () => {
+    const loosened = [
+      LOGS.replace('"enforced"', '"inherited"'),
+      LOGS.replace("uniform_bucket_level_access = true", "uniform_bucket_level_access = false"),
+      LOGS.replace('{ purpose = "access-logs" }', '{ purpose = "access-logs", team = "x" }'),
+      LOGS.replace('{ purpose = "access-logs" }', '{ purpose = "something-else" }'),
+      LOGS.replace('"${var.project_id}-logs-', '"public-logs-'),
+      LOGS.replace(/\}\n$/, '  website { main_page_suffix = "index.html" }\n}\n'),
+      LOGS.replace(/\}\n$/, '  cors { origin = ["*"] }\n}\n'),
+      LOGS.replace(/\}\n$/, "  extra = true\n}\n"),
+    ];
+    for (const logs of loosened) {
+      assert.equal(scaffold(`${DATA}${logs}`, "google_storage_bucket", "logs"), false, logs);
+      assert.equal(buckets(`${DATA}${logs}`), 2, logs);
+    }
+  });
+
+  it("never hides a grant to anyone but Cloud Storage's own group, however the bucket is labelled", () => {
+    for (const [role, member] of [
+      ["roles/storage.objectCreator", "allUsers"],
+      ["roles/storage.objectViewer", "allUsers"],
+      ["roles/storage.objectViewer", "allAuthenticatedUsers"],
+      ["roles/storage.objectCreator", "user:someone@example.com"],
+      ["roles/storage.objectCreator", "group:other@example.com"],
+      ["roles/storage.objectViewer", "group:cloud-storage-analytics@google.com"],
+      ["roles/storage.objectAdmin", "group:cloud-storage-analytics@google.com"],
+    ] as const) {
+      const source = `${DATA}${LOGS}${grant(role, member)}`;
+      assert.equal(scaffold(source, "google_storage_bucket_iam_member", "logs_delivery"), false, `${role} ${member}`);
+    }
+    // The exact grant, but on a bucket that is not one the plan added: it is the file's own grant.
+    const onData = `${DATA}${LOGS}${grant("roles/storage.objectCreator", "group:cloud-storage-analytics@google.com", "data")}`;
+    assert.equal(scaffold(onData, "google_storage_bucket_iam_member", "logs_delivery"), false);
+    // And the grant still shows as access: a public read of a bucket is an edge from anyone on the internet.
+    const parsed = parseTerraform(`${DATA}${LOGS}${grant("roles/storage.objectViewer", "allUsers", "data")}`);
+    assert.ok(parsed.ok);
+    assert.ok(parsed.model.edges.some((e) => e.source === "principal-public" || e.source.startsWith("principal-")), JSON.stringify(parsed.model.edges));
+  });
+
+  it("hides an archive, an uploaded object and the API switch only in the shape the generator writes them", () => {
+    const archive = (extra = "") => `data "archive_file" "fn" {
+  type        = "zip"
+  source_dir  = "\${path.module}/src/fn"
+  output_path = "\${path.module}/.terraform/fn.zip"
+${extra}}
+`;
+    const blocks = (source: string) => parseHcl(source);
+    assert.equal(isScaffoldResource(blocks(archive())[0] as never, blocks(archive())), true);
+    for (const odd of [archive("  excludes = []\n"), archive().replace("/src/fn", "/../../etc"), archive().replace('"zip"', '"tar"')]) {
+      assert.equal(isScaffoldResource(blocks(odd)[0] as never, blocks(odd)), false, odd);
+    }
+    const service = `resource "google_project_service" "enabled" {\n  for_each = toset(["a.googleapis.com"])\n  service = each.value\n  disable_on_destroy = false\n}\n`;
+    assert.equal(scaffold(service, "google_project_service", "enabled"), true);
+    assert.equal(scaffold(service.replace("enabled", "mine"), "google_project_service", "mine"), false);
+    assert.equal(scaffold(service.replace("each.value", '"iam.googleapis.com"'), "google_project_service", "enabled"), false);
+    const address = (purpose: string) => `resource "google_compute_global_address" "private_services" {
+  name          = "r"
+  purpose       = "${purpose}"
+  address_type  = "INTERNAL"
+  prefix_length = 20
+  network       = "n"
+}
+`;
+    assert.equal(scaffold(address("VPC_PEERING"), "google_compute_global_address", "private_services"), true);
+    assert.equal(scaffold(address("PRIVATE_SERVICE_CONNECT"), "google_compute_global_address", "private_services"), false);
+    assert.equal(scaffold(address("VPC_PEERING").replace("private_services", "mine"), "google_compute_global_address", "mine"), false);
+  });
+
+  it("hides nothing in what a plan generates that a reviewer would need to see: every scaffold block is accounted for", () => {
+    const { model } = modelOf("object-storage", "functions", "postgres", "vnet");
+    const blocks = parseHcl(plan(model).main);
+    const hidden = blocks.filter((b) => isScaffoldResource(b, blocks)).map((b) => `${b.labels[0]}.${b.labels[1]}`);
+    assert.deepEqual(hidden.sort(), [
+      "data.archive_file.functions",
+      "google_compute_global_address.private_services",
+      "google_project_service.enabled",
+      "google_service_networking_connection.private_services",
+      "google_storage_bucket.functions_source",
+      "google_storage_bucket.functions_source_logs",
+      "google_storage_bucket.object_storage_logs",
+      "google_storage_bucket_iam_member.functions_source_logs_delivery",
+      "google_storage_bucket_iam_member.object_storage_logs_delivery",
+      "google_storage_bucket_object.functions_source",
+    ].map((a) => a.replace(/^data\./, "")).sort());
+  });
+});

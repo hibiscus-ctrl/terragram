@@ -46,7 +46,7 @@ const PLAN_ORDER = ["main.tf", "variables.tf", "outputs.tf"];
  *  hashes exactly what was signed — a file in the bundle but not in the hash
  *  would be a file nobody vouched for. */
 function planOrder(files: TerraformFile[]): string[] {
-  // A cloud Terragram reads and does not generate for has no plan: the receipt hashes the model alone.
+  // A model with nothing to build has no plan: the receipt hashes the model alone.
   if (files.length === 0) return [];
   const rest = files.map((f) => f.name).filter((n) => !PLAN_ORDER.includes(n)).sort();
   return [...PLAN_ORDER, ...rest];
@@ -90,6 +90,7 @@ export async function buildEvidenceReceipt(
   const sbom: SbomEntry[] = [
     { name: ENGINE_NAME, version: ENGINE_VERSION },
     ...(terraform.provider ? [{ name: terraform.provider, version: terraform.providerVersion }] : []),
+    ...terraform.extraProviders,
     ...terraform.modules.map((m) => ({ name: m.source, version: m.version })),
   ];
   const { omitted } = assessFeasibility(model, cloud);

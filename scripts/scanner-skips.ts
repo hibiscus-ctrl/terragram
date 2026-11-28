@@ -143,6 +143,81 @@ export const SCANNER_SKIPS: readonly ScannerSkip[] = [
       "= \"Disabled\", so every MySQL server reads as public. Enforced wherever the plan has PostgreSQL, whose " +
       "setting trivy does read.",
   },
+
+  // Google Cloud.
+  {
+    checkov: "CKV_GCP_79",
+    reason:
+      "The PostgreSQL major is the reviewer's choice among the versions the model offers (14, 15 and 16), " +
+      "and Cloud SQL runs each of them. checkov accepts only the newest major, which the model does not " +
+      "offer yet; MySQL 8.4, the model's default, passes.",
+  },
+  {
+    checkov: "CKV_GCP_62",
+    reason:
+      "Every bucket logs its access to a log bucket of its own. The log bucket is the one that is not " +
+      "logged: logging it would need a further bucket, and that one another, without end.",
+  },
+  {
+    checkov: "CKV_GCP_83",
+    reason:
+      "Pub/Sub encrypts every topic at rest under a Google-managed key. A customer-managed key per topic " +
+      "needs a key and a grant to the Pub/Sub service agent, which the plan's secret store provides only " +
+      "when the model draws one; the secrets and the buckets wired to it do use that key.",
+  },
+  {
+    checkov: "CKV_GCP_81",
+    reason:
+      "BigQuery encrypts every dataset at rest under a Google-managed key. A customer-managed key needs a " +
+      "key and a grant to BigQuery's encryption service account, which belong to the plan's secret store " +
+      "when the model draws one.",
+  },
+  {
+    checkov: "CKV_GCP_38",
+    trivy: "GCP-0033",
+    reason:
+      "Compute Engine encrypts every disk at rest under a Google-managed key. checkov asks for a " +
+      "customer-supplied key, whose raw key would be written into the plan and its state: no secret goes " +
+      "into the output. A customer-managed key needs a key and a grant to the Compute Engine service " +
+      "agent, which the plan's secret store provides only when the model draws one.",
+  },
+  {
+    trivy: "GCP-0066",
+    reason:
+      "Buckets are encrypted at rest under a Google-managed key unless the model wires them to its secret " +
+      "store, which moves them onto that store's customer-managed key. The log buckets and a function's " +
+      "source bucket hold nothing the reviewer drew.",
+  },
+  {
+    checkov: "CKV_GCP_82",
+    reason:
+      "A Cloud KMS key is never deleted, only its versions are scheduled for destruction, and a trial has " +
+      "to be destroyable: lifecycle.prevent_destroy would stop `terraform destroy` for the whole plan.",
+  },
+  {
+    checkov: "CKV_GCP_65",
+    reason:
+      "RBAC by Google Group needs a Google Workspace group the plan cannot create, in a domain only the " +
+      "owner knows. Cluster access follows IAM until the owner adds `authenticator_groups_config`.",
+  },
+  {
+    checkov: "CKV_GCP_69",
+    reason:
+      "The node pool sets workload_metadata_config.mode = GKE_METADATA, which turns the metadata server on " +
+      "for every node. The cluster has no node_config of its own (its default pool is removed), which is " +
+      "the only place checkov looks.",
+  },
+  {
+    trivy: "GCP-0072",
+    reason:
+      "The one rule that admits traffic inside the network, from the network's own address range only, " +
+      "as Google's default network does: instances of one plan reach each other on any port. A rule that " +
+      "named ports could not know what the plan's workloads listen on.",
+  },
+  {
+    trivy: "GCP-0074",
+    reason: "The same internal rule: its source is the network's own range, so the port range is the plan's own traffic.",
+  },
 ];
 
 /** The entries that exempt a document holding these kinds from `tool`. */

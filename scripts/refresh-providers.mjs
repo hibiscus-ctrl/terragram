@@ -91,6 +91,11 @@ const versionOf = (pin) => /\d+(\.\d+)*/.exec(pin)?.[0] ?? "";
 const PROVIDERS = [
   { cloud: "azure", name: "azurerm", source: "hashicorp/azurerm" },
   { cloud: "aws", name: "aws", source: "hashicorp/aws" },
+  // Google Cloud plans are raw resources, so the provider has no module to wait for; the
+  // archive provider packages a function's source for upload.
+  { cloud: "gcp", name: "google", source: "hashicorp/google" },
+  { cloud: "gcp-beta", name: "google-beta", source: "hashicorp/google-beta" },
+  { cloud: "archive", name: "archive", source: "hashicorp/archive" },
 ].map((p) => ({ ...p, pin: versionOf(PROVIDER_VERSIONS[p.cloud].version) }));
 
 /** `5.5.0` -> `~> 5.5` — pin the major, allow the minor to float. */

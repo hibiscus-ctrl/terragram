@@ -83,6 +83,8 @@ function emittedModules(kind: string, cloud: Cloud): Array<{ source: string; ver
 const calls = new Map<string, { version: string; keys: Set<string>; kinds: Set<string> }>();
 for (const definition of KIND_DEFINITIONS) {
   for (const cloud of GENERATED_CLOUDS) {
+    // A Google Cloud plan is resources, so it calls no module whose interface there is to check.
+    if (cloud === "gcp") continue;
     const spec = cloud === "azure" ? definition.azure : definition.aws;
     if (!spec?.moduleSource) continue;
     for (const call of emittedModules(definition.kind, cloud)) {

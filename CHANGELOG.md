@@ -54,6 +54,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Cloud Function, GKE node pool or Compute instance that names a service account in `service_account`, `service_account_email` or its
   `service_account` block `runs-as` it. The AWS, Azure and Google Cloud grants of a file are all read, whichever cloud it goes to. The Action's
   "Access changes" list shows them like any other.
+- `terragram generate`, the Action and `emitTerraform` write Terraform for Google Cloud, as they do for AWS and Azure. `--cloud gcp` is accepted, a brief that names
+  Google Cloud or one of its services (GKE, Cloud Run, Cloud SQL, BigQuery, Pub/Sub, Firestore, Memorystore) picks it, a managed model and a picture can
+  choose it, and a `gcp` model has a receipt whose plan is hashed like any other. The plan is on `hashicorp/google` `~> 8.12` (and `hashicorp/archive`
+  or `google-beta` only in a plan that needs one, recorded in the receipt's bill of materials) and is written as the resources themselves, not as calls to
+  the Google registry modules: the load balancer, Cloud Run and BigQuery modules hold the provider below its newest major, and each hides the arguments a
+  scanner and a reviewer look for. Every plan has `project_id` (asked for, no default), `region` (`europe-west2`), `name_prefix` and `labels` variables, a
+  `default_labels` provider setting, and one `google_project_service` that switches on exactly the APIs its components use; a resource that stands on nothing
+  else waits for it. What each kind writes: `dns` a public zone with DNSSEC and query logging; `vnet` a custom-mode network, a subnetwork with flow logs and
+  private access to Google APIs, a router with NAT, and an internal and an IAP-only SSH firewall rule; `virtual-machine` an instance with no public address,
+  Shielded VM, OS Login, no project-wide SSH keys and its own service account; `kubernetes` a private GKE cluster with authorised networks, Workload Identity,
+  Shielded Nodes, network policy, intranode visibility and a release channel, on a node pool whose service account holds only what nodes need; `containers` a
+  Cloud Run service on its own service account; `functions` a second-generation Cloud Function packaged from a directory written beside the plan, its source in a
+  private bucket; `object-storage` a bucket with uniform access, public access prevented, versions and access logs; `queue` a Pub/Sub topic, subscription and
+  dead-letter topic; `key-vault` a Secret Manager secret under a Cloud KMS key that rotates every 90 days, with no value written; `entra-id` a service account;
+  `monitoring` a log bucket retention, a notification channel and an alert policy; `postgres` and `mysql` a Cloud SQL instance with no public IP, TLS with a
+  client certificate, backups and point-in-time recovery, audit flags, query insights and deletion protection, connected to as a service account through IAM
+  database authentication, so no password is created anywhere; `redis-cache` a Memorystore instance with AUTH and TLS; `nosql` a Firestore database;
+  `data-warehouse` a BigQuery dataset; `project` a project with no default network and data-access audit logs. A database or a cache reaches its network through
+  one private service connection per plan. Reading a Google plan back does not draw what the plan adds around a component, but only when a block is exactly what the generator writes and is tied to the component that uses it (a log bucket another bucket logs into, a source bucket a function is deployed from, the one `roles/storage.objectCreator` grant to Cloud Storage's own group on such a log bucket); a bucket that only carries the label or the name, or a grant to anyone else, is drawn. The Environment choice moves what costs money or blocks a `destroy` (availability, backup retention, deletion
+  protection) and nothing that is security. The kinds only Google Cloud has (`project`, `kubernetes`, `virtual-machine`, `data-warehouse`) are now offered to a
+  translator, and are reported as not buildable on AWS and Azure. Not yet built on Google Cloud, and reported as such: the load balancer, the CDN and WAF, the
+  app service and the static site. The emit gate (`npm run validate:emit`, and the Generated Terraform job) now runs every brief and template for Google Cloud too,
+  through `terraform fmt`, `init` and `validate`, `tflint` with the google ruleset (`--cloud=gcp` runs that cloud alone), `trivy` and `checkov`, with the exceptions
+  in `scripts/scanner-skips.ts`, each with its reason.
 - `terragram parse` reads Google Cloud. A file of `google_*` resources parses to a model whose cloud is `gcp`, where it used to be
   refused as "none of the resources can be mapped". The new `project`, `kubernetes`, `virtual-machine` and `data-warehouse`
   kinds and a Google Cloud spec on the existing ones (`dns`, `load-balancer`, `containers`, `functions`, `queue`, `vnet`,
@@ -64,12 +88,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   datasets, service accounts, load balancer pieces, DNS zones and Cloud Armor policies, plus the Google registry modules for them.
   The references between resources are the edges, as for AWS and Azure; the `project` every resource names is where it lives, not a
   wire to it. A file with resources of more than one cloud goes to the one of AWS and Azure most of them are on, a tie to Azure and then AWS as before; it is `gcp` only when it has no AWS or Azure resource or module in it, so a Google part of a mixed file is reported as left out of the Terraform when it has no component to build, never as "nothing left out".
-  Google Cloud is read only: it is drawn (SVG, Mermaid, draw.io, the pull request diagram), explained ("This design targets Google Cloud
-  in London (europe-west2)"), diffed and given a receipt, but no Terraform is generated for it. `emitTerraform` returns no files and
-  no provider for it, the receipt's `plan` is empty and still verifies, `terragram generate --cloud gcp` is refused, and a model
-  or a picture a managed model reads cannot choose it. `gcp` joins `azure` and `aws` in the `cloud` enum of the model and receipt
-  schemas (`diagram.model/v1`, `diagram.receipt/v3`; `diagram.receipt/v2` keeps its two). The ids do not change: adding an enum value is additive, documents for the other two clouds are unchanged, and the field's `description` in both schemas tells a consumer with a closed list to accept `gcp`. The new kinds are not offered to a
-  translator, since nothing it chose could be built. `GENERATED_CLOUDS` is the list of clouds a brief or a command can build for.
+  Google Cloud is drawn (SVG, Mermaid, draw.io, the pull request diagram), explained ("This design targets Google Cloud
+  in London (europe-west2)"), diffed and given a receipt, and Terraform is generated for it (see the next entry).
+ `gcp` joins `azure` and `aws` in the `cloud` enum of the model and receipt
+  schemas (`diagram.model/v1`, `diagram.receipt/v3`; `diagram.receipt/v2` keeps its two). The ids do not change: adding an enum value is additive, documents for the other two clouds are unchanged, and the field's `description` in both schemas tells a consumer with a closed list to accept `gcp`. `GENERATED_CLOUDS` is the list of clouds a brief or a command can build for.
 - `terragram parse` types a policy attached by the ARN of a well-known AWS managed policy instead of leaving it `unscoped`.
   A small bundled table (about 55 policies, dated, in `aws-managed-policies.ts`) gives each policy's level per service,
   read from its document in the AWS managed policy reference with the same rule that levels an action in an inline

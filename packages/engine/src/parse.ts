@@ -4,6 +4,7 @@
 import { attributeOf, extractReferences, type HclBlock, mapEntries, parseHcl, stringValue } from "./hcl.ts";
 import {
   isScaffoldModule,
+  isScaffoldResource,
   kindDefinition,
   moduleSourceToKind,
   readSpec,
@@ -90,7 +91,8 @@ function expressions(block: HclBlock): string[] {
 
 export function parseTerraform(source: string): ParseResult {
   const blocks = parseHcl(source);
-  const resources = blocks.filter((b) => b.type === "resource");
+  // What a Google Cloud plan adds around a component (API switches, log buckets) is not drawn.
+  const resources = blocks.filter((b) => b.type === "resource" && !isScaffoldResource(b, blocks));
   const modules = blocks.filter(
     (b) => b.type === "module" && !isScaffoldModule(b),
   );
@@ -306,7 +308,7 @@ export function parseTerraform(source: string): ParseResult {
   for (const block of blocks) {
     if (block.type === "module" ? !unreadModules.includes(block) : block.type !== "data") continue;
     if (block.type === "module" && isScaffoldModule(block)) continue;
-    if (block.type === "data" && (readByComponents.has(block.labels.join(".")) || iam.consumed.has(block))) continue;
+    if (block.type === "data" && (isScaffoldResource(block, blocks) || readByComponents.has(block.labels.join(".")) || iam.consumed.has(block))) continue;
     const name = block.labels.at(-1) ?? block.type;
     const id = uniqueNodeId(`external-${name}`, takenIds);
     takenIds.push(id);

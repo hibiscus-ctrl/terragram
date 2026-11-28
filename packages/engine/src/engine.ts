@@ -314,20 +314,25 @@ const CLOUD_HINTS: ReadonlyArray<{ cloud: Cloud; pattern: RegExp }> = [
     cloud: "azure",
     pattern: /\b(?:azure|entra|cosmos(?:db)?|app service|front door|service bus|key vault|aks|blob storage)\b/i,
   },
+  {
+    cloud: "gcp",
+    pattern:
+      /\b(?:gcp|google cloud|google|gke|cloud run|cloud sql|cloud functions?|bigquery|pub\/?sub|firestore|memorystore|gcs|secret manager|cloud kms|cloud dns|cloud storage)\b/i,
+  },
 ];
 
 export function detectCloud(text: string): Cloud | null {
   const hits = CLOUD_HINTS.filter((h) => h.pattern.test(text)).map((h) => h.cloud);
   if (hits.length === 1) return hits[0] ?? null;
-  // Both named ("move from Azure to AWS"): the later mention is the destination.
-  if (hits.length === 2) {
+  // Several named ("move from Azure to AWS"): the latest mention is the destination.
+  if (hits.length > 1) {
     const last = (cloud: Cloud) => {
       const re = new RegExp(CLOUD_HINTS.find((h) => h.cloud === cloud)?.pattern.source ?? "", "gi");
       let at = -1;
       for (const m of text.matchAll(re)) at = m.index ?? at;
       return at;
     };
-    return last("aws") > last("azure") ? "aws" : "azure";
+    return hits.reduce((best, cloud) => (last(cloud) > last(best) ? cloud : best));
   }
   return null;
 }
@@ -375,7 +380,7 @@ export function composeFromPrompt(prompt: string, prev: InfraModel = EMPTY_MODEL
     .flatMap((r) => Object.entries(r.attributes ?? {}).map(([, v]) => v));
   let reply = describeTurn(added, model);
   const facts = [
-    ...(cloud ? [`targeting ${cloud === "aws" ? "AWS" : "Azure"}`] : []),
+    ...(cloud ? [`targeting ${cloud === "aws" ? "AWS" : cloud === "gcp" ? "Google Cloud" : "Azure"}`] : []),
     ...read,
   ];
   if (facts.length > 0) reply += ` I read ${humanList(facts)} from your brief.`;

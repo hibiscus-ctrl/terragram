@@ -14,6 +14,7 @@ import {
   stringValue,
 } from "./hcl.ts";
 import { compareText } from "./graph/normalize.ts";
+import { GCP_BETA_REF, GCP_LABELS, type GcpPlan, privateServicesBlocks } from "./gcp-kinds.ts";
 import { MODULE_VERSIONS } from "./module-versions.ts";
 import {
   AWS_US_EAST_1,
@@ -37,6 +38,7 @@ import {
   type VariableSpec,
 } from "./kinds.ts";
 import { type Cloud, type InfraModel, type ModelNode, resourceNodes } from "./model.ts";
+import { PROVIDER_VERSIONS } from "./provider-versions.ts";
 
 /**
  * Model → Terraform. Every resource fact comes from the kind registry; what this
@@ -69,6 +71,8 @@ export type TerraformOutput = {
   files: TerraformFile[];
   /** Every module call in the plan — what the receipt's SBOM records beside the provider. */
   modules: ModuleCall[];
+  /** Any provider the plan declares beside the main one (a function's archive provider), for the same SBOM. */
+  extraProviders: Array<{ name: string; version: string }>;
 };
 
 const CLOUD_CONFIG: Record<Cloud, { region: string; regionLabel: string; label: string }> = {
@@ -132,6 +136,10 @@ function addSetting(
   target: SettingsTarget,
   entry: { key: string; value: string },
 ): void {
+  if (target.append) {
+    target.append(host, entry);
+    return;
+  }
   let owner = host;
   if (target.nestedBlock) {
     const found = owner.blocks.find((b) => b.type === target.nestedBlock);
@@ -280,6 +288,20 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
     if (target.spec.customDomain) {
       plan.domains.set(target.node.id, domain.fqdn);
       plan.notes.push(customDomainNote(domain, cloud, refAddress(source.referent), `${source.name}_name_servers`));
+    }
+    if (cloud === "gcp") {
+      // A name for a tier that answers on an address gets an A record; one that answers on a name, a CNAME.
+      const address = target.spec.addressResource?.(target.referent);
+      return [
+        block("resource", ["google_dns_record_set", originName], [
+          { key: "managed_zone", value: refAddress(source.referent, "name") },
+          { key: "name", value: `"${domain.record}.\${${refAddress(source.referent, "dns_name")}}"` },
+          { key: "type", value: quote(address ? "A" : "CNAME") },
+          { key: "ttl", value: "300" },
+          { key: "rrdatas", value: address ? `[${address}]` : `["\${${hostname}}."]` },
+        ]),
+        ...served,
+      ];
     }
     if (cloud === "azure") {
       // The zone module owns its records. A tier that answers on an address
@@ -480,6 +502,33 @@ function customDomainNote(domain: CustomDomain, cloud: Cloud, zoneAddress: strin
   ].join("\n");
 }
 
+/** The address a block is referred to by, `type.name`. */
+function addressOf(b: HclBlock): string | null {
+  return b.type === "resource" && b.labels.length === 2 ? `${b.labels[0]}.${b.labels[1]}` : null;
+}
+
+/** Every attribute expression in a block and the blocks nested in it. */
+function expressionsOf(b: HclBlock): string[] {
+  return [...b.attributes.map((a) => a.value), ...b.blocks.flatMap(expressionsOf)];
+}
+
+/**
+ * Make every resource of a Google Cloud component that stands on no other resource of it wait
+ * for the APIs the plan enables. The ones that do stand on another are ordered by that
+ * reference, which is already after the one that waits. The project, when the plan creates it,
+ * is what the APIs are enabled in, so it never waits for them.
+ */
+function waitForApis(group: HclBlock[], project: string | undefined): void {
+  const own = new Set(group.map(addressOf).filter((a): a is string => a !== null));
+  for (const b of group) {
+    const address = addressOf(b);
+    if (!address || address === (project ? `google_project.${project}` : "")) continue;
+    const references = expressionsOf(b).flatMap((e) => e.match(/\bgoogle_[a-z0-9_]+\.[A-Za-z0-9_]+/g) ?? []);
+    if (references.some((r) => r !== address && own.has(r))) continue;
+    addDependsOn(b, "google_project_service.enabled");
+  }
+}
+
 /* ------------------------------------------------------------------- emit -- */
 
 /** A model whose free-text attributes cannot go into a plan; the message says which and why. */
@@ -500,10 +549,6 @@ export function emitTerraform(
   const problems = attributeProblems(resourceNodes(model));
   if (problems.length > 0) throw new ModelAttributeError(problems);
   const config = CLOUD_CONFIG[cloud];
-  // Google Cloud is read, drawn and explained, not generated: no provider, no files, nothing to compare or write.
-  if (cloud === "gcp") {
-    return { provider: "", providerVersion: "", region: config.region, regionLabel: config.regionLabel, tool, files: [], modules: [] };
-  }
   const provider = providerFor(cloud);
 
   const emitted: Emitted[] = [];
@@ -538,6 +583,22 @@ export function emitTerraform(
       ? privateNetwork(azureNetworkNode ? (names.get(azureNetworkNode.id) ?? tfName(azureNetworkNode.id)) : PLAN_NETWORK)
       : null;
 
+  // What Google Cloud kinds ask of the plan: the APIs to switch on, and private service access per network.
+  const gcpApis = new Set<string>();
+  const gcpPrivateServices = new Map<string, string>();
+  const gcp: GcpPlan | null =
+    cloud === "gcp"
+      ? {
+          api: (...services) => {
+            for (const service of services) gcpApis.add(service);
+          },
+          privateServices: (networkId) => {
+            if (!gcpPrivateServices.has(networkId)) gcpPrivateServices.set(networkId, "google_service_networking_connection.private_services");
+            return "google_service_networking_connection.private_services";
+          },
+        }
+      : null;
+
   for (const node of resourceNodes(model)) {
     const spec = cloudSpec(node.kind, cloud);
     if (!spec) continue;
@@ -555,6 +616,7 @@ export function emitTerraform(
       },
       net,
       private: privateNet?.api ?? null,
+      gcp,
     };
 
     const result = spec.emit(context);
@@ -664,24 +726,40 @@ export function emitTerraform(
   // floor is the one the Verified Modules themselves require — better said here
   // than discovered halfway through `init`.
   const requiredVersion = cloud === "azure" ? ">= 1.11, < 2.0" : ">= 1.6, < 2.0";
+  // A function's source is zipped by the archive provider, which only a plan that has one declares.
+  const needsArchive = [...emitted.flatMap((e) => e.blocks), ...wireBlocks].some(
+    (b) => b.type === "data" && b.labels[0] === "archive_file",
+  );
+  // Likewise the beta provider, for the few resources the main one does not have yet.
+  const needsBeta = [...emitted.flatMap((e) => e.blocks), ...wireBlocks].some((b) =>
+    b.attributes.some((a) => a.key === "provider" && a.value === GCP_BETA_REF),
+  );
+  const pins = [
+    provider,
+    ...(needsArchive ? [PROVIDER_VERSIONS.archive] : []),
+    ...(needsBeta ? [PROVIDER_VERSIONS["gcp-beta"]] : []),
+  ];
   const scaffold: HclBlock[] = [
     block("terraform", [], [{ key: "required_version", value: quote(requiredVersion) }], [
-      block("required_providers", [], [
-        {
-          key: provider.name,
-          value: mapExpression([
-            { key: "source", value: quote(provider.source) },
-            { key: "version", value: quote(provider.version) },
-          ]),
-        },
-      ]),
+      block("required_providers", [], pins.map((pin) => ({
+        key: pin.name,
+        value: mapExpression([
+          { key: "source", value: quote(pin.source) },
+          { key: "version", value: quote(pin.version) },
+        ]),
+      }))),
     ]),
   ];
 
   // Ownership and cost allocation, in one place, on every resource. The base set
   // is what the plan itself knows; `var.tags` is merged over it, so a reviewer's
   // Owner and CostCentre win and nothing here has to guess them.
-  if (emitted.length > 0) {
+  if (emitted.length > 0 && cloud === "gcp") {
+    // Google Cloud calls them labels, and takes lowercase keys and values only.
+    variables.set(GCP_LABELS.name, GCP_LABELS);
+    const base = `{ managed_by = "diagram", environment = "${modelIsProduction(model.nodes) ? "production" : "dev"}" }`;
+    scaffold.push(block("locals", [], [{ key: "labels", value: `merge(${base}, var.labels)` }]));
+  } else if (emitted.length > 0) {
     variables.set(TAGS.name, TAGS);
     // One line on purpose: `terraform fmt` leaves a single-line object alone,
     // and this one is short enough to read at a glance.
@@ -709,6 +787,34 @@ export function emitTerraform(
       name: "location",
       type: "string",
       description: "Azure region every resource is created in.",
+      default: quote(config.region),
+    });
+  } else if (cloud === "gcp") {
+    scaffold.push(
+      block("provider", ["google"], [
+        { key: "project", value: "var.project_id" },
+        { key: "region", value: "var.region" },
+        emitted.length > 0 ? { key: "default_labels", value: "local.labels" } : undefined,
+      ]),
+    );
+    if (needsBeta) {
+      scaffold.push(
+        block("provider", [GCP_BETA_REF], [
+          { key: "project", value: "var.project_id" },
+          { key: "region", value: "var.region" },
+          { key: "default_labels", value: "local.labels" },
+        ]),
+      );
+    }
+    variables.set("project_id", {
+      name: "project_id",
+      type: "string",
+      description: "ID of the project every resource is created in.",
+    });
+    variables.set("region", {
+      name: "region",
+      type: "string",
+      description: "Google Cloud region every resource is created in.",
       default: quote(config.region),
     });
   } else {
@@ -740,7 +846,32 @@ export function emitTerraform(
     });
   }
 
-  const resourceBlocks = [...networkBlocks, ...emitted.flatMap((e) => e.blocks)];
+  // Google Cloud: the plan switches on the APIs its kinds use, and gives databases and caches the
+  // private service connection they reach their network through. Every resource that stands on
+  // nothing else in its component waits for the APIs, so a first apply does not race them.
+  const gcpBlocks: HclBlock[] = [];
+  if (cloud === "gcp") {
+    const groups: HclBlock[][] = emitted.map((e) => e.blocks);
+    for (const networkId of gcpPrivateServices.keys()) {
+      const blocks = privateServicesBlocks(networkId);
+      gcpBlocks.push(...blocks);
+      groups.push(blocks);
+    }
+    if (gcpApis.size > 0) {
+      const project = emitted.find((e) => e.node.kind === "project");
+      gcpBlocks.unshift(
+        block("resource", ["google_project_service", "enabled"], [
+          { key: "for_each", value: `toset([${[...gcpApis].sort(compareText).map(quote).join(", ")}])` },
+          project ? { key: "project", value: `google_project.${project.name}.project_id` } : undefined,
+          { key: "service", value: "each.value" },
+          { key: "disable_on_destroy", value: "false" },
+        ]),
+      );
+      for (const group of groups) waitForApis(group, project?.name);
+    }
+  }
+
+  const resourceBlocks = [...networkBlocks, ...emitted.flatMap((e) => e.blocks), ...gcpBlocks];
   const modules: ModuleCall[] = resourceBlocks
     .filter((b) => b.type === "module")
     .map((b) => ({
@@ -786,6 +917,7 @@ export function emitTerraform(
     regionLabel: config.regionLabel,
     tool,
     modules,
+    extraProviders: pins.slice(1).map((pin) => ({ name: pin.name, version: pin.version })),
     files: [
       { name: "main.tf", content: mainTf },
       {

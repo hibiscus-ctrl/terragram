@@ -5,7 +5,7 @@
  * Prove the emitter's output is Terraform the real toolchain accepts.
  *
  * Runs a fixed set of briefs and every template through the deterministic engine,
- * emits each for both clouds, writes the files to a scratch directory and puts
+ * emits each for every generated cloud, writes the files to a scratch directory and puts
  * them through the same tools `infraweaver-action` scans a customer's repo with:
  *
  *   terraform fmt -check   canonical formatting — the emitter writes HCL a human
@@ -13,7 +13,9 @@
  *   terraform init         -backend=false, so validate has provider AND module
  *                          schemas to check against (without it validate is inert)
  *   terraform validate     provider + module schema, argument names, types
- *   tflint                 provider-aware lint: deprecated arguments, bad enums
+ *   tflint                 provider-aware lint: deprecated arguments, bad enums (the Google
+ *                          documents are linted with the google ruleset, which is fetched
+ *                          once into a cache shared by the run)
  *   trivy config           misconfiguration scan over the generated plan
  *   checkov                policy scan over the generated plan
  *   infraweaver assess     Infraweaver's own scorecard — the native rules plus the
@@ -48,6 +50,7 @@
  *
  *   npm run validate:emit            # native binaries if present, else docker
  *   npm run validate:emit -- --keep  # leave the scratch dirs for inspection
+ *   npm run validate:emit -- --cloud=gcp   # one cloud's documents only
  *
  * The route each scanner took is printed in the summary, so "0 findings" can
  * always be told apart from "never ran".
@@ -70,6 +73,8 @@ import { BRIEFS } from "./emit-briefs.ts";
 import { SCANNER_SKIPS, skipsFor } from "./scanner-skips.ts";
 
 const keep = process.argv.includes("--keep");
+/** `--cloud gcp` runs one cloud's documents only, to iterate on it without the others' downloads. */
+const onlyCloud = process.argv.find((a) => a.startsWith("--cloud="))?.slice("--cloud=".length);
 const terraformBin = process.env.TERRAFORM_BIN ?? "terraform";
 
 /** Every timeout is explicit: `@infraweaver-io/sandbox` kills the process GROUP,
@@ -156,17 +161,41 @@ type Optional = {
   /** The tool's arguments for one document. Paths are the host's on the native
    *  route and the container's on the docker one; cwd is the document either way. */
   args: (target: ScanTarget) => string[];
+  /** A step that has to run before `args` for this document, when there is one (tflint's plugin install). */
+  prepare?: (target: ScanTarget) => string[] | null;
   image: string;
   /** How a finished run ended — see the header. Only "clean" passes. */
   verdict: (exitCode: number, output: string) => Verdict;
 };
 
 type Verdict = "clean" | "findings" | "crash";
-type ScanTarget = { dir: string; trivyIgnore: string; checkovSkips: string[] };
+type ScanTarget = { dir: string; trivyIgnore: string; checkovSkips: string[]; cloud: Cloud };
 
 /** where a document, and its trivy ignore file, are mounted inside a container. */
 const MOUNT = "/plan";
 const IGNORE_MOUNT = "/trivyignore";
+const PLUGINS_MOUNT = "/tflint-plugins";
+
+/**
+ * tflint's rulesets are plugins, fetched from GitHub by `tflint --init`. One directory holds them
+ * for the whole run, so a second Google document finds the ruleset already installed instead of
+ * downloading it again. The version is pinned in the config written beside each Google document.
+ */
+const tflintPlugins = process.env.TFLINT_PLUGIN_DIR ?? join(tmpdir(), "terragram-tflint-plugins");
+try {
+  mkdirSync(tflintPlugins, { recursive: true });
+} catch {
+  /* no cache, just a slower run */
+}
+
+/** The tflint-ruleset-google release the Google documents are linted with. */
+const TFLINT_GOOGLE_VERSION = "0.41.0";
+const TFLINT_GOOGLE_CONFIG = `plugin "google" {
+  enabled = true
+  version = "${TFLINT_GOOGLE_VERSION}"
+  source  = "github.com/terraform-linters/tflint-ruleset-google"
+}
+`;
 
 /**
  * trivy exits 1 for its own fatal errors, so findings are given a code of their
@@ -187,6 +216,7 @@ const OPTIONAL_TOOLS: Optional[] = [
     id: "tflint",
     cmd: "tflint",
     args: () => ["--no-color", "--force"],
+    prepare: (t) => (t.cloud === "gcp" ? ["--init", "--no-color"] : null),
     image:
       "ghcr.io/terraform-linters/tflint:v0.64.0@sha256:1c595f42d794c32c45a6ea8b58655fd66433d4ca3b1bc631c574a48d120bd19f",
     // `--force` keeps issues at exit 0, so anything else is tflint failing to run.
@@ -233,7 +263,12 @@ const OPTIONAL_TOOLS: Optional[] = [
 
 /** How one optional tool will be run for every document in this run. Takes the
  *  HOST paths; the docker route maps them to its mounts. */
-type Route = { cmd: string; args: (target: ScanTarget) => string[]; via: "native" | "docker" };
+type Route = {
+  cmd: string;
+  args: (target: ScanTarget) => string[];
+  prepare?: ((target: ScanTarget) => string[] | null) | undefined;
+  via: "native" | "docker";
+};
 
 const routes = new Map<string, Route>();
 
@@ -258,7 +293,7 @@ async function resolveRoutes(): Promise<void> {
 
   for (const tool of OPTIONAL_TOOLS) {
     if (await runnable(tool.cmd, ["--version"])) {
-      routes.set(tool.id, { cmd: tool.cmd, args: tool.args, via: "native" });
+      routes.set(tool.id, { cmd: tool.cmd, args: tool.args, prepare: tool.prepare, via: "native" });
       continue;
     }
     if (!haveDocker) {
@@ -270,18 +305,27 @@ async function resolveRoutes(): Promise<void> {
       skipped.set(tool.id, `docker pull failed: ${pull.detail.split("\n").pop() ?? "unknown"}`);
       continue;
     }
+    // Read-only mounts: these three read HCL and write nothing, and the
+    // document is the artefact under test — a scanner must not edit it. tflint's plugin
+    // directory is the one writable mount, because installing the ruleset is what writes it.
+    const dockerArgs = (t: ScanTarget, inner: string[]) => [
+      "run", "--rm",
+      "-v", `${t.dir}:${MOUNT}:ro`,
+      "-v", `${t.trivyIgnore}:${IGNORE_MOUNT}:ro`,
+      ...(tool.id === "tflint" ? ["-v", `${tflintPlugins}:${PLUGINS_MOUNT}`, "-e", `TFLINT_PLUGIN_DIR=${PLUGINS_MOUNT}`] : []),
+      "-w", MOUNT,
+      tool.image,
+      ...inner,
+    ];
     routes.set(tool.id, {
       cmd: "docker",
-      // Read-only mounts: these three read HCL and write nothing, and the
-      // document is the artefact under test — a scanner must not edit it.
-      args: (t) => [
-        "run", "--rm",
-        "-v", `${t.dir}:${MOUNT}:ro`,
-        "-v", `${t.trivyIgnore}:${IGNORE_MOUNT}:ro`,
-        "-w", MOUNT,
-        tool.image,
-        ...tool.args({ ...t, dir: MOUNT, trivyIgnore: IGNORE_MOUNT }),
-      ],
+      args: (t) => dockerArgs(t, tool.args({ ...t, dir: MOUNT, trivyIgnore: IGNORE_MOUNT })),
+      prepare: tool.prepare
+        ? (t) => {
+            const step = tool.prepare?.({ ...t, dir: MOUNT, trivyIgnore: IGNORE_MOUNT });
+            return step ? dockerArgs(t, step) : null;
+          }
+        : undefined,
       via: "docker",
     });
   }
@@ -298,13 +342,29 @@ type Scan = { code: number; detail: string; vanished: boolean };
  */
 async function scan(route: Route, target: ScanTarget): Promise<Scan> {
   try {
+    // A step that has to come first (the Google ruleset's install). If it fails, the lint that
+    // follows would only say so less clearly, so its own output is the verdict.
+    const step = route.prepare?.(target);
+    if (step) {
+      const prepared = await spawn({
+        cmd: route.cmd,
+        args: step,
+        cwd: target.dir,
+        timeout: TOOL_TIMEOUT_MS,
+        killGroup: process.platform !== "win32",
+        env: { ...process.env, TFLINT_PLUGIN_DIR: tflintPlugins },
+      });
+      if (prepared.exitCode !== 0) {
+        return { code: prepared.exitCode, detail: `${prepared.stdout}\n${prepared.stderr}`.trim(), vanished: false };
+      }
+    }
     const result = await spawn({
       cmd: route.cmd,
       args: route.args(target),
       cwd: target.dir,
       timeout: TOOL_TIMEOUT_MS,
       killGroup: process.platform !== "win32",
-      env: { ...process.env, CHECKOV_DISABLE_TELEMETRY: "true" },
+      env: { ...process.env, CHECKOV_DISABLE_TELEMETRY: "true", TFLINT_PLUGIN_DIR: tflintPlugins },
     });
     const detail = `${result.stdout}\n${result.stderr}`.trim();
     return { code: result.exitCode, detail, vanished: /\[spawn\] \S+: spawn \S+ ENOENT/.test(result.stderr) };
@@ -331,13 +391,14 @@ const crashed = new Map<string, string[]>();
 type Case = { label: string; slug: string; cloud: Cloud; model: InfraModel };
 
 const cases: Case[] = [];
+const clouds = GENERATED_CLOUDS.filter((cloud) => onlyCloud === undefined || cloud === onlyCloud);
 for (const [i, brief] of BRIEFS.entries()) {
-  for (const cloud of GENERATED_CLOUDS) {
+  for (const cloud of clouds) {
     cases.push({ label: brief, slug: `brief-${i + 1}`, cloud, model: composeFromPrompt(brief).model });
   }
 }
 for (const template of WORKSPACE_TEMPLATES) {
-  for (const cloud of GENERATED_CLOUDS) {
+  for (const cloud of clouds) {
     cases.push({ label: `template:${template.id}`, slug: template.id, cloud, model: templateModel(template) });
   }
 }
@@ -448,7 +509,10 @@ for (const item of cases) {
       dir,
       trivyIgnore: join(root, "trivyignore", `${item.slug}-${item.cloud}`),
       checkovSkips: skipsFor("checkov", kinds).map((skip) => skip.checkov ?? ""),
+      cloud: item.cloud,
     };
+    // The lint configuration is a document of its own, beside the plan and not part of it.
+    if (item.cloud === "gcp") writeFileSync(join(dir, ".tflint.hcl"), TFLINT_GOOGLE_CONFIG);
     writeTrivyIgnore(target.trivyIgnore, kinds);
 
     for (const tool of OPTIONAL_TOOLS) {
