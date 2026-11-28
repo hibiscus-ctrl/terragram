@@ -202,6 +202,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `aspect` of a graph layout is held at every level. A cluster (resources that refer to each other, laid out by dagre in layers) was one block that packing could move but not cut, so an estate whose resources all refer to each other came out as a strip: an Azure subscription was 5.6 : 1 at the Services level and 27 : 1 detailed, against the 1.6 asked for. A cluster wider than the picture should be now keeps its layers but wraps each onto as many rows as it needs, and the lines of a wrapped cluster are routed with the rest. The cluster is wrapped only where that brings the picture clearly nearer the aspect, so a layout that was already near it is unchanged.
 - Reading a plan back no longer hides a real Azure or AWS resource that only looks like the plan's own scaffolding. The Azure resource group and private
   DNS zone modules, the network an Azure plan adds when the model draws none, and the S3 log bucket of a bucket are hidden only when they are exactly
   what the generator writes (every input, no others, a name of the generator's shape) and a component of the file uses them, the way the Google Cloud

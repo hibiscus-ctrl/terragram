@@ -12,7 +12,9 @@ import type { GraphView } from "./view.ts";
  * around its cards); a resource that refers to none of its box's is a block of one card. A box's blocks (its
  * clusters, its lone cards and its inner boxes) are then packed onto rows toward {@link DEFAULT_ASPECT} (or the
  * `aspect` asked for), so a picture of many boxes comes out as wide as it is tall, not as a strip of boxes side by
- * side. Each box is drawn around what it holds with room for its label, and a line that crosses from one block to
+ * side. A cluster is a block that packing cannot cut, so one that dagre lays out wider than the picture should be
+ * (the Services level folds an estate into a few cards that refer to each other, which is one big cluster) keeps
+ * dagre's layers but is wrapped onto more rows, each layer on as many as it takes. Each box is drawn around what it holds with room for its label, and a line that crosses from one block to
  * another is routed here, in the gaps between them where there is a gap to use.
  *
  * Every order is the view's (its places: scope, environment, module path, address, key) or a sort with that order as
@@ -60,6 +62,10 @@ const RANK_GAP = 72;
 const BLOCK_GAP = 36;
 /** What the shape asked of the boxes inside is, over the shape asked of the picture, tried in this order. */
 const INNER_SHAPES = [1, 0.7, 0.5, 1.4, 0.35, 2];
+/** The widths a cluster is wrapped to, over the width the picture's cards fill at the aspect asked for; undefined is not wrapped. */
+const WRAP_WIDTHS = [undefined, 2, 1.5, 1.2, 1, 0.8, 0.6, 0.5, 0.35];
+/** What wrapping a cluster must gain in the shape of the picture to be worth it. */
+const WRAP_COST = 0.25;
 /** How far along a card's edge a line may be moved from its middle to find a way through. */
 const SHIFTS = [0, 60, -60, 90, -90];
 /** How near a line may pass a card it is not drawn to. */
@@ -108,7 +114,9 @@ function cardBlock(id: string, heights: Heights): Block {
 }
 
 /** Cards that refer to each other, as dagre lays them out in layers, moved so that the top-left of what is drawn is the origin. */
-function clusterBlock(ids: readonly string[], edges: readonly { index: number; from: string; to: string }[], heights: Heights): Block {
+type Cluster = { ids: readonly string[]; centres: readonly { x: number; y: number }[]; block: Block };
+
+function layerCluster(ids: readonly string[], edges: readonly { index: number; from: string; to: string }[], heights: Heights): Cluster {
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: "TB", nodesep: NODE_GAP, ranksep: RANK_GAP, edgesep: 20, marginx: 0, marginy: 0 });
   g.setDefaultEdgeLabel(() => ({}));
@@ -131,6 +139,50 @@ function clusterBlock(ids: readonly string[], edges: readonly { index: number; f
     block.nodes.set(id, { x: round(c.x - CARD_WIDTH / 2 - minX), y: round(c.y - height / 2 - minY), width: CARD_WIDTH, height });
   });
   for (const line of lines) block.edges.set(line.index, line.points.map((p) => ({ x: p.x - minX, y: p.y - minY })));
+  return { ids, centres, block };
+}
+
+/**
+ * The cluster as it is, or, when that is wider than `limit` and wrapping its layers within `limit` is narrower, with its layers
+ * wrapped (see {@link wrapLayers}): packing can move a cluster but not cut it, so a big one sets the shape of its whole box.
+ */
+function clusterWithin(cluster: Cluster, heights: Heights, limit: number): Block {
+  if (cluster.block.width <= limit) return cluster.block;
+  const wrapped = wrapLayers(cluster.ids, cluster.centres, heights, limit);
+  return wrapped.width < cluster.block.width ? wrapped : cluster.block;
+}
+
+/**
+ * The cards in dagre's layers (top to bottom, left to right within a layer), a layer of more cards than fit in `limit`
+ * continued on the row below; every row is centred. No line is placed: they are routed with the rest.
+ */
+function wrapLayers(ids: readonly string[], centres: readonly { x: number; y: number }[], heights: Heights, limit: number): Block {
+  const perRow = Math.max(1, Math.floor((limit + NODE_GAP) / (CARD_WIDTH + NODE_GAP)));
+  const layers = new Map<number, { id: string; x: number }[]>();
+  ids.forEach((id, i) => {
+    const c = centres[i] as { x: number; y: number };
+    layers.set(round(c.y), [...(layers.get(round(c.y)) ?? []), { id, x: c.x }]);
+  });
+  const rows: { ids: string[]; gap: number }[] = [];
+  for (const [, layer] of [...layers].sort((a, b) => a[0] - b[0])) {
+    const cards = layer.sort((a, b) => a.x - b.x).map((c) => c.id);
+    for (let at = 0; at < cards.length; at += perRow) rows.push({ ids: cards.slice(at, at + perRow), gap: at === 0 ? RANK_GAP : BLOCK_GAP });
+  }
+  const rowWidth = (n: number) => n * CARD_WIDTH + (n - 1) * NODE_GAP;
+  const width = Math.max(0, ...rows.map((r) => rowWidth(r.ids.length)));
+  const block: Block = { ...emptyPlaced(), width, height: 0 };
+  let y = 0;
+  rows.forEach((row, i) => {
+    if (i > 0) y += row.gap;
+    const high = Math.max(...row.ids.map((id) => heightIn(heights, id)));
+    const x0 = Math.floor((width - rowWidth(row.ids.length)) / 2);
+    row.ids.forEach((id, k) => {
+      const height = heightIn(heights, id);
+      block.nodes.set(id, { x: x0 + k * (CARD_WIDTH + NODE_GAP), y: y + Math.floor((high - height) / 2), width: CARD_WIDTH, height });
+    });
+    y += high;
+  });
+  block.height = y;
   return block;
 }
 
@@ -260,8 +312,8 @@ export function layoutGraph(view: GraphView, top = 0, options: LayoutOptions = {
   });
 
   // The clusters and lone cards of a box do not depend on the shape asked of the boxes, so they are laid out once.
-  const own = new Map<string, Block[]>();
-  const ownBlocks = (id: string): Block[] => {
+  const own = new Map<string, (Block | Cluster)[]>();
+  const ownParts = (id: string): (Block | Cluster)[] => {
     const known = own.get(id);
     if (known !== undefined) return known;
     const cards = nodesIn.get(id) ?? [];
@@ -276,20 +328,21 @@ export function layoutGraph(view: GraphView, top = 0, options: LayoutOptions = {
     for (const edge of edges) parent.set(find(edge.from), find(edge.to));
     const clusters = new Map<string, string[]>();
     for (const card of cards) clusters.set(find(card), [...(clusters.get(find(card)) ?? []), card]);
-    const blocks = [...clusters.values()].map((members) => {
+    const parts = [...clusters.values()].map((members) => {
       const inCluster = new Set(members);
       const lines = edges.filter((e) => inCluster.has(e.from));
-      return members.length === 1 && lines.length === 0 ? cardBlock(members[0] as string, heights) : clusterBlock(members, lines, heights);
+      return members.length === 1 && lines.length === 0 ? cardBlock(members[0] as string, heights) : layerCluster(members, lines, heights);
     });
-    own.set(id, blocks);
-    return blocks;
+    own.set(id, parts);
+    return parts;
   };
+  const ownBlocks = (id: string, limit: number): Block[] => ownParts(id).map((part) => ("block" in part ? clusterWithin(part, heights, limit) : part));
 
   /** What a box holds, its inner boxes packed toward `inner`; undefined when it holds nothing. */
-  const build = (id: string, inner: number): Block | undefined => {
-    const blocks = [...ownBlocks(id)];
+  const build = (id: string, inner: number, limit: number): Block | undefined => {
+    const blocks = [...ownBlocks(id, limit)];
     for (const child of childrenOf.get(id) ?? []) {
-      const block = build(child, inner);
+      const block = build(child, inner, limit);
       if (block !== undefined) blocks.push(block);
     }
     if (blocks.length === 0) return undefined;
@@ -305,15 +358,22 @@ export function layoutGraph(view: GraphView, top = 0, options: LayoutOptions = {
 
   // Boxes packed toward the shape asked of the picture are often the wrong shape to pack into it (two boxes that are each
   // as wide as the picture stack into a tall one), so the boxes inside are tried at a few shapes and the best picture is kept.
+  // A cluster wider than the picture is, likewise, tried as it is and wrapped to a few widths around the width the cards
+  // would fill at this aspect; wrapping is kept only where it is a clear gain, since a layered cluster reads better.
+  const cells = view.nodes.reduce((sum, n) => sum + (CARD_WIDTH + NODE_GAP) * (heightIn(heights, n.id) + RANK_GAP), 0);
   let all: Block = { ...emptyPlaced(), width: 0, height: 0 };
   let allCost = Number.POSITIVE_INFINITY;
-  for (const factor of INNER_SHAPES) {
-    const inner = Math.min(MAX_ASPECT, Math.max(MIN_ASPECT, aspect * factor));
-    const roots = (childrenOf.get(null) ?? []).flatMap((id) => build(id, inner) ?? []);
-    const packed = pack(roots, aspect);
-    if (packed.cost < allCost - 1e-9) {
-      all = packed.block;
-      allCost = packed.cost;
+  for (const wrap of WRAP_WIDTHS) {
+    const limit = wrap === undefined ? Number.POSITIVE_INFINITY : Math.max(CARD_WIDTH, wrap * Math.sqrt(aspect * cells));
+    for (const factor of INNER_SHAPES) {
+      const inner = Math.min(MAX_ASPECT, Math.max(MIN_ASPECT, aspect * factor));
+      const roots = (childrenOf.get(null) ?? []).flatMap((id) => build(id, inner, limit) ?? []);
+      const packed = pack(roots, aspect);
+      const cost = packed.cost + (wrap === undefined ? 0 : WRAP_COST);
+      if (cost < allCost - 1e-9) {
+        all = packed.block;
+        allCost = cost;
+      }
     }
   }
 

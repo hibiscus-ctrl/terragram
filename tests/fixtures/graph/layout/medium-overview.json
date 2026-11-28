@@ -5,8 +5,8 @@
   "level": "overview",
   "focus": null,
   "compared": false,
-  "width": 852,
-  "height": 338,
+  "width": 588,
+  "height": 458,
   "top": 0,
   "cut": null,
   "header": [],
@@ -35,8 +35,8 @@
       },
       "x": 24,
       "y": 24,
-      "width": 516,
-      "height": 290
+      "width": 252,
+      "height": 410
     },
     {
       "id": "g1",
@@ -49,7 +49,7 @@
         "change": null,
         "findings": null
       },
-      "x": 576,
+      "x": 312,
       "y": 24,
       "width": 252,
       "height": 290
@@ -139,7 +139,7 @@
         "change": null,
         "findings": null
       },
-      "x": 170,
+      "x": 38,
       "y": 60,
       "width": 224,
       "height": 84
@@ -202,7 +202,7 @@
         "change": null,
         "findings": null
       },
-      "x": 590,
+      "x": 326,
       "y": 60,
       "width": 224,
       "height": 84
@@ -330,8 +330,8 @@
           }
         }
       },
-      "x": 302,
-      "y": 216,
+      "x": 38,
+      "y": 336,
       "width": 224,
       "height": 84
     },
@@ -380,7 +380,7 @@
         "change": null,
         "findings": null
       },
-      "x": 590,
+      "x": 326,
       "y": 216,
       "width": 224,
       "height": 84
@@ -396,12 +396,8 @@
       "count": 4,
       "points": [
         {
-          "x": 211,
-          "y": 144
-        },
-        {
           "x": 150,
-          "y": 180
+          "y": 144
         },
         {
           "x": 150,
@@ -418,16 +414,12 @@
       "count": 10,
       "points": [
         {
-          "x": 353,
+          "x": 150,
           "y": 144
         },
         {
-          "x": 414,
-          "y": 180
-        },
-        {
-          "x": 414,
-          "y": 216
+          "x": 150,
+          "y": 336
         }
       ]
     },
@@ -440,15 +432,15 @@
       "count": 3,
       "points": [
         {
-          "x": 702,
+          "x": 438,
           "y": 144
         },
         {
-          "x": 702,
+          "x": 438,
           "y": 180
         },
         {
-          "x": 702,
+          "x": 438,
           "y": 216
         }
       ]

@@ -23,6 +23,8 @@ import {
   layoutGraphDocument,
   layoutGraphView,
   type LayoutViewOptions,
+  DEFAULT_ASPECT,
+  GRAPH_LEVELS,
   MAX_ASPECT,
   MIN_ASPECT,
   MAX_GRAPH_NODES,
@@ -48,6 +50,7 @@ const docs: Record<string, GraphDocument> = {
   "dev-prod": load("dev-prod"),
   hashed: load("hashed"),
   large: load("large"),
+  azure: load("azure"),
 };
 const smallBase = load("small-base");
 const medium = docs.medium as GraphDocument;
@@ -268,6 +271,49 @@ describe("the shape of the picture", () => {
     assert.equal(JSON.stringify(layoutGraphDocument(large, { aspect: 1.6 })), JSON.stringify(layoutGraphDocument(large)));
     assert.notEqual(JSON.stringify(layoutGraphDocument(large, { aspect: 3 })), JSON.stringify(layoutGraphDocument(large)));
     assert.ok(renderGraphSvg(projectGraph(large), { aspect: 3 }).includes(`width="${Math.ceil(layoutGraphDocument(large, { aspect: 3 }).width)}"`));
+  });
+
+  it("holds the aspect at every level, for the fixtures and for estates whose resources refer to each other", () => {
+    const TYPES = ["azurerm_subnet", "azurerm_linux_virtual_machine", "azurerm_mssql_database", "azurerm_storage_account", "azurerm_key_vault", "azurerm_service_plan", "azurerm_redis_cache", "azurerm_cosmosdb_account", "azurerm_container_registry", "azurerm_servicebus_namespace", "azurerm_public_ip", "azurerm_log_analytics_workspace"];
+    /** A subscription of `count` resources of a few types, each referring to one of the first ten and to its neighbour: one connected cluster at every level. */
+    const connected = (count: number): GraphDocument => ({
+      ...docs.azure,
+      nodes: Array.from({ length: count }, (_, i) => ({ kind: "resource" as const, type: TYPES[i % TYPES.length] as string, id: `r${i}`, account: "sub" })),
+      edges: Array.from({ length: count - 1 }, (_, i) => ({ from: i + 1, to: i % 10 })),
+    });
+    const estates: Record<string, GraphDocument> = { ...docs, "connected 60": connected(60), "connected 200": connected(200) };
+    const measured: string[] = [];
+    for (const [name, doc] of Object.entries(estates)) {
+      for (const level of GRAPH_LEVELS) {
+        // A cluster that dagre lays out tall is wrapped to be narrower, never stretched wider, so the estates built to be one cluster are asked for 1 and 1.6 only.
+        for (const aspect of name.startsWith("connected") ? [1, DEFAULT_ASPECT] : [1, DEFAULT_ASPECT, 2.4]) {
+          const layout = layoutGraphDocument(doc, { level, aspect });
+          // One or two boxes cannot be reshaped: a picture needs six cards before its shape is the packing's to choose.
+          if (layout.nodes.length < 6) continue;
+          const picture = layout.width / (layout.height - layout.top);
+          const off = Math.max(picture / aspect, aspect / picture);
+          measured.push(`${name} ${level} @${aspect}: ${picture.toFixed(2)}`);
+          assert.ok(off <= 1.6, `${name} at ${level}, aspect ${aspect}, is ${layout.width} x ${layout.height - layout.top} (${picture.toFixed(2)})`);
+        }
+      }
+    }
+    assert.ok(measured.length > 50, `only ${measured.length} pictures were measured`);
+    // The Azure estate was 5.6 : 1 at Services (and 27 : 1 detailed) when a cluster was not wrapped.
+    for (const level of GRAPH_LEVELS.filter((l) => l !== "overview")) {
+      const layout = layoutGraphDocument(docs.azure as GraphDocument, { level });
+      assert.ok(layout.width / (layout.height - layout.top) < 2.2, level);
+    }
+  });
+
+  it("wraps a cluster that is wider than the picture without losing a card or a line", () => {
+    const services = layoutGraphDocument(docs.azure as GraphDocument, { level: "services" });
+    const detailed = projectGraph(docs.azure as GraphDocument, { level: "services" });
+    assert.equal(services.nodes.length, detailed.nodes.length);
+    assert.equal(services.edges.length, detailed.edges.length);
+    assert.ok(services.edges.every((e) => e.points.length >= 2), "a line was left without a route");
+    for (const a of services.nodes) for (const b of services.nodes) if (a !== b) assert.ok(apart(a, b), `${a.id} overlaps ${b.id}`);
+    const box = services.groups[0] as LayoutGroup;
+    for (const n of services.nodes) assert.ok(inside(box, n), `${n.id} is outside its box`);
   });
 
   it("refuses an aspect that is not a number in bounds", () => {
