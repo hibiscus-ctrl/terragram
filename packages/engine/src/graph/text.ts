@@ -23,6 +23,18 @@ export function cleanText(text: string): string {
 
 export const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
+/** A text cut to `max` characters by dropping its middle, so that both what it starts with and what it ends with show. */
+export function clipMiddle(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const keep = max - 1;
+  const head = Math.ceil(keep / 2);
+  return `${text.slice(0, head)}…${text.slice(text.length - (keep - head))}`;
+}
+
+/** The most characters a card shows of its resource type and of its name: what its width has room for. */
+export const CARD_KIND_CHARS = 36;
+export const CARD_LABEL_CHARS = 24;
+
 /** The words under the picture: what was hidden, what the findings are, what the colours mean. */
 export function footerLines(view: GraphView): string[] {
   const lines: string[] = [];

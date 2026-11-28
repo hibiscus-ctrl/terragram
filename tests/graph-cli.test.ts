@@ -115,8 +115,15 @@ describe("terragram graph", () => {
     assert.equal(await count("--hide", "aws_cloudwatch_*", "--hide", "aws_eip"), 14);
   });
 
+  it("packs toward the --aspect asked for, in the SVG and the draw.io file", async () => {
+    const options = { aspect: 3 };
+    assert.equal((await cli("graph", medium, "--aspect", "3")).stdout, `${renderGraphSvg(projectGraph(doc(medium)), options)}\n`);
+    assert.equal((await cli("graph", medium, "--aspect", "3", "-f", "drawio")).stdout, renderGraphDrawio(projectGraph(doc(medium)), options));
+    assert.notEqual((await cli("graph", medium, "--aspect", "3")).stdout, (await cli("graph", medium)).stdout);
+  });
+
   it("exits 2 on bad arguments", async () => {
-    for (const args of [["graph"], ["graph", small, medium], ["graph", small, "--format", "png"], ["graph", small, "--delta"], ["graph", small, "--nope"]]) {
+    for (const args of [["graph"], ["graph", small, medium], ["graph", small, "--format", "png"], ["graph", small, "--delta"], ["graph", small, "--nope"], ["graph", small, "--aspect", "wide"], ["graph", small, "--aspect", ""], ["graph", small, "--aspect", "0.1"], ["graph", small, "--aspect", "9"]]) {
       const result = await cli(...args);
       assert.equal(result.code, 2, args.join(" "));
       assert.match(result.stderr, /^terragram: /);

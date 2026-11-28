@@ -268,7 +268,7 @@
           },
           "label": {
             "type": "string",
-            "description": "The short name of a card, at most 24 characters; the SVG draws the first 20."
+            "description": "The short name of a card, at most 40 characters; the SVG draws 24 of them, with the middle left out of a longer one."
           },
           "title": {
             "type": "string",

@@ -1,83 +1,83 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1208" height="534" viewBox="0 0 1208 534" role="img" aria-labelledby="tg-title tg-desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1092" height="730" viewBox="0 0 1092 730" role="img" aria-labelledby="tg-title tg-desc">
 <title id="tg-title">orders</title>
 <desc id="tg-desc">10 resources in 2 groups, 9 references.</desc>
 <defs><marker id="tg-arrow-unchanged" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a8a090"/></marker><marker id="tg-arrow-added" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#15803d"/></marker><marker id="tg-arrow-removed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#b91c1c"/></marker></defs>
-<rect width="1208" height="534" fill="#faf8f4"/>
+<rect width="1092" height="730" fill="#faf8f4"/>
 <text x="24" y="24" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" font-weight="700" fill="#211d16">orders</text>
-<g><rect x="24" y="48" width="1160" height="430" rx="12" fill="#f6f3ec" stroke="#cfc7b4" stroke-width="1.25"/>
+<g><rect x="24" y="48" width="1044" height="626" rx="12" fill="#f6f3ec" stroke="#cfc7b4" stroke-width="1.25"/>
 <text x="36" y="63" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#665e4f">Google Cloud project orders-prod-4f2a</text>
 </g>
-<g><rect x="38" y="218" width="278" height="246" rx="12" fill="#efe9da" stroke="#c4baa0" stroke-width="1.25" stroke-dasharray="6 4"/>
-<text x="50" y="233" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#665e4f">module terraform-google-modules/…</text>
+<g><rect x="38" y="84" width="252" height="246" rx="12" fill="#efe9da" stroke="#c4baa0" stroke-width="1.25" stroke-dasharray="6 4"/>
+<text x="50" y="99" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#665e4f">module terraform-google-modu…</text>
 </g>
-<path d="M 833 146 Q 756 182 756 200 Q 756 218 698 237 L 640 256" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
-<path d="M 544 131 Q 264 182 264 200 Q 264 218 251 236 L 238 254" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
-<path d="M 595 146 Q 554 182 554 200 Q 554 218 554 236 L 554 254" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
-<path d="M 716 139 Q 872 182 872 200 Q 872 218 872 236 L 872 254" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
-<path d="M 716 128 Q 1084 182 1084 200 Q 1084 218 1084 236 L 1084 254" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
-<path d="M 216 316 Q 216 352 195 370 L 174 388" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
-<path d="M 115 146 Q 100 182 100 200 Q 100 218 100 251.5 Q 100 285 100 318.5 Q 100 352 110 370 L 120 388" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
-<path d="M 155 146 Q 186 182 186 200 Q 186 218 194 236 L 202 254" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
-<path d="M 371 146 Q 408 182 408 200 Q 408 218 447 236 L 486 254" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 150 428 Q 150 464 226 483.5 L 302 503" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 678 366 Q 678 242 421 242 Q 164 242 164 212 L 164 182" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 617 428 Q 546 464 510.5 482 L 475 500" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 678 428 Q 678 464 678 482 L 678 500" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 790 425 Q 942 464 942 482 L 942 500" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 164 182 Q 164 218 164 236 L 164 254" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 150 598 L 164 316" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 150 598 L 164 182" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 414 428 Q 414 464 414 482 L 414 500" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
 <g><title>google_bigquery_dataset orders_analytics, region europe-west2</title>
-<rect x="814" y="84" width="172" height="62" rx="9" fill="#ffffff" stroke="#be185d" stroke-width="1.5"/>
-<rect x="814" y="94" width="4" height="42" rx="2" fill="#be185d"/>
-<text x="828" y="108" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#be185d" letter-spacing="0.3">google_bigquery_dataset</text>
-<text x="828" y="130" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders_analytics</text>
+<rect x="38" y="366" width="224" height="62" rx="9" fill="#ffffff" stroke="#be185d" stroke-width="1.5"/>
+<rect x="38" y="376" width="4" height="42" rx="2" fill="#be185d"/>
+<text x="52" y="390" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#be185d" letter-spacing="0.3">google_bigquery_dataset</text>
+<text x="52" y="412" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders_analytics</text>
 </g>
 <g><title>google_cloud_run_v2_service orders-api, region europe-west2</title>
-<rect x="544" y="84" width="172" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
-<rect x="544" y="94" width="4" height="42" rx="2" fill="#047857"/>
-<text x="558" y="108" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.3">google_cloud_run_v2_servi…</text>
-<text x="558" y="130" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-api</text>
+<rect x="566" y="366" width="224" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
+<rect x="566" y="376" width="4" height="42" rx="2" fill="#047857"/>
+<text x="580" y="390" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.3">google_cloud_run_v2_service</text>
+<text x="580" y="412" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-api</text>
 </g>
 <g><title>google_compute_network orders, region europe-west2</title>
-<rect x="52" y="388" width="172" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
-<rect x="52" y="398" width="4" height="42" rx="2" fill="#2563eb"/>
-<text x="66" y="412" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">google_compute_network</text>
-<text x="66" y="434" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders</text>
+<rect x="52" y="254" width="224" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+<rect x="52" y="264" width="4" height="42" rx="2" fill="#2563eb"/>
+<text x="66" y="278" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">google_compute_network</text>
+<text x="66" y="300" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders</text>
 </g>
 <g><title>google_compute_subnetwork orders-private, region europe-west2</title>
-<rect x="130" y="254" width="172" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
-<rect x="130" y="264" width="4" height="42" rx="2" fill="#2563eb"/>
-<text x="144" y="278" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">google_compute_subnetwork</text>
-<text x="144" y="300" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-private</text>
+<rect x="52" y="120" width="224" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+<rect x="52" y="130" width="4" height="42" rx="2" fill="#2563eb"/>
+<text x="66" y="144" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">google_compute_subnetwork</text>
+<text x="66" y="166" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-private</text>
 </g>
 <g><title>google_container_cluster orders-batch, region europe-west2</title>
-<rect x="42" y="84" width="172" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
-<rect x="42" y="94" width="4" height="42" rx="2" fill="#047857"/>
-<text x="56" y="108" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.3">google_container_cluster</text>
-<text x="56" y="130" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-batch</text>
+<rect x="38" y="598" width="224" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
+<rect x="38" y="608" width="4" height="42" rx="2" fill="#047857"/>
+<text x="52" y="622" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.3">google_container_cluster</text>
+<text x="52" y="644" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-batch</text>
 </g>
 <g><title>google_pubsub_subscription orders-events-worker, region europe-west2</title>
-<rect x="254" y="84" width="172" height="62" rx="9" fill="#ffffff" stroke="#665e4f" stroke-width="1.5"/>
-<rect x="254" y="94" width="4" height="42" rx="2" fill="#665e4f"/>
-<text x="268" y="108" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#665e4f" letter-spacing="0.3">google_pubsub_subscription</text>
-<text x="268" y="130" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-events-worker</text>
+<rect x="302" y="366" width="224" height="62" rx="9" fill="#ffffff" stroke="#665e4f" stroke-width="1.5"/>
+<rect x="302" y="376" width="4" height="42" rx="2" fill="#665e4f"/>
+<text x="316" y="390" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#665e4f" letter-spacing="0.3">google_pubsub_subscription</text>
+<text x="316" y="412" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-events-worker</text>
 </g>
 <g><title>google_pubsub_topic orders-events, region europe-west2</title>
-<rect x="468" y="254" width="172" height="62" rx="9" fill="#ffffff" stroke="#665e4f" stroke-width="1.5"/>
-<rect x="468" y="264" width="4" height="42" rx="2" fill="#665e4f"/>
-<text x="482" y="278" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#665e4f" letter-spacing="0.3">google_pubsub_topic</text>
-<text x="482" y="300" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-events</text>
+<rect x="302" y="500" width="224" height="62" rx="9" fill="#ffffff" stroke="#665e4f" stroke-width="1.5"/>
+<rect x="302" y="510" width="4" height="42" rx="2" fill="#665e4f"/>
+<text x="316" y="524" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#665e4f" letter-spacing="0.3">google_pubsub_topic</text>
+<text x="316" y="546" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-events</text>
 </g>
 <g><title>google_service_account orders-api@orders-prod-…, region europe-west2</title>
-<rect x="786" y="254" width="172" height="62" rx="9" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
-<rect x="786" y="264" width="4" height="42" rx="2" fill="#b45309"/>
-<text x="800" y="278" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#b45309" letter-spacing="0.3">google_service_account</text>
-<text x="800" y="300" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-api@orders-p…</text>
+<rect x="566" y="500" width="224" height="62" rx="9" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
+<rect x="566" y="510" width="4" height="42" rx="2" fill="#b45309"/>
+<text x="580" y="524" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#b45309" letter-spacing="0.3">google_service_account</text>
+<text x="580" y="546" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-api@orders-prod-…</text>
 </g>
 <g><title>google_sql_database_instance orders, region europe-west2</title>
-<rect x="998" y="254" width="172" height="62" rx="9" fill="#ffffff" stroke="#be185d" stroke-width="1.5"/>
-<rect x="998" y="264" width="4" height="42" rx="2" fill="#be185d"/>
-<text x="1012" y="278" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#be185d" letter-spacing="0.3">google_sql_database_insta…</text>
-<text x="1012" y="300" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders</text>
+<rect x="830" y="500" width="224" height="62" rx="9" fill="#ffffff" stroke="#be185d" stroke-width="1.5"/>
+<rect x="830" y="510" width="4" height="42" rx="2" fill="#be185d"/>
+<text x="844" y="524" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#be185d" letter-spacing="0.3">google_sql_database_instance</text>
+<text x="844" y="546" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders</text>
 </g>
 <g><title>google_storage_bucket orders-prod-4f2a-uploads, region europe-west2</title>
-<rect x="680" y="388" width="172" height="62" rx="9" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
-<rect x="680" y="398" width="4" height="42" rx="2" fill="#7c3aed"/>
-<text x="694" y="412" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#7c3aed" letter-spacing="0.3">google_storage_bucket</text>
-<text x="694" y="434" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-prod-4f2a-up…</text>
+<rect x="298" y="598" width="224" height="62" rx="9" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<rect x="298" y="608" width="4" height="42" rx="2" fill="#7c3aed"/>
+<text x="312" y="622" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#7c3aed" letter-spacing="0.3">google_storage_bucket</text>
+<text x="312" y="644" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">orders-prod-4f2a-uploads</text>
 </g>
-<text x="24" y="518" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">1 glue resource hidden: google_project_iam_member x1.</text>
+<text x="24" y="714" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">1 glue resource hidden: google_project_iam_member x1.</text>
 </svg>

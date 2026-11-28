@@ -3,9 +3,9 @@
 
 import { CATEGORY_META } from "../model.ts";
 import { SEVERITIES, type Severity } from "./findings.ts";
-import { HEADER, type Point } from "./layout.ts";
+import { HEADER, type LayoutOptions, type Point } from "./layout.ts";
 import { type LayoutGroup, type LayoutNode, layoutGraphView } from "./layout-view.ts";
-import { cleanText, clip } from "./text.ts";
+import { CARD_KIND_CHARS, CARD_LABEL_CHARS, cleanText, clipMiddle } from "./text.ts";
 import type { EdgeStatus, GraphCategory, GraphStatus, GraphView, ViewGroup, ViewNode } from "./project.ts";
 
 /**
@@ -118,8 +118,8 @@ function nodeSvg(node: LayoutNode): string {
   return `<g${faded}><title>${esc(node.title)}</title>
 <rect x="${x}" y="${y}" width="${node.width}" height="${node.height}" rx="9" fill="${style.fill}" stroke="${stroke}" stroke-width="1.5"${style.dash ? ` stroke-dasharray="${style.dash}"` : ""}/>
 <rect x="${x}" y="${y + 10}" width="4" height="${node.height - 20}" rx="2" fill="${colour}"/>
-<text x="${x + 14}" y="${y + 24}" font-family="${FONT}" font-size="9" font-weight="600" fill="${colour}" letter-spacing="0.3"${strike}>${esc(clip(node.kind, 26))}</text>
-<text x="${x + 14}" y="${y + 46}" font-family="${FONT}" font-size="12" font-weight="700" fill="${INK}"${strike}>${esc(clip(node.label, 20))}</text>${mark}${node.badges.findings ? marker(node.badges.findings, x + node.width - 6, y) : ""}
+<text x="${x + 14}" y="${y + 24}" font-family="${FONT}" font-size="9" font-weight="600" fill="${colour}" letter-spacing="0.3"${strike}>${esc(clipMiddle(node.kind, CARD_KIND_CHARS))}</text>
+<text x="${x + 14}" y="${y + 46}" font-family="${FONT}" font-size="12" font-weight="700" fill="${INK}"${strike}>${esc(clipMiddle(node.label, CARD_LABEL_CHARS))}</text>${mark}${node.badges.findings ? marker(node.badges.findings, x + node.width - 6, y) : ""}
 </g>`;
 }
 
@@ -139,8 +139,9 @@ function legend(view: GraphView, y: number): string {
     .join("\n");
 }
 
-export function renderGraphSvg(view: GraphView): string {
-  const layout = layoutGraphView(view);
+/** The picture of `view`, its boxes packed toward `options.aspect` (width over height; see {@link LayoutOptions}). */
+export function renderGraphSvg(view: GraphView, options: LayoutOptions = {}): string {
+  const layout = layoutGraphView(view, options);
   const head = layout.header;
   const top = layout.top;
   const empty = view.nodes.length === 0;

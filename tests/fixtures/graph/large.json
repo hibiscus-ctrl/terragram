@@ -1,0 +1,781 @@
+{
+  "schema": "infraharvest/graph/v1",
+  "run_id": "6f1c9d3e-0a52-5b8e-9c47-2d1f3a5b7c90",
+  "generated_at": "2026-11-20T10:00:00Z",
+  "tool": {
+    "name": "infraharvest",
+    "version": "0.4.0"
+  },
+  "cloud": "aws",
+  "nodes": [
+    {
+      "kind": "module",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "source": "terraform-aws-modules/vpc/aws",
+      "version": "5.13.0"
+    },
+    {
+      "kind": "module",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "source": "terraform-aws-modules/s3-bucket/aws",
+      "version": "4.1.0"
+    },
+    {
+      "kind": "module",
+      "account": "210987654321",
+      "region": "us-east-1",
+      "source": "terraform-aws-modules/vpc/aws",
+      "version": "5.13.0"
+    },
+    {
+      "kind": "module",
+      "account": "210987654321",
+      "region": "us-east-1",
+      "source": "terraform-aws-modules/eks/aws",
+      "version": "20.8.0"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_vpc",
+      "id": "vpc-0a1b2c3d",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0a0",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0a1",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0a2",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0a3",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_internet_gateway",
+      "id": "igw-01",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route_table",
+      "id": "rtb-01",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route_table_association",
+      "id": "rtbassoc-0",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route_table_association",
+      "id": "rtbassoc-1",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route_table_association",
+      "id": "rtbassoc-2",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route_table_association",
+      "id": "rtbassoc-3",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 0
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group",
+      "id": "sg-web",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group",
+      "id": "sg-db",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_instance",
+      "id": "i-0abc0",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_instance",
+      "id": "i-0abc1",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_instance",
+      "id": "i-0abc2",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lb",
+      "id": "web-lb",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lb_target_group",
+      "id": "web-tg",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lb_listener",
+      "id": "web-listener",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lb_target_group_attachment",
+      "id": "tgatt-0",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lb_target_group_attachment",
+      "id": "tgatt-1",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lb_target_group_attachment",
+      "id": "tgatt-2",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_db_instance",
+      "id": "orders-db",
+      "account": "123456789012",
+      "region": "eu-west-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_s3_bucket",
+      "id": "assets-bucket",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 1
+    },
+    {
+      "kind": "resource",
+      "type": "aws_s3_bucket_public_access_block",
+      "id": "assets-bucket",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 1
+    },
+    {
+      "kind": "resource",
+      "type": "aws_s3_bucket_server_side_encryption_configuration",
+      "id": "assets-bucket",
+      "account": "123456789012",
+      "region": "eu-west-1",
+      "parent": 1
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role",
+      "id": "web-role",
+      "account": "123456789012"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_policy",
+      "id": "web-policy",
+      "account": "123456789012"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role_policy_attachment",
+      "id": "web-attach",
+      "account": "123456789012"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_vpc",
+      "id": "vpc-0f9e8d7c",
+      "account": "210987654321",
+      "region": "us-east-1",
+      "parent": 2
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0b0",
+      "account": "210987654321",
+      "region": "us-east-1",
+      "parent": 2
+    },
+    {
+      "kind": "resource",
+      "type": "aws_subnet",
+      "id": "subnet-0b1",
+      "account": "210987654321",
+      "region": "us-east-1",
+      "parent": 2
+    },
+    {
+      "kind": "resource",
+      "type": "aws_eks_cluster",
+      "id": "prod-cluster",
+      "account": "210987654321",
+      "region": "us-east-1",
+      "parent": 3
+    },
+    {
+      "kind": "resource",
+      "type": "aws_eks_node_group",
+      "id": "prod-ng",
+      "account": "210987654321",
+      "region": "us-east-1",
+      "parent": 3
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role",
+      "id": "eks-cluster-role",
+      "account": "210987654321",
+      "parent": 3
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lambda_function",
+      "id": "orders-fn-0",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lambda_function",
+      "id": "orders-fn-1",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lambda_function",
+      "id": "orders-fn-2",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_lambda_function",
+      "id": "orders-fn-3",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_iam_role",
+      "id": "lambda-exec",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_cloudwatch_log_group",
+      "id": "/aws/lambda/orders-fn-0",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_cloudwatch_log_group",
+      "id": "/aws/lambda/orders-fn-1",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_cloudwatch_log_group",
+      "id": "/aws/lambda/orders-fn-2",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_cloudwatch_log_group",
+      "id": "/aws/lambda/orders-fn-3",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_dynamodb_table",
+      "id": "orders",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_sqs_queue",
+      "id": "orders-queue",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_sns_topic",
+      "id": "orders-topic",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_kms_key",
+      "id": "orders-key",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_elasticache_replication_group",
+      "id": "orders-cache",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_s3_bucket",
+      "id": "orders-archive",
+      "account": "210987654321",
+      "region": "us-east-1"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_cloudfront_distribution",
+      "id": "edge-01",
+      "account": "210987654321"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route53_zone",
+      "id": "example.com",
+      "account": "210987654321"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_route53_record",
+      "id": "www.example.com",
+      "account": "210987654321"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_acm_certificate",
+      "id": "edge-cert",
+      "account": "210987654321"
+    },
+    {
+      "kind": "module",
+      "account": "123456789012",
+      "region": "eu-west-2",
+      "source": "terraform-aws-modules/security-group/aws",
+      "version": "5.1.2"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group",
+      "id": "sg-mod-0",
+      "account": "123456789012",
+      "region": "eu-west-2",
+      "parent": 58
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group",
+      "id": "sg-mod-1",
+      "account": "123456789012",
+      "region": "eu-west-2",
+      "parent": 58
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group",
+      "id": "sg-mod-2",
+      "account": "123456789012",
+      "region": "eu-west-2",
+      "parent": 58
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group",
+      "id": "sg-mod-3",
+      "account": "123456789012",
+      "region": "eu-west-2",
+      "parent": 58
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group_rule",
+      "id": "rule-59",
+      "account": "123456789012",
+      "region": "eu-west-2",
+      "parent": 58
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group_rule",
+      "id": "rule-60",
+      "account": "123456789012",
+      "region": "eu-west-2",
+      "parent": 58
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group_rule",
+      "id": "rule-61",
+      "account": "123456789012",
+      "region": "eu-west-2",
+      "parent": 58
+    },
+    {
+      "kind": "resource",
+      "type": "aws_security_group_rule",
+      "id": "rule-62",
+      "account": "123456789012",
+      "region": "eu-west-2",
+      "parent": 58
+    },
+    {
+      "kind": "resource",
+      "type": "aws_wafv2_web_acl",
+      "id": "edge-acl",
+      "account": "123456789012",
+      "region": "eu-west-2"
+    },
+    {
+      "kind": "resource",
+      "type": "aws_wafv2_web_acl_association",
+      "id": "edge-acl-assoc",
+      "account": "123456789012",
+      "region": "eu-west-2"
+    }
+  ],
+  "edges": [
+    {
+      "from": 5,
+      "to": 4
+    },
+    {
+      "from": 6,
+      "to": 4
+    },
+    {
+      "from": 7,
+      "to": 4
+    },
+    {
+      "from": 8,
+      "to": 4
+    },
+    {
+      "from": 9,
+      "to": 4
+    },
+    {
+      "from": 10,
+      "to": 4
+    },
+    {
+      "from": 10,
+      "to": 9
+    },
+    {
+      "from": 11,
+      "to": 10
+    },
+    {
+      "from": 11,
+      "to": 5
+    },
+    {
+      "from": 12,
+      "to": 10
+    },
+    {
+      "from": 12,
+      "to": 6
+    },
+    {
+      "from": 13,
+      "to": 10
+    },
+    {
+      "from": 13,
+      "to": 7
+    },
+    {
+      "from": 14,
+      "to": 10
+    },
+    {
+      "from": 14,
+      "to": 8
+    },
+    {
+      "from": 15,
+      "to": 4
+    },
+    {
+      "from": 16,
+      "to": 4
+    },
+    {
+      "from": 16,
+      "to": 15
+    },
+    {
+      "from": 17,
+      "to": 5
+    },
+    {
+      "from": 17,
+      "to": 15
+    },
+    {
+      "from": 18,
+      "to": 6
+    },
+    {
+      "from": 18,
+      "to": 15
+    },
+    {
+      "from": 19,
+      "to": 7
+    },
+    {
+      "from": 19,
+      "to": 15
+    },
+    {
+      "from": 20,
+      "to": 5
+    },
+    {
+      "from": 20,
+      "to": 15
+    },
+    {
+      "from": 21,
+      "to": 4
+    },
+    {
+      "from": 22,
+      "to": 20
+    },
+    {
+      "from": 22,
+      "to": 21
+    },
+    {
+      "from": 23,
+      "to": 21
+    },
+    {
+      "from": 23,
+      "to": 17
+    },
+    {
+      "from": 24,
+      "to": 21
+    },
+    {
+      "from": 24,
+      "to": 18
+    },
+    {
+      "from": 25,
+      "to": 21
+    },
+    {
+      "from": 25,
+      "to": 19
+    },
+    {
+      "from": 26,
+      "to": 16
+    },
+    {
+      "from": 28,
+      "to": 27
+    },
+    {
+      "from": 29,
+      "to": 27
+    },
+    {
+      "from": 32,
+      "to": 30
+    },
+    {
+      "from": 32,
+      "to": 31
+    },
+    {
+      "from": 34,
+      "to": 33
+    },
+    {
+      "from": 35,
+      "to": 33
+    },
+    {
+      "from": 36,
+      "to": 34
+    },
+    {
+      "from": 37,
+      "to": 36
+    },
+    {
+      "from": 36,
+      "to": 38
+    },
+    {
+      "from": 39,
+      "to": 43
+    },
+    {
+      "from": 40,
+      "to": 43
+    },
+    {
+      "from": 41,
+      "to": 43
+    },
+    {
+      "from": 42,
+      "to": 43
+    },
+    {
+      "from": 39,
+      "to": 44
+    },
+    {
+      "from": 40,
+      "to": 45
+    },
+    {
+      "from": 41,
+      "to": 46
+    },
+    {
+      "from": 42,
+      "to": 47
+    },
+    {
+      "from": 39,
+      "to": 48
+    },
+    {
+      "from": 40,
+      "to": 48
+    },
+    {
+      "from": 41,
+      "to": 48
+    },
+    {
+      "from": 42,
+      "to": 48
+    },
+    {
+      "from": 39,
+      "to": 49
+    },
+    {
+      "from": 50,
+      "to": 49
+    },
+    {
+      "from": 48,
+      "to": 51
+    },
+    {
+      "from": 63,
+      "to": 59
+    },
+    {
+      "from": 64,
+      "to": 60
+    },
+    {
+      "from": 65,
+      "to": 61
+    },
+    {
+      "from": 66,
+      "to": 62
+    },
+    {
+      "from": 68,
+      "to": 67
+    }
+  ],
+  "redaction": {
+    "ids_hashed": false,
+    "hash_alg": "hmac-sha256"
+  }
+}

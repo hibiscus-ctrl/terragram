@@ -19,6 +19,8 @@ import {
   type LayoutNode,
   layoutGraphDocument,
   layoutGraphView,
+  MAX_ASPECT,
+  MIN_ASPECT,
   MAX_GRAPH_NODES,
   parseGraphDocument,
   projectGraph,
@@ -40,6 +42,7 @@ const docs: Record<string, GraphDocument> = {
   environments: load("environments"),
   "dev-prod": load("dev-prod"),
   hashed: load("hashed"),
+  large: load("large"),
 };
 const smallBase = load("small-base");
 const medium = docs.medium as GraphDocument;
@@ -224,11 +227,75 @@ describe("the SVG is drawn from the layout", () => {
     for (const group of layout.groups) assert.ok(svg.includes(`>${group.heading}</text>`), group.heading);
     for (const node of layout.nodes) {
       assert.ok(svg.includes(`<title>${node.title}</title>`), node.title);
-      assert.ok(svg.includes(`>${node.label.length > 20 ? `${node.label.slice(0, 19)}…` : node.label}</text>`), node.label);
+      assert.ok(svg.includes(`>${node.label.length > 24 ? `${node.label.slice(0, 12)}…${node.label.slice(-11)}` : node.label}</text>`), node.label);
     }
     for (const line of [...layout.header, ...layout.footer]) assert.ok(svg.includes(`>${line}</text>`), line);
     assert.equal(layout.top, 2 * 18 + 6);
     assert.ok(layout.nodes.every((n) => n.y >= layout.top));
+  });
+});
+
+describe("the shape of the picture", () => {
+  const ratio = (layout: GraphLayoutView) => layout.width / layout.height;
+  const large = docs.large as GraphDocument;
+
+  it("packs boxes onto rows toward 16:10 instead of laying them side by side in a strip", () => {
+    for (const [name, doc] of Object.entries({ medium, large })) {
+      const layout = layoutGraphDocument(doc);
+      assert.ok(ratio(layout) > 1.2 && ratio(layout) < 2.4, `${name} is ${layout.width} x ${layout.height}`);
+    }
+    const strip = layoutGraphDocument(wide(60));
+    assert.ok(ratio(strip) > 1.2 && ratio(strip) < 2.4, `60 lone cards are ${strip.width} x ${strip.height}`);
+  });
+
+  it("packs toward the aspect asked for, and the same one when none is", () => {
+    const [tall, flat] = [layoutGraphDocument(wide(60), { aspect: 0.7 }), layoutGraphDocument(wide(60), { aspect: 3 })];
+    assert.ok(ratio(tall) < 1 && ratio(flat) > 2.2, `${ratio(tall)} and ${ratio(flat)}`);
+    assert.equal(JSON.stringify(layoutGraphDocument(large, { aspect: 1.6 })), JSON.stringify(layoutGraphDocument(large)));
+    assert.notEqual(JSON.stringify(layoutGraphDocument(large, { aspect: 3 })), JSON.stringify(layoutGraphDocument(large)));
+    assert.ok(renderGraphSvg(projectGraph(large), { aspect: 3 }).includes(`width="${Math.ceil(layoutGraphDocument(large, { aspect: 3 }).width)}"`));
+  });
+
+  it("refuses an aspect that is not a number in bounds", () => {
+    for (const aspect of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, MIN_ASPECT - 0.01, MAX_ASPECT + 0.01, "2" as unknown as number]) {
+      assert.throws(() => layoutGraphDocument(small, { aspect }), RangeError, String(aspect));
+    }
+    for (const aspect of [MIN_ASPECT, MAX_ASPECT]) assert.ok(layoutGraphDocument(small, { aspect }).nodes.length > 0);
+  });
+
+  it("keeps the same layout from any order of a document that is packed, with the aspect asked for", () => {
+    for (const aspect of [0.7, 3]) {
+      assert.equal(JSON.stringify(layoutGraphDocument(reversed(large), { aspect })), JSON.stringify(layoutGraphDocument(large, { aspect })));
+    }
+  });
+
+  it("routes a line between two boxes through a gap, not over the cards it is not drawn to", () => {
+    const layout = layoutGraphDocument(large);
+    const cards = new Map(layout.nodes.map((n) => [n.id, n]));
+    let crossing = 0;
+    let routed = 0;
+    for (const edge of layout.edges) {
+      const [from, to] = [cards.get(edge.source), cards.get(edge.target)];
+      if (!from || !to || from.group === to.group) continue;
+      routed++;
+      for (let i = 0; i + 1 < edge.points.length; i++) {
+        const [p, q] = [edge.points[i], edge.points[i + 1]] as [{ x: number; y: number }, { x: number; y: number }];
+        const line = { x: Math.min(p.x, q.x), y: Math.min(p.y, q.y), width: Math.abs(p.x - q.x), height: Math.abs(p.y - q.y) };
+        for (const card of layout.nodes) if (card !== from && card !== to && !apart(card, line) && line.width + line.height > 0) crossing++;
+      }
+    }
+    assert.ok(routed > 0);
+    assert.ok(crossing <= routed / 4, `${crossing} crossings in ${routed} routes`);
+  });
+
+  it("gives a card room for a long resource type, and shows both ends of one that is longer", () => {
+    const type = "aws_s3_bucket_server_side_encryption_configuration";
+    const doc: GraphDocument = { ...small, nodes: [{ kind: "resource", type: "aws_s3_bucket_public_access_block", id: "a", account: "1" }, { kind: "resource", type, id: "b", account: "1" }], edges: [] };
+    const layout = layoutGraphDocument(doc);
+    assert.ok(layout.nodes.every((n) => n.width >= 216));
+    const svg = renderGraphSvg(projectGraph(doc));
+    assert.ok(svg.includes(">aws_s3_bucket_public_access_block</text>"));
+    assert.ok(svg.includes(">aws_s3_bucket_serv…ion_configuration</text>"));
   });
 });
 
