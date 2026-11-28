@@ -3,7 +3,7 @@
 
 import { MANAGED_WITHOUT_IAM_WRITE, MAX_MANAGED_EDGES, MAX_MANAGED_TARGETS, managedPolicyGrants, SERVICE_RESOURCE_TYPES } from "./aws-managed-policies.ts";
 import { attributeOf, extractReferences, type HclBlock, stringValue } from "./hcl.ts";
-import type { EdgeAccess } from "./model.ts";
+import { type EdgeAccess, MAX_MODEL_EDGES } from "./model.ts";
 
 /**
  * The access a Terraform file grants, read as text. A role's policy is read the way the
@@ -51,6 +51,9 @@ export type IamReading = {
 };
 
 const RANK: Record<EdgeAccess, number> = { "runs-as": 0, read: 1, write: 2, admin: 3, unscoped: 4 };
+
+/** How wide each access type is, widest highest: what is kept when edges have to be cut. */
+export const ACCESS_RANK: Readonly<Record<EdgeAccess, number>> = RANK;
 
 /** The stronger of two access types: a pair of nodes gets one edge, typed by the most it can do. */
 export function strongerAccess(a: EdgeAccess | undefined, b: EdgeAccess): EdgeAccess {
@@ -766,34 +769,51 @@ function opaqueGrant(source: string): IamEdge[] {
   ];
 }
 
-function edgesOfStatements(
-  source: string,
-  statements: Statement[] | null,
-  owner: (address: string) => string | undefined,
-  identities: Identities,
-): IamEdge[] {
-  if (statements === null) return opaqueGrant(source);
-  const out: IamEdge[] = [];
+/** The target of a grant over the holder itself: a template is read once and given to every holder. */
+const SELF = "\u0000self";
+
+/**
+ * What a policy's statements grant, as edges with no holder yet, one per target and typed by the strongest grant
+ * (as `readIam` would merge them): a policy of thousands of statements is read once, and each identity it is attached
+ * to takes the few edges that are left.
+ */
+type Template = Array<{ target: string; access: EdgeAccess; conditional?: true; unconditional?: EdgeAccess }>;
+
+function templateOfStatements(statements: Statement[], owner: (address: string) => string | undefined, identities: Identities): Template {
+  const merged = new Map<string, Template[number]>();
+  const add = (target: string, access: EdgeAccess, conditional: boolean) => {
+    const existing = merged.get(target);
+    merged.set(target, { target, ...mergeAccess(existing, { access, conditional }) });
+  };
   for (const st of statements) {
     if (st.actions.length === 0 || st.resources.length === 0) continue;
     const reach = st.notResources ? { targets: [], broad: true, undrawn: false } : reachOf(st.resources, owner, identities);
     const level = levelOf(st.actions, st.notActions);
-    const conditional = st.conditional ? ({ conditional: true } as const) : {};
-    for (const target of reach.targets) out.push({ source, target, access: level, ...conditional });
-    if (reach.undrawn && !reach.broad) out.push({ source, target: ANY_RESOURCE_ID, access: level, ...conditional });
+    for (const target of reach.targets) add(target, level, st.conditional);
+    if (reach.undrawn && !reach.broad) add(ANY_RESOURCE_ID, level, st.conditional);
     if (reach.broad) {
-      out.push({ source, target: ANY_RESOURCE_ID, access: "unscoped", ...conditional });
+      add(ANY_RESOURCE_ID, "unscoped", st.conditional);
       const own = selfLevelOfBroad(st.actions, st.notActions);
-      if (own) out.push({ source, target: source, access: own, ...conditional });
+      if (own) add(SELF, own, st.conditional);
     }
   }
-  return out;
+  return [...merged.values()];
+}
+
+function edgesOfTemplate(source: string, template: Template): IamEdge[] {
+  return template.map(({ target, ...rest }) => ({ source, target: target === SELF ? source : target, ...rest }));
 }
 
 /* -------------------------------------------------------------------- AWS -- */
 
 const GCP_FEDERATED_LABEL = "A federated identity";
 const GCP_OTHER_LABEL = "Another principal";
+
+/** The most work (statements read, edges drawn) one file's AWS grants may cost. */
+const MAX_AWS_WORK = 100_000;
+
+/** The most edges the reader returns: the model schema's own limit. Past it the widest are kept and one explicit edge says the rest were cut. */
+const MAX_IAM_EDGES = MAX_MODEL_EDGES;
 
 /** What a policy attaches to: the kinds of identity AWS policies are given to, each with a fixed stand-in for one the picture does not draw. */
 type HolderKind = "role" | "user" | "group";
@@ -957,10 +977,36 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     }
   };
 
+  const readDocuments = new Map<string, { statements: Statement[] | null; via: HclBlock[] }>();
+  const templates = new Map<Statement[], Template>();
+
+  /** The most work (statements read, edges drawn) one file's AWS grants may cost; past it the rest is one explicit edge, never dropped silently. */
+  let work = 0;
+  let overflowed = false;
+  const spend = (units: number): boolean => {
+    work += units;
+    if (work > MAX_AWS_WORK) overflowed = true;
+    return !overflowed;
+  };
+
   /** The statements of a policy expression, and the document blocks they came from; null when it is not text this reader can see. */
   const statementsOf = (expr: string | undefined, via: HclBlock[]): Statement[] | null => {
     const text = expr?.trim();
     if (!text) return null;
+    // A policy attached to many identities is read once.
+    const known = readDocuments.get(text);
+    if (known) {
+      via.push(...known.via);
+      return known.statements;
+    }
+    const readVia: HclBlock[] = [];
+    const statements = readStatements(text, readVia);
+    readDocuments.set(text, { statements, via: readVia });
+    via.push(...readVia);
+    return statements;
+  };
+
+  const readStatements = (text: string, via: HclBlock[]): Statement[] | null => {
     const ref = /^data\.(aws_iam_policy_document)\.([A-Za-z_][\w-]*)\.json$/.exec(text);
     if (ref) {
       const doc = documents.get(`${ref[1]}.${ref[2]}`);
@@ -1001,8 +1047,20 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
 
   /** The grant of one policy expression. `holders` are the blocks that are consumed once it has drawn an edge. */
   const grant = (source: string, expr: string | undefined, holders: HclBlock[]): number => {
+    if (!spend(1)) return 0;
     const via: HclBlock[] = [];
-    const edges = guarded(source, () => edgesOfStatements(source, statementsOf(expr, via), owner, identities));
+    const edges = guarded(source, () => {
+      const statements = statementsOf(expr, via);
+      if (statements === null) return opaqueGrant(source);
+      let template = templates.get(statements);
+      if (!template) {
+        if (!spend(statements.length)) return [];
+        template = templateOfStatements(statements, owner, identities);
+        templates.set(statements, template);
+      }
+      spend(template.length);
+      return edgesOfTemplate(source, template);
+    });
     out.edges.push(...edges);
     if (edges.length > 0) for (const b of [...holders, ...via]) out.consumed.add(b);
     return edges.length;
@@ -1211,6 +1269,7 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
   };
 
   for (const b of blocks) {
+    if (overflowed) break;
     if (b.type !== "resource") continue;
     const [type, name] = b.labels;
     const holderAttribute = type ? AWS_POLICY_HOLDERS.get(type) : undefined;
@@ -1248,6 +1307,16 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     const own = type && name && AWS_INLINE_RESOURCE_POLICIES.has(type) ? owner(`${type}.${name}`) : undefined;
     if (own && attributeOf(b, "policy") !== undefined) resourcePolicy({ id: own, exact: true }, attributeOf(b, "policy"), false, []);
   }
+  // Past the budget, grants went unread: say so with the widest edge there is, never by drawing less.
+  if (overflowed) out.edges.push({ source: overflowPrincipal(out), target: ANY_RESOURCE_ID, access: "unscoped" });
+}
+
+/** The stand-in for grants a reader stopped reading or drawing past its limits: one unscoped edge from it says so. */
+export const OVERFLOW_PRINCIPAL_ID = "principal-overflow";
+export const OVERFLOW_PRINCIPAL_LABEL = "Grants cut at the limits (not drawn)";
+function overflowPrincipal(out: IamReading): string {
+  out.principals.set(OVERFLOW_PRINCIPAL_ID, OVERFLOW_PRINCIPAL_LABEL);
+  return OVERFLOW_PRINCIPAL_ID;
 }
 
 /**
@@ -1933,6 +2002,13 @@ export function readIam(blocks: HclBlock[], owner: (address: string) => string |
   // A grant on oneself is not an edge: it is kept apart, and only where it is an escalation path (`admin`, or `unscoped` when the reader cannot tell).
   const all = [...merged.values()];
   reading.edges = all.filter((e) => e.source !== e.target);
+  if (reading.edges.length > MAX_IAM_EDGES) {
+    // Keep the widest grants, in the order they were read, and replace the rest with one edge that says they were cut.
+    const keep = new Set([...reading.edges].sort((a, b) => RANK[b.access] - RANK[a.access]).slice(0, MAX_IAM_EDGES - 1));
+    const kept = reading.edges.filter((e) => keep.has(e));
+    kept.push({ source: overflowPrincipal(reading), target: ANY_RESOURCE_ID, access: "unscoped" });
+    reading.edges = kept;
+  }
   reading.self = all.filter((e) => e.source === e.target && (e.access === "admin" || e.access === "unscoped"));
   return reading;
 }

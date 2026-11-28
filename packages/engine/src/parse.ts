@@ -13,8 +13,8 @@ import {
   resourceTypeToKind,
 } from "./kinds.ts";
 import { reconcileEdges, uniqueNodeId } from "./engine.ts";
-import { ANY_RESOURCE_ID, mergeAccess, readIam, runsAsAddresses } from "./iam.ts";
-import type { Cloud, EdgeAccess, InfraModel, ModelEdge, ModelNode } from "./model.ts";
+import { ACCESS_RANK, ANY_RESOURCE_ID, mergeAccess, OVERFLOW_PRINCIPAL_ID, OVERFLOW_PRINCIPAL_LABEL, readIam, runsAsAddresses } from "./iam.ts";
+import { type Cloud, type EdgeAccess, type InfraModel, MAX_MODEL_EDGES, type ModelEdge, type ModelNode } from "./model.ts";
 
 /**
  * Terraform → model. Reads a real document rather than pattern-matching resource
@@ -89,6 +89,15 @@ function expressions(block: HclBlock): string[] {
   }
   for (const nested of block.blocks) out.push(...expressions(nested));
   return out;
+}
+
+/** An edge's id is `source->target` while that fits the schema's 80 characters; a longer one keeps the start of each end and a hash of the pair, so ids stay unique. */
+function edgeIdFor(source: string, target: string): string {
+  const id = `${source}->${target}`;
+  if (id.length <= 80) return id;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) hash = Math.imul(hash ^ id.charCodeAt(i), 0x01000193) >>> 0;
+  return `${source.slice(0, 33)}->${target.slice(0, 33)}~${hash.toString(16).padStart(8, "0")}`;
 }
 
 export function parseTerraform(source: string): ParseResult {
@@ -241,7 +250,7 @@ export function parseTerraform(source: string): ParseResult {
           const key = `${instance.node.id}->${target}`;
           if (seen.has(key)) continue;
           seen.add(key);
-          edges.push({ id: key, source: instance.node.id, target, origin: "user" });
+          edges.push({ id: edgeIdFor(instance.node.id, target), source: instance.node.id, target, origin: "user" });
         }
       }
     }
@@ -249,11 +258,13 @@ export function parseTerraform(source: string): ParseResult {
 
   /* -- who runs as which identity, and what each identity may reach -- */
 
-  const edgeById = new Map(edges.map((e) => [e.id, e]));
+  const edgeByPair = new Map(edges.map((e) => [`${e.source}->${e.target}`, e]));
+  // Typed edges are added until the model is full: two places are kept for the edge from the internet and for one that says grants were cut.
+  let cut = false;
   const typeEdge = (from: string, target: string, access: EdgeAccess, grant: { conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined } = {}) => {
     if (from === target) return;
     const key = `${from}->${target}`;
-    const existing = edgeById.get(key);
+    const existing = edgeByPair.get(key);
     if (existing) {
       const merged = mergeAccess(existing, { access, ...grant });
       existing.access = merged.access;
@@ -263,8 +274,12 @@ export function parseTerraform(source: string): ParseResult {
       else delete existing.unconditional;
       return;
     }
+    if (edges.length >= MAX_MODEL_EDGES - 2) {
+      cut = true;
+      return;
+    }
     const edge: ModelEdge = {
-      id: key,
+      id: edgeIdFor(from, target),
       source: from,
       target,
       origin: "user",
@@ -272,7 +287,7 @@ export function parseTerraform(source: string): ParseResult {
       ...(grant.conditional ? { conditional: true } : {}),
       ...(grant.conditional && grant.unconditional ? { unconditional: grant.unconditional } : {}),
     };
-    edgeById.set(key, edge);
+    edgeByPair.set(key, edge);
     edges.push(edge);
   };
   const kindOf = new Map(instances.map((i) => [i.node.id, i.node.kind]));
@@ -284,7 +299,13 @@ export function parseTerraform(source: string): ParseResult {
     }
   }
   const iam = readIam(blocks, (address) => ownerByAddress.get(address));
-  for (const edge of iam.edges) typeEdge(edge.source, edge.target, edge.access, edge);
+  // Widest first, so when the model is full what is left out is the least.
+  const widest = iam.edges.length + edges.length >= MAX_MODEL_EDGES - 2 ? [...iam.edges].sort((a, b) => ACCESS_RANK[b.access] - ACCESS_RANK[a.access]) : iam.edges;
+  for (const edge of widest) typeEdge(edge.source, edge.target, edge.access, edge);
+  if (cut && !edgeByPair.has(`${OVERFLOW_PRINCIPAL_ID}->${ANY_RESOURCE_ID}`)) {
+    iam.principals.set(OVERFLOW_PRINCIPAL_ID, OVERFLOW_PRINCIPAL_LABEL);
+    edges.push({ id: edgeIdFor(OVERFLOW_PRINCIPAL_ID, ANY_RESOURCE_ID), source: OVERFLOW_PRINCIPAL_ID, target: ANY_RESOURCE_ID, origin: "user", access: "unscoped" });
+  }
   // A grant on oneself cannot be an edge, so the node carries it: it is a way to widen its own access.
   for (const edge of iam.self) {
     const node = instances.find((i) => i.node.id === edge.source)?.node;
@@ -363,7 +384,7 @@ export function parseTerraform(source: string): ParseResult {
     const all = [internet, ...nodes];
     if (entry) {
       edges.unshift({
-        id: `internet->${entry}`,
+        id: edgeIdFor(internet.id, entry),
         source: internet.id,
         target: entry,
         origin: "derived",

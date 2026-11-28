@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { ANY_RESOURCE_ID } from "terragram-engine/iam";
-import type { InfraModel } from "terragram-engine/model";
+import { type InfraModel, infraModelSchema } from "terragram-engine/model";
 import { parseTerraform } from "terragram-engine/parse";
 
 /**
@@ -49,6 +49,7 @@ resource "aws_lambda_function" "api" {
 `;
 
 const READ_DATA = `jsonencode({ Statement = [{ Effect = "Allow", Action = "s3:GetObject", Resource = aws_s3_bucket.data.arn }] })`;
+const THREE_TARGETS = `jsonencode({ Statement = [{ Effect = "Allow", Action = "s3:GetObject", Resource = [aws_s3_bucket.data.arn, aws_dynamodb_table.orders.arn, aws_sqs_queue.jobs.arn] }] })`;
 
 describe("a policy whose holder cannot be named is still a grant", () => {
   it("draws a role policy on a role named by a string or a variable from a stand-in", () => {
@@ -606,5 +607,111 @@ resource "azurerm_role_assignment" "blob" {
 `),
       ["entra-id -> object-storage: admin", "principal-azure -> object-storage: unscoped"],
     );
+  });
+});
+
+describe("the AWS reader is bounded, and says so when it cuts grants", () => {
+  const statements = (count: number, resource = "aws_s3_bucket.data.arn") =>
+    Array.from({ length: count }, (_, i) => `{ Effect = "Allow", Action = "s3:GetObject", Resource = ${resource}, Sid = "s${i}" }`).join(",\n");
+
+  it("reads a policy once however many roles it is attached to", () => {
+    const roles = Array.from(
+      { length: 150 },
+      (_, i) => `
+resource "aws_iam_role" "r${i}" {
+  name = "r${i}"
+  assume_role_policy = "{}"
+}
+
+resource "aws_iam_role_policy_attachment" "a${i}" {
+  role       = aws_iam_role.r${i}.name
+  policy_arn = aws_iam_policy.big.arn
+}
+`,
+    ).join("");
+    const text = `${BASE}
+resource "aws_iam_policy" "big" {
+  name   = "big"
+  policy = jsonencode({ Statement = [
+${statements(3000)}
+  ] })
+}
+${roles}`;
+    const started = performance.now();
+    const { model } = read(text);
+    const elapsed = performance.now() - started;
+    assert.equal(model.edges.filter((e) => e.target === "object-storage" && e.access === "read").length, 150);
+    assert.ok(elapsed < 2500, `took ${Math.round(elapsed)} ms`);
+  });
+
+  it("past its work budget, one explicit edge says grants were cut rather than drawing fewer", () => {
+    const policies = Array.from(
+      { length: 60 },
+      (_, i) => `
+resource "aws_iam_role_policy" "p${i}" {
+  role   = aws_iam_role.fn.id
+  policy = jsonencode({ Statement = [
+${statements(2500, `"arn:aws:s3:::bucket-${i}-\${var.suffix}"`)}
+  ] })
+}
+`,
+    ).join("");
+    const { model } = read(BASE + policies);
+    const cut = model.edges.filter((e) => e.source === "principal-overflow");
+    assert.deepEqual(cut.map((e) => `${e.target}: ${e.access}`), [`${ANY_RESOURCE_ID}: unscoped`]);
+    assert.match(model.nodes.find((n) => n.id === "principal-overflow")?.label ?? "", /cut/);
+  });
+
+  it("never draws more edges than the model allows, and the widest ones are kept", () => {
+    const roles = Array.from(
+      { length: 250 },
+      (_, i) => `
+resource "aws_iam_role" "r${i}" {
+  name = "r${i}"
+  assume_role_policy = "{}"
+}
+
+resource "aws_iam_role_policy" "p${i}" {
+  role   = aws_iam_role.r${i}.id
+  policy = ${i === 249 ? `jsonencode({ Statement = [{ Effect = "Allow", Action = "*", Resource = "*" }] })` : THREE_TARGETS}
+}
+`,
+    ).join("");
+    const { model } = read(BASE + roles);
+    assert.ok(model.edges.length <= 600, `${model.edges.length} edges`);
+    assert.ok(model.edges.some((e) => e.source === "principal-overflow" && e.target === ANY_RESOURCE_ID && e.access === "unscoped"));
+    assert.ok(model.edges.some((e) => e.source === "entra-id-251" && e.target === ANY_RESOURCE_ID), "the last role's wildcard grant is not what was cut");
+    const ids = new Set(model.edges.map((e) => e.id));
+    assert.equal(ids.size, model.edges.length, "edge ids are unique");
+    const checked = infraModelSchema.safeParse(model);
+    assert.ok(checked.success, checked.success ? "" : JSON.stringify(checked.error.issues.slice(0, 3)));
+  });
+
+  it("keeps an edge's id within the schema's 80 characters when the node it joins has a long id", () => {
+    const name = `subscription-${"x".repeat(55)}`;
+    const { model } = read(`
+resource "google_service_account" "api" {
+  account_id = "api"
+}
+
+resource "google_pubsub_topic" "events" {
+  name = "events"
+}
+
+resource "google_pubsub_subscription" "${name}" {
+  name  = "worker"
+  topic = google_pubsub_topic.events.id
+}
+
+resource "google_pubsub_subscription_iam_member" "grant" {
+  subscription = google_pubsub_subscription.${name}.name
+  role         = "roles/pubsub.subscriber"
+  member       = "serviceAccount:\${google_service_account.api.email}"
+}
+`);
+    const joined = model.edges.filter((e) => e.source.length + e.target.length + 2 > 80);
+    assert.ok(joined.length > 0, "the fixture draws an edge whose plain id is over 80 characters");
+    for (const e of model.edges) assert.ok(e.id.length <= 80 && e.id.length > 0, `${e.id.length}: ${e.id}`);
+    assert.equal(new Set(model.edges.map((e) => e.id)).size, model.edges.length);
   });
 });
