@@ -518,7 +518,13 @@ const HOLE = "";
  * that contains `*` or `?`, an escape or a `%{` directive could name more than it shows.
  * Returns true when the string reaches beyond what can be drawn.
  */
-function stringReach(text: string, owner: (address: string) => string | undefined, add: (id: string) => void, identities: Identities): boolean {
+function stringReach(
+  text: string,
+  owner: (address: string) => string | undefined,
+  add: (id: string) => void,
+  identities: Identities,
+  undrawn: () => void,
+): boolean {
   if (/[\\]|%\{|\$\$/.test(text)) return true;
   const named = identityArn(text);
   if (named) return identityReach(named, identities, add);
@@ -542,14 +548,45 @@ function stringReach(text: string, owner: (address: string) => string | undefine
     i++;
   }
   const wildcard = masked.search(/[*?]/);
-  if (wildcard === -1) return false;
+  if (wildcard === -1) {
+    // A string with no reference and no wildcard names one resource, by its text: a drawn one if its name is there, else one the picture does not hold.
+    if (!text.includes("${")) literalReach(text, identities, add, undrawn);
+    return false;
+  }
   const path = masked.search(new RegExp(`${HOLE}[/:]`));
   return path === -1 || wildcard < path + 2;
 }
 
+/**
+ * How a literal ARN names a resource of a service whose resources the picture draws: the resource types and the
+ * attribute that holds each one's name, and the name in the ARN's resource part. Only these are matched by name;
+ * an ARN of any other service (a KMS key id, a log group) is a resource the picture does not hold.
+ */
+const ARN_NAMES = new Map<string, { types: Array<[string, string]>; nameOf: (resource: string) => string | undefined }>([
+  ["s3", { types: [["aws_s3_bucket", "bucket"]], nameOf: (r) => r.split("/")[0] }],
+  ["dynamodb", { types: [["aws_dynamodb_table", "name"]], nameOf: (r) => (r.startsWith("table/") ? r.slice(6).split("/")[0] : undefined) }],
+  ["sqs", { types: [["aws_sqs_queue", "name"]], nameOf: (r) => r }],
+  ["sns", { types: [["aws_sns_topic", "name"]], nameOf: (r) => r }],
+  ["lambda", { types: [["aws_lambda_function", "function_name"]], nameOf: (r) => (r.startsWith("function:") ? r.slice(9).split(":")[0] : undefined) }],
+  ["ecr", { types: [["aws_ecr_repository", "name"]], nameOf: (r) => (r.startsWith("repository/") ? r.slice(11) : undefined) }],
+  // A secret's ARN ends in a dash and six random characters after its name.
+  ["secretsmanager", { types: [["aws_secretsmanager_secret", "name"]], nameOf: (r) => (r.startsWith("secret:") ? r.slice(7).replace(/-[A-Za-z0-9]{6}$/, "") : undefined) }],
+]);
+
+/** The drawn resources a literal string names, or one the picture does not hold: that reaches "any resource" at the action's level. */
+function literalReach(text: string, identities: Identities, add: (id: string) => void, undrawn: () => void): void {
+  const parts = text.length > 1024 ? [] : text.split(":");
+  const service = parts[0] === "arn" ? parts[2] : undefined;
+  const entry = service === undefined ? undefined : ARN_NAMES.get(service);
+  const name = entry && parts.length >= 6 ? entry.nameOf(parts.slice(5).join(":")) : undefined;
+  const found = name === undefined ? [] : (identities.named.get(`${service}/${name.toLowerCase()}`) ?? []);
+  for (const id of found) add(id);
+  if (found.length === 0) undrawn();
+}
+
 /** The drawn roles and users a literal ARN may name, by the name the file gives them. */
 type Identities = {
-  /** Node ids by `role/<lowercase name>` or `user/<lowercase name>`. */
+  /** Node ids by `role/<lowercase name>` or `user/<lowercase name>`, and by `<service>/<lowercase name>` for the resources of `ARN_NAMES`. */
   named: Map<string, string[]>;
   /** The kinds (`role`, `user`) with a drawn member whose name is not a plain string: an ARN may name it. */
   unsure: Set<string>;
@@ -582,11 +619,12 @@ function identityReach(named: { kind: "role" | "user"; name: string }, identitie
   return found.length === 0 && identities.unsure.has(named.kind);
 }
 
-type Reach = { targets: string[]; broad: boolean };
+/** `undrawn`: it also names something the picture does not hold, which is any resource at the grant's own level. */
+type Reach = { targets: string[]; broad: boolean; undrawn: boolean };
 
 /** Which drawn resources a Resource value points at, and whether it also reaches beyond them. */
 function reachOf(values: Val[], owner: (address: string) => string | undefined, identities: Identities = NO_IDENTITIES): Reach {
-  const reach: Reach = { targets: [], broad: false };
+  const reach: Reach = { targets: [], broad: false, undrawn: false };
   const add = (id: string | undefined) => {
     if (id && !reach.targets.includes(id)) reach.targets.push(id);
   };
@@ -595,10 +633,11 @@ function reachOf(values: Val[], owner: (address: string) => string | undefined, 
       const inner = reachOf(v.items, owner, identities);
       for (const t of inner.targets) add(t);
       reach.broad ||= inner.broad;
+      reach.undrawn ||= inner.undrawn;
     } else if (v.t === "obj") {
       reach.broad = true;
     } else if (v.t === "str") {
-      if (stringReach(v.text, owner, add, identities)) reach.broad = true;
+      if (stringReach(v.text, owner, add, identities, () => (reach.undrawn = true))) reach.broad = true;
     } else {
       const target = resolveReference(v.text, owner);
       if (target.kind === "node") add(target.id);
@@ -687,10 +726,11 @@ function edgesOfStatements(
   const out: IamEdge[] = [];
   for (const st of statements) {
     if (st.actions.length === 0 || st.resources.length === 0) continue;
-    const reach = st.notResources ? { targets: [], broad: true } : reachOf(st.resources, owner, identities);
+    const reach = st.notResources ? { targets: [], broad: true, undrawn: false } : reachOf(st.resources, owner, identities);
     const level = levelOf(st.actions, st.notActions);
     const conditional = st.conditional ? ({ conditional: true } as const) : {};
     for (const target of reach.targets) out.push({ source, target, access: level, ...conditional });
+    if (reach.undrawn && !reach.broad) out.push({ source, target: ANY_RESOURCE_ID, access: level, ...conditional });
     if (reach.broad) {
       out.push({ source, target: ANY_RESOURCE_ID, access: "unscoped", ...conditional });
       const own = selfLevelOfBroad(st.actions, st.notActions);
@@ -739,6 +779,19 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     const name = stringValue(attributeOf(b, "name"));
     if (name === undefined || /[$%{}\\]/.test(name)) identities.unsure.add(kind);
     else identities.named.set(`${kind}/${name.toLowerCase()}`, [...(identities.named.get(`${kind}/${name.toLowerCase()}`) ?? []), id]);
+  }
+  // The drawn resources a literal ARN of a service may name, by the name the file gives them. One whose name is not a plain string is named by no ARN here: an ARN it may have is any resource.
+  for (const b of blocks) {
+    const [type, label] = b.labels;
+    if (b.type !== "resource" || !type || !label) continue;
+    for (const [service, entry] of ARN_NAMES) {
+      const attribute = entry.types.find(([t]) => t === type)?.[1];
+      const id = attribute ? owner(`${type}.${label}`) : undefined;
+      const name = attribute ? stringValue(attributeOf(b, attribute)) : undefined;
+      if (!attribute || !id || name === undefined || /[$%{}\\]/.test(name)) continue;
+      const key = `${service}/${name.toLowerCase()}`;
+      identities.named.set(key, [...(identities.named.get(key) ?? []), id]);
+    }
   }
 
   /**

@@ -126,12 +126,11 @@ resource "aws_iam_role_policy_attachment" "admin" {
     assert.deepEqual(typed(admin.model).slice(1), [`entra-id -> ${ANY_RESOURCE_ID}: unscoped`]);
   });
 
-  it("skips Deny statements and resources outside the picture", () => {
+  it("skips Deny statements and references to resources outside the picture", () => {
     const { model } = read(
       withPolicy(`jsonencode({
     Statement = [
       { Effect = "Deny", Action = "s3:*", Resource = "*" },
-      { Effect = "Allow", Action = "s3:GetObject", Resource = "arn:aws:s3:::someone-elses-bucket" },
       { Effect = "Allow", Action = "logs:PutLogEvents", Resource = aws_cloudwatch_log_group.elsewhere.arn },
       { Effect = "Allow", Action = "ssm:GetParameter", Resource = data.aws_ssm_parameter.p.arn },
     ]

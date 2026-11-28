@@ -215,3 +215,48 @@ resource "aws_iam_role_policy" "fn" {
     assert.equal(levelOf("s3:GetBucketPublicAccessBlock"), "read");
   });
 });
+
+describe("a literal ARN of a resource is a grant on it", () => {
+  const edgesFor = (resource: string, action = "s3:GetObject") =>
+    typed(
+      read(`${BASE}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = jsonencode({ Statement = [{ Effect = "Allow", Action = "${action}", Resource = ${resource} }] })
+}
+`).model,
+    ).filter((e) => e.startsWith("entra-id -> "));
+
+  it("matches an object of a drawn bucket, a drawn table and a drawn queue by name", () => {
+    assert.deepEqual(edgesFor(`"arn:aws:s3:::data-bucket/reports/2026.csv"`), ["entra-id -> object-storage: read"]);
+    assert.deepEqual(edgesFor(`"arn:aws:s3:::data-bucket"`, "s3:ListBucket"), ["entra-id -> object-storage: read"]);
+    assert.deepEqual(edgesFor(`"arn:aws:dynamodb:us-east-1:123456789012:table/orders"`, "dynamodb:PutItem"), ["entra-id -> nosql: write"]);
+    assert.deepEqual(edgesFor(`"arn:aws:dynamodb:us-east-1:123456789012:table/orders/index/by-date"`, "dynamodb:Query"), ["entra-id -> nosql: read"]);
+    assert.deepEqual(edgesFor(`["arn:aws:sqs:us-east-1:123456789012:jobs"]`, "sqs:SendMessage"), ["entra-id -> queue: write"]);
+  });
+
+  it("draws any resource at the action's level for an ARN no drawn resource has", () => {
+    assert.deepEqual(edgesFor(`"arn:aws:s3:::other-bucket/key"`, "s3:PutObject"), [`entra-id -> ${ANY_RESOURCE_ID}: write`]);
+    assert.deepEqual(edgesFor(`"arn:aws:kms:us-east-1:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"`, "kms:Decrypt"), [`entra-id -> ${ANY_RESOURCE_ID}: read`]);
+    assert.deepEqual(edgesFor(`"arn:aws:s3:::other-bucket/key"`, "s3:PutBucketPolicy"), [`entra-id -> ${ANY_RESOURCE_ID}: admin`]);
+  });
+
+  it("does not guess when a drawn resource's name cannot be read: an ARN it may name is any resource", () => {
+    const { model } = read(`
+resource "aws_s3_bucket" "dynamic" {
+  bucket = var.name
+}
+
+resource "aws_iam_role" "fn" {
+  name = "fn"
+  assume_role_policy = "{}"
+}
+
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = jsonencode({ Statement = [{ Effect = "Allow", Action = "s3:GetObject", Resource = "arn:aws:s3:::somewhere/key" }] })
+}
+`);
+    assert.deepEqual(typed(model), [`entra-id -> ${ANY_RESOURCE_ID}: read`]);
+  });
+});
