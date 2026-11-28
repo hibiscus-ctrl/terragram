@@ -199,6 +199,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Importing a Mermaid `architecture-beta` diagram no longer takes quadratic or worse time on a declaration with a long run of whitespace (`service a` followed by
   4000 spaces and a character took 36 seconds). Each optional part of a declaration is read from its own leading whitespace, so the match is linear, and a line over 2000
   characters is refused with an error naming the line.
+- The Google Cloud sandbox workflow runs only from `main`. A dispatch from another branch would have run that branch's `scripts/sandbox-gcp.sh` with the cloud token once the
+  reviewers approved; now the first job fails with an error naming the ref, and the job that gets the token has `if: github.ref == 'refs/heads/main'`.
 
 ## [0.2.0] - 2026-11-23
 
