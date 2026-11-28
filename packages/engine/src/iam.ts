@@ -683,6 +683,25 @@ function edgesOfStatements(
 
 /* -------------------------------------------------------------------- AWS -- */
 
+/** What a policy attaches to: the kinds of identity AWS policies are given to, each with a fixed stand-in for one the picture does not draw. */
+type HolderKind = "role" | "user" | "group";
+type Holder = { id: string; standIn: boolean };
+const AWS_HOLDER_STAND_INS: Record<HolderKind, { id: string; label: string }> = {
+  role: { id: "principal-aws-role", label: "An IAM role (not drawn)" },
+  user: { id: "principal-aws-user", label: "An IAM user (not drawn)" },
+  group: { id: "principal-aws-group", label: "An IAM group (not drawn)" },
+};
+
+/** The resource types that give one identity a policy: the attribute naming the identity, and whether the policy is a managed one attached by ARN. */
+const AWS_POLICY_HOLDERS = new Map<string, { kind: HolderKind; attribute: string; attachment: boolean }>([
+  ["aws_iam_role_policy", { kind: "role", attribute: "role", attachment: false }],
+  ["aws_iam_role_policy_attachment", { kind: "role", attribute: "role", attachment: true }],
+  ["aws_iam_user_policy", { kind: "user", attribute: "user", attachment: false }],
+  ["aws_iam_user_policy_attachment", { kind: "user", attribute: "user", attachment: true }],
+  ["aws_iam_group_policy", { kind: "group", attribute: "group", attachment: false }],
+  ["aws_iam_group_policy_attachment", { kind: "group", attribute: "group", attachment: true }],
+]);
+
 function readAws(blocks: HclBlock[], owner: (address: string) => string | undefined, out: IamReading): void {
   const policies = new Map<string, HclBlock>();
   const documents = new Map<string, HclBlock>();
@@ -703,13 +722,80 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     else identities.named.set(`${kind}/${name.toLowerCase()}`, [...(identities.named.get(`${kind}/${name.toLowerCase()}`) ?? []), id]);
   }
 
-  const principalsOf = (expr: string | undefined): string[] => {
-    const found: string[] = [];
-    for (const address of expr ? extractReferences(expr) : []) {
-      const id = owner(address);
-      if (id && !found.includes(id)) found.push(id);
+  /**
+   * Who holds a policy: the drawn identities the `role` (or `user`, `group`) expression names, and a stand-in for
+   * the holder when it cannot be pinned to one drawn node (a string no drawn identity has, a variable, a data source,
+   * a function). An expression that is more than one plain reference also gets the stand-in beside the drawn ones.
+   * A policy is never dropped for want of a holder: its grants are the holder's, whoever that is.
+   */
+  const holdersOf = (expr: string | undefined, kind: HolderKind): Holder[] => {
+    const found: Holder[] = [];
+    const add = (id: string, standIn: boolean) => {
+      if (!found.some((h) => h.id === id)) found.push({ id, standIn });
+    };
+    const unknown = () => add(AWS_HOLDER_STAND_INS[kind].id, true);
+    const named = (text: string) => {
+      const ids = identities.named.get(`${kind}/${text.toLowerCase()}`) ?? [];
+      for (const id of ids) add(id, false);
+      if (ids.length === 0 || identities.unsure.has(kind)) unknown();
+    };
+    const item = (value: Val): void => {
+      if (value.t === "list") {
+        for (const inner of value.items) item(inner);
+      } else if (value.t === "obj") {
+        unknown();
+      } else if (value.t === "str") {
+        const template = /^\$\{([^{}"]*)\}$/.exec(value.text);
+        if (value.interpolated && !template) {
+          for (const address of value.refs) {
+            const id = owner(address);
+            if (id) add(id, false);
+          }
+          unknown();
+        } else if (template) item({ t: "expr", text: template[1] ?? "", refs: extractReferences(template[1] ?? "") });
+        else named(value.text);
+      } else {
+        const target = resolveReference(value.text, owner);
+        if (target.kind === "node") add(target.id, false);
+        else {
+          for (const address of value.refs) {
+            const id = owner(address);
+            if (id) add(id, false);
+          }
+          unknown();
+        }
+      }
+    };
+    let read: Val | null = null;
+    try {
+      read = expr === undefined ? null : readVal(expr);
+    } catch {
+      read = null;
     }
+    if (read === null) {
+      for (const address of expr ? extractReferences(expr) : []) {
+        const id = owner(address);
+        if (id) add(id, false);
+      }
+      unknown();
+    } else item(read);
     return found;
+  };
+
+  /** Runs one holder's reading; the edges it adds from a stand-in are unscoped, as an unresolved GCP member's are. */
+  const forHolder = (holder: Holder, run: (source: string) => void): void => {
+    const start = out.edges.length;
+    run(holder.id);
+    if (!holder.standIn) return;
+    const added = out.edges.splice(start);
+    if (added.length > 0) {
+      const stand = Object.values(AWS_HOLDER_STAND_INS).find((s) => s.id === holder.id);
+      if (stand) out.principals.set(stand.id, stand.label);
+    }
+    for (const e of added) {
+      if (e.target === e.source) continue;
+      out.edges.push({ source: e.source, target: e.target, access: "unscoped", ...(e.conditional ? ({ conditional: true } as const) : {}) });
+    }
   };
 
   /** The statements of a policy expression, and the document blocks they came from; null when it is not text this reader can see. */
@@ -738,6 +824,11 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
       }
     }
     return json ? statementsOfDocument(json) : null;
+  };
+
+  /** A policy the text does not show (generated, merged, a file): the holder has an unscoped grant. */
+  const opaque = (source: string): void => {
+    out.edges.push({ source, target: ANY_RESOURCE_ID, access: "unscoped" });
   };
 
   /** Fails closed: a policy that cannot be read, or that makes the reader throw, is an unscoped grant. */
@@ -849,18 +940,28 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
   for (const b of blocks) {
     if (b.type !== "resource") continue;
     const [type, name] = b.labels;
-    if (type === "aws_iam_role_policy") {
-      for (const source of principalsOf(attributeOf(b, "role"))) grant(source, attributeOf(b, "policy"), [b]);
-    } else if (type === "aws_iam_role_policy_attachment" || type === "aws_iam_policy_attachment") {
-      for (const source of principalsOf(attributeOf(b, type === "aws_iam_policy_attachment" ? "roles" : "role"))) {
-        attach(source, attributeOf(b, "policy_arn"), b);
+    const holderAttribute = type ? AWS_POLICY_HOLDERS.get(type) : undefined;
+    if (holderAttribute && type) {
+      const { kind, attribute, attachment } = holderAttribute;
+      for (const holder of holdersOf(attributeOf(b, attribute), kind)) {
+        forHolder(holder, (source) => (attachment ? attach(source, attributeOf(b, "policy_arn"), b) : void grant(source, attributeOf(b, "policy"), [b])));
+      }
+    } else if (type === "aws_iam_policy_attachment") {
+      // One attachment may name roles, users and groups together.
+      for (const [attribute, kind] of [["roles", "role"], ["users", "user"], ["groups", "group"]] as const) {
+        if (attributeOf(b, attribute) === undefined) continue;
+        for (const holder of holdersOf(attributeOf(b, attribute), kind)) forHolder(holder, (source) => attach(source, attributeOf(b, "policy_arn"), b));
       }
     } else if (type === "aws_iam_role" && name) {
       const source = owner(`aws_iam_role.${name}`);
       if (!source) continue;
-      for (const inline of b.blocks) if (inline.type === "inline_policy") grant(source, attributeOf(inline, "policy"), []);
+      for (const inline of b.blocks) {
+        if (inline.type === "inline_policy") grant(source, attributeOf(inline, "policy"), []);
+        // Generated policies: whatever they say, the role holds them.
+        else if (inline.type === "dynamic" && inline.labels[0] === "inline_policy") opaque(source);
+      }
       attach(source, attributeOf(b, "managed_policy_arns"), null);
-    } else if (type === "aws_iam_instance_profile" && principalsOf(attributeOf(b, "role")).length > 0) {
+    } else if (type === "aws_iam_instance_profile" && holdersOf(attributeOf(b, "role"), "role").some((h) => !h.standIn)) {
       out.consumed.add(b);
     }
   }
