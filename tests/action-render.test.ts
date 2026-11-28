@@ -311,33 +311,33 @@ describe("the access changes in the report", () => {
     assert.match(text, /#### Access changes/);
     const lines = text.split("\n").filter((l) => /^- \*\*/.test(l));
     assert.deepEqual(lines, [
-      "- **Added** Orders API has admin access to orders-data",
-      "- **Widened** api-role to orders-data: read to write",
-      "- **Removed** api-role has unscoped access to Any resource &#40;&#42;&#41;",
+      "- **Added** Orders API (fn) has admin access to orders-data (data)",
+      "- **Widened** api-role (role) to orders-data (data): read to write",
+      "- **Removed** api-role (role) has unscoped access to Any resource &#40;&#42;&#41; (any)",
     ]);
   });
 
   it("says a narrowed grant is narrowed, and puts a new unscoped grant first", () => {
     const head = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "read"), e("role", "any", "unscoped"), e("fn", "any", "unscoped")]);
     const wider = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "admin"), e("role", "any", "unscoped")]);
-    assert.match(report(wider, baseModel), /\*\*Narrowed\*\* api-role to orders-data: admin to read/);
+    assert.match(report(wider, baseModel), /\*\*Narrowed\*\* api-role \(role\) to orders-data \(data\): admin to read/);
     const lines = report(baseModel, head).split("\n").filter((l) => /^- \*\*/.test(l));
-    assert.deepEqual(lines, ["- **Added** Orders API has unscoped access to Any resource &#40;&#42;&#41;"]);
+    assert.deepEqual(lines, ["- **Added** Orders API (fn) has unscoped access to Any resource &#40;&#42;&#41; (any)"]);
   });
 
   it("lists a conditional grant as conditional, and a condition added or dropped as a change of its own", () => {
     const lines = (before: InfraModel, after: InfraModel) => report(before, after).split("\n").filter((l) => /^- \*\*/.test(l));
     const open = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "admin")]);
     const guarded = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "admin", true)]);
-    assert.deepEqual(lines(open, guarded), ["- **Narrowed** api-role to orders-data: admin to admin, conditional"]);
-    assert.deepEqual(lines(guarded, open), ["- **Widened** api-role to orders-data: admin, conditional to admin"]);
-    assert.deepEqual(lines(model(nodes, [e("fn", "role", "runs-as")]), guarded), ["- **Added** api-role has admin access to orders-data (conditional)"]);
-    assert.deepEqual(lines(guarded, model(nodes, [e("fn", "role", "runs-as")])), ["- **Removed** api-role has admin access to orders-data (conditional)"]);
+    assert.deepEqual(lines(open, guarded), ["- **Narrowed** api-role (role) to orders-data (data): admin to admin, conditional"]);
+    assert.deepEqual(lines(guarded, open), ["- **Widened** api-role (role) to orders-data (data): admin, conditional to admin"]);
+    assert.deepEqual(lines(model(nodes, [e("fn", "role", "runs-as")]), guarded), ["- **Added** api-role (role) has admin access to orders-data (data) (conditional)"]);
+    assert.deepEqual(lines(guarded, model(nodes, [e("fn", "role", "runs-as")])), ["- **Removed** api-role (role) has admin access to orders-data (data) (conditional)"]);
     // A conditional admin grant is still listed ahead of a plain widening.
     const head = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "admin", true), e("role", "any", "unscoped"), e("fn", "any", "read")]);
     assert.deepEqual(lines(baseModel, head), [
-      "- **Widened** api-role to orders-data: read to admin, conditional",
-      "- **Added** Orders API can read Any resource &#40;&#42;&#41;",
+      "- **Widened** api-role (role) to orders-data (data): read to admin, conditional",
+      "- **Added** Orders API (fn) can read Any resource &#40;&#42;&#41; (any)",
     ]);
   });
 
@@ -347,10 +347,10 @@ describe("the access changes in the report", () => {
     const none = model(nodes, [e("fn", "role", "runs-as"), floor(undefined)]);
     const write = model(nodes, [e("fn", "role", "runs-as"), floor("write")]);
     const read = model(nodes, [e("fn", "role", "runs-as"), floor("read")]);
-    assert.deepEqual(lines(none, write), ["- **Widened** api-role to orders-data: admin, conditional to admin, conditional (write unconditional)"]);
-    assert.deepEqual(lines(write, read), ["- **Narrowed** api-role to orders-data: admin, conditional (write unconditional) to admin, conditional (read unconditional)"]);
-    assert.deepEqual(lines(write, none), ["- **Narrowed** api-role to orders-data: admin, conditional (write unconditional) to admin, conditional"]);
-    assert.deepEqual(lines(model(nodes, [e("fn", "role", "runs-as")]), write), ["- **Added** api-role has admin access to orders-data (conditional; write without the condition)"]);
+    assert.deepEqual(lines(none, write), ["- **Widened** api-role (role) to orders-data (data): admin, conditional to admin, conditional (write unconditional)"]);
+    assert.deepEqual(lines(write, read), ["- **Narrowed** api-role (role) to orders-data (data): admin, conditional (write unconditional) to admin, conditional (read unconditional)"]);
+    assert.deepEqual(lines(write, none), ["- **Narrowed** api-role (role) to orders-data (data): admin, conditional (write unconditional) to admin, conditional"]);
+    assert.deepEqual(lines(model(nodes, [e("fn", "role", "runs-as")]), write), ["- **Added** api-role (role) has admin access to orders-data (data) (conditional; write without the condition)"]);
     assert.match(report(none, write), /\|admin, conditional \(write unconditional\)\|/);
   });
 
@@ -360,7 +360,7 @@ describe("the access changes in the report", () => {
     assert.doesNotMatch(report(plain, model(nodes, [e("fn", "role"), e("role", "data"), e("fn", "data")])), /Access changes/);
     const hostile = [n("fn", "x](https://evil)<b>"), ...nodes.slice(1)];
     const text = report(model(hostile, [e("fn", "role")]), model(hostile, [e("fn", "role", "runs-as")]));
-    assert.match(text, /\*\*Widened\*\* x&#93;&#40;https&#58;\/\/evil&#41;&#60;b&#62; to api-role: a plain connection to runs as/);
+    assert.match(text, /\*\*Widened\*\* x&#93;&#40;https&#58;\/\/evil&#41;&#60;b&#62; \(fn\) to api-role \(role\): a plain connection to runs as/);
     assert.doesNotMatch(text, /<b>/);
   });
 
@@ -377,10 +377,10 @@ describe("the access changes in the report", () => {
     ]);
     const lines = report(before, after).split("\n").filter((l) => /^- /.test(l));
     assert.equal(lines.length, 13, "12 lines and the count of what was cut");
-    assert.equal(lines[0], "- **Added** Orders API has unscoped access to Any resource &#40;&#42;&#41;");
-    assert.equal(lines[1], "- **Added** Orders API has admin access to orders-data");
+    assert.equal(lines[0], "- **Added** Orders API (fn) has unscoped access to Any resource &#40;&#42;&#41; (any)");
+    assert.equal(lines[1], "- **Added** Orders API (fn) has admin access to orders-data (data)");
     assert.match(lines[2] ?? "", /^- \*\*Widened\*\*/);
-    assert.equal(lines[12], "- and 4 more");
+    assert.equal(lines[12], "- and 4 more not shown: 4 widened (widest: write)");
   });
 
   it("ranks a grant widened to unscoped or admin above one widened to write", () => {
@@ -388,8 +388,56 @@ describe("the access changes in the report", () => {
     const after = model(nodes, [e("fn", "role", "runs-as"), e("role", "data", "write"), e("fn", "data", "unscoped")]);
     const lines = report(before, after).split("\n").filter((l) => /^- \*\*/.test(l));
     assert.deepEqual(lines, [
-      "- **Widened** Orders API to orders-data: read to unscoped",
-      "- **Widened** api-role to orders-data: read to write",
+      "- **Widened** Orders API (fn) to orders-data (data): read to unscoped",
+      "- **Widened** api-role (role) to orders-data (data): read to write",
+    ]);
+  });
+
+  it("ranks impersonating a drawn identity at the widest access that identity has, and at admin when that is not known", () => {
+    const lines = (before: InfraModel, after: InfraModel) => report(before, after).split("\n").filter((l) => /^- \*\*/.test(l));
+    const plain = [e("role", "any", "unscoped")];
+    // fn may now act as a role that holds unscoped access: that is as wide as the role, ahead of a plain admin grant.
+    const wide = lines(model(nodes, plain), model(nodes, [...plain, e("fn", "role", "runs-as"), e("fn", "data", "admin")]));
+    assert.match(wide[0] ?? "", /^- \*\*Added\*\* Orders API \(fn\) runs as api-role \(role\)/);
+    assert.match(wide[1] ?? "", /has admin access to orders-data/);
+    // A role with nothing drawn on it cannot be shown to be narrow: it ranks as admin, above a write grant.
+    const unknown = lines(model(nodes, []), model(nodes, [e("fn", "data", "write"), e("fn", "role", "runs-as")]));
+    assert.match(unknown[0] ?? "", /runs as api-role/);
+    // A role that can only read ranks as read, below a write grant.
+    const narrow = lines(model(nodes, [e("role", "data", "read")]), model(nodes, [e("role", "data", "read"), e("fn", "role", "runs-as"), e("fn", "any", "write")]));
+    assert.match(narrow[0] ?? "", /can write to Any resource/);
+    assert.match(narrow[1] ?? "", /runs as api-role/);
+  });
+
+  it("puts a grant to anyone on the internet ahead of every other line", () => {
+    const anyone = n("principal-aws-anyone", "Anyone (*)", "external");
+    const all = [...nodes, anyone];
+    const lines = report(model(all, []), model(all, [e("fn", "any", "unscoped"), e("fn", "data", "admin"), e("principal-aws-anyone", "data", "read")]))
+      .split("\n")
+      .filter((l) => /^- \*\*/.test(l));
+    assert.match(lines[0] ?? "", /^- \*\*Added\*\* Anyone/);
+    assert.match(lines[1] ?? "", /unscoped access/);
+  });
+
+  it("says how many lines were cut and of which kinds, and the widest of them", () => {
+    const many = Array.from({ length: 16 }, (_, i) => n(`t${i}`, `target ${i}`, "object-storage"));
+    const all = [...nodes, ...many];
+    const before = model(all, [e("fn", "role", "runs-as"), ...many.slice(0, 4).map((t) => e("role", t.id, "write"))]);
+    const after = model(all, [e("fn", "role", "runs-as"), ...many.slice(4).map((t) => e("role", t.id, "read"))]);
+    const lines = report(before, after).split("\n").filter((l) => /^- /.test(l));
+    assert.equal(lines.length, 13);
+    // 12 added reads are shown; the 4 removed writes are what was cut, and the last line says so.
+    assert.equal(lines[12], "- and 4 more not shown: 4 removed (widest: write)");
+  });
+
+  it("names each node by its id as well as its label, so two nodes called alike can be told apart", () => {
+    const twins = [n("fn", "Orders API"), n("role", "Managed identity", "entra-id"), n("role-2", "Managed identity", "entra-id"), n("data", "orders-data", "object-storage")];
+    const lines = report(model(twins, []), model(twins, [e("role", "data", "admin"), e("role-2", "data", "admin")]))
+      .split("\n")
+      .filter((l) => /^- \*\*/.test(l));
+    assert.deepEqual(lines, [
+      "- **Added** Managed identity (role) has admin access to orders-data (data)",
+      "- **Added** Managed identity (role-2) has admin access to orders-data (data)",
     ]);
   });
 

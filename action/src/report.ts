@@ -1,8 +1,8 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { type Cloud, EDGE_ACCESS_META, type EdgeAccess, edgeAccessLabel, type ModelNode, selfAccessLabel, selfAccessPhrase } from "terragram-engine/model";
-import { strongerAccess, unconditionalLevel } from "terragram-engine/iam";
+import { type Cloud, EDGE_ACCESS_META, type EdgeAccess, edgeAccessLabel, type ModelEdge, type ModelNode, selfAccessLabel, selfAccessPhrase } from "terragram-engine/model";
+import { PUBLIC_PRINCIPAL_IDS, strongerAccess, unconditionalLevel } from "terragram-engine/iam";
 
 import { COMMENT_MARKER } from "./comment.ts";
 import type { Inputs } from "./inputs.ts";
@@ -66,32 +66,65 @@ function listed<T>(items: readonly T[], render: (item: T) => string): string[] {
   return shown;
 }
 
+type AccessKind = "added" | "removed" | "widened" | "narrowed";
+type AccessRow = { rank: number; key: string; text: string; kind: AccessKind; level: EdgeAccess };
+
+/** Where a line sits: a grant to anyone first, then unscoped, then admin, then every other widening, then narrowings, then removals. */
+const RANK_PUBLIC = 0;
+const RANK_NARROWED = 4;
+const RANK_REMOVED = 5;
+const levelRank = (access: EdgeAccess | undefined) => (access === "unscoped" ? 1 : access === "admin" ? 2 : 3);
+
 /**
- * One line per edge whose access type was added, removed or changed, the widest first: a new
- * or widened `unscoped` grant, then `admin`, then every other widening, then narrowings and
- * removals. The report lists only the first lines, so what is cut is the least dangerous.
+ * One line per edge whose access type was added, removed or changed, the widest first: a grant to anyone on the
+ * internet, then a new or widened `unscoped` grant, then `admin`, then every other widening, then narrowings and
+ * removals. Impersonating an identity (`runs-as`) is as wide as that identity: ranked at the widest access it has
+ * anywhere in either version of the model, and at admin when nothing is drawn on it. The report lists only the first
+ * lines and says what was cut, so what is cut is the least dangerous.
  * A grant behind a condition keeps its level and ranks as if it had none: the line says
  * "(conditional)", and a condition added or dropped is a line of its own, never a reason to omit one.
  */
-function accessLines(diff: ModelDiff): string[] {
+function accessRows(diff: ModelDiff): AccessRow[] {
   const names = new Map<string, string>();
-  for (const n of [...diff.nodes.unchanged, ...diff.nodes.added, ...diff.nodes.removed, ...diff.nodes.changed.map((c) => c.after)]) {
-    names.set(n.id, markdownText(n.label || n.id));
-  }
-  const name = (id: string) => names.get(id) ?? markdownText(id);
+  const everyNode = [...diff.nodes.unchanged, ...diff.nodes.added, ...diff.nodes.removed, ...diff.nodes.changed.flatMap((c) => [c.before, c.after])];
+  for (const n of everyNode) names.set(n.id, n.label);
+  // A node is named by its label and by its id, which tells two nodes with the same label apart.
+  const name = (id: string) => {
+    const label = names.get(id);
+    return label && label !== id ? `${markdownText(label)} (${markdownText(id)})` : markdownText(id);
+  };
   const phrase = (access: EdgeAccess) => EDGE_ACCESS_META[access].phrase;
-  type Row = { rank: number; key: string; text: string };
-  const rows: Row[] = [];
-  const row = (source: string, target: string, rank: number, text: string) =>
-    rows.push({ rank, key: `${source}\u0000${target}`, text });
-  const widest = (access: EdgeAccess | undefined) => (access === "unscoped" ? 0 : access === "admin" ? 1 : 2);
+
+  // What each node can do, over both versions of the model: the widest typed edge from it, the access it has to itself, and what it can run as.
+  const everyEdge = [...diff.edges.unchanged, ...diff.edges.added, ...diff.edges.removed, ...diff.edges.changed.flatMap((c) => [c.before, c.after])];
+  const outgoing = new Map<string, ModelEdge[]>();
+  for (const e of everyEdge) if (e.access) outgoing.set(e.source, [...(outgoing.get(e.source) ?? []), e]);
+  const selfLevels = new Map<string, EdgeAccess>();
+  for (const n of everyNode) if (n.selfAccess) selfLevels.set(n.id, strongerAccess(selfLevels.get(n.id), n.selfAccess));
+  const widestOf = (id: string, path: ReadonlySet<string> = new Set()): EdgeAccess | undefined => {
+    if (path.has(id)) return undefined;
+    const next = new Set(path).add(id);
+    let best = selfLevels.get(id);
+    for (const e of outgoing.get(id) ?? []) {
+      const level = e.access === "runs-as" ? widestOf(e.target, next) : e.access;
+      if (level) best = strongerAccess(best, level);
+    }
+    return best;
+  };
+  /** What an edge gives: its own level, or for impersonation the level of the identity impersonated, admin when that is not known. */
+  const levelOf = (e: { access?: EdgeAccess | undefined; target: string }): EdgeAccess => (e.access === "runs-as" ? (widestOf(e.target) ?? "admin") : (e.access ?? "runs-as"));
+
+  const rows: AccessRow[] = [];
+  const row = (source: string, target: string, rank: number, kind: AccessKind, level: EdgeAccess, text: string) =>
+    rows.push({ rank, key: `${source}\u0000${target}`, text, kind, level });
+  const widestRank = (e: { source: string; access?: EdgeAccess | undefined; target: string }) => (PUBLIC_PRINCIPAL_IDS.has(e.source) ? RANK_PUBLIC : levelRank(levelOf(e)));
   const when = (e: { conditional?: boolean | undefined; unconditional?: EdgeAccess | undefined }) =>
     e.conditional ? (e.unconditional ? ` (conditional; ${e.unconditional} without the condition)` : " (conditional)") : "";
   for (const e of diff.edges.added) {
-    if (e.access) row(e.source, e.target, widest(e.access), `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}${when(e)}`);
+    if (e.access) row(e.source, e.target, widestRank(e), "added", levelOf(e), `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}${when(e)}`);
   }
   for (const e of diff.edges.removed) {
-    if (e.access) row(e.source, e.target, 4, `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}${when(e)}`);
+    if (e.access) row(e.source, e.target, RANK_REMOVED, "removed", levelOf(e), `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}${when(e)}`);
   }
   for (const { before, after } of diff.edges.changed) {
     if (before.access === after.access && Boolean(before.conditional) === Boolean(after.conditional) && before.unconditional === after.unconditional) continue;
@@ -109,37 +142,56 @@ function accessLines(diff: ModelDiff): string[] {
     row(
       after.source,
       after.target,
-      widened ? widest(after.access) : 3,
+      widened ? widestRank(after) : RANK_NARROWED,
+      widened ? "widened" : "narrowed",
+      levelOf(after),
       `**${widened ? "Widened" : "Narrowed"}** ${name(after.source)} to ${name(after.target)}: ${from} to ${to}`,
     );
   }
   // A node's access to itself is a path to widen its own access: a line like an edge's, ranked by the same level.
   const selfOf = (n: ModelNode | undefined) => (n?.selfAccess ? selfAccessPhrase(n) : undefined);
   const selfRank = (access: ModelNode["selfAccess"]) => (access === "unscoped" ? 2 : access === "admin" ? 1 : 0);
-  const selfLevel = (n: ModelNode | undefined) => n?.selfAccess === "unscoped" ? 0 : n?.selfAccess === "admin" ? 1 : 2;
+  const selfLevel = (n: ModelNode | undefined) => levelRank(n?.selfAccess);
+  const own = (n: ModelNode) => n.selfAccess ?? "admin";
   for (const n of diff.nodes.added) {
     const now = selfOf(n);
-    if (now) row(n.id, n.id, selfLevel(n), `**Added** ${name(n.id)} ${now}`);
+    if (now) row(n.id, n.id, selfLevel(n), "added", own(n), `**Added** ${name(n.id)} ${now}`);
   }
   for (const n of diff.nodes.removed) {
     const was = selfOf(n);
-    if (was) row(n.id, n.id, 4, `**Removed** ${name(n.id)} ${was}`);
+    if (was) row(n.id, n.id, RANK_REMOVED, "removed", own(n), `**Removed** ${name(n.id)} ${was}`);
   }
   for (const { before, after } of diff.nodes.changed) {
     const was = selfOf(before);
     const now = selfOf(after);
     if (was === now) continue;
-    if (now && !was) row(after.id, after.id, selfLevel(after), `**Added** ${name(after.id)} ${now}`);
-    else if (was && !now) row(after.id, after.id, 4, `**Removed** ${name(after.id)} ${was}`);
+    if (now && !was) row(after.id, after.id, selfLevel(after), "added", own(after), `**Added** ${name(after.id)} ${now}`);
+    else if (was && !now) row(after.id, after.id, RANK_REMOVED, "removed", own(before), `**Removed** ${name(after.id)} ${was}`);
     else {
       // Wider when the level or what holds without a condition went up (even if the other went down: fail closed); narrower otherwise.
       const floor = (n: ModelNode) => (n.selfConditional ? (n.selfUnconditional === undefined ? 0 : selfRank(n.selfUnconditional)) : selfRank(n.selfAccess));
       const widened = selfRank(after.selfAccess) > selfRank(before.selfAccess) || floor(after) > floor(before);
-      row(after.id, after.id, widened ? selfLevel(after) : 3, `**${widened ? "Widened" : "Narrowed"}** ${name(after.id)}: ${was} to ${now}`);
+      row(after.id, after.id, widened ? selfLevel(after) : RANK_NARROWED, widened ? "widened" : "narrowed", own(after), `**${widened ? "Widened" : "Narrowed"}** ${name(after.id)}: ${was} to ${now}`);
     }
   }
   rows.sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-  return rows.map((r) => r.text);
+  return rows;
+}
+
+/** The access lines, the first `MAX_LISTED` of them, and a last line that says how many were cut, of which kinds, and the widest of them. */
+function accessLines(diff: ModelDiff): string[] {
+  const rows = accessRows(diff);
+  const shown = rows.slice(0, MAX_LISTED).map((r) => `- ${r.text}`);
+  const cut = rows.slice(MAX_LISTED);
+  if (cut.length > 0) {
+    const kinds = (["added", "widened", "narrowed", "removed"] as const)
+      .map((kind) => [kind, cut.filter((r) => r.kind === kind).length] as const)
+      .filter(([, count]) => count > 0)
+      .map(([kind, count]) => `${count} ${kind}`);
+    const widest = cut.map((r) => r.level).reduce<EdgeAccess | undefined>((best, level) => strongerAccess(best, level), undefined);
+    shown.push(`- and ${cut.length} more not shown: ${kinds.join(", ")}${widest ? ` (widest: ${widest})` : ""}`);
+  }
+  return shown;
 }
 
 /** A node whose only change is its access to itself: said in those words, not as a change of kind. "may" when the access is conditional or could not be read closely. */
@@ -214,7 +266,7 @@ function modelSection(input: ReportInput): string[] {
   }
   const access = accessLines(diff);
   if (access.length > 0) {
-    out.push("#### Access changes", "", ...listed(access, (line) => line), "");
+    out.push("#### Access changes", "", ...access, "");
   }
   return out;
 }

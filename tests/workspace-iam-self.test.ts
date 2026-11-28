@@ -249,11 +249,11 @@ describe("where a node's access to itself is shown", () => {
     assert.ok(diff.nodes.changed.length > 0);
     const text = report(plain, model);
     assert.match(text, /#### Access changes/);
-    assert.match(text, /- \*\*Added\*\* Managed Identity has admin access to itself \(conditional\)/);
+    assert.match(text, /- \*\*Added\*\* Managed Identity \(entra-id\) has admin access to itself \(conditional\)/);
     assert.match(renderDiagram(diff).mermaid ?? "", /has admin access to itself \(conditional\)/);
     const widened = report(model, read(inline(`{ Effect = "Allow", Action = "iam:PutRolePolicy", Resource = aws_iam_role.fn.arn }`)));
-    assert.match(widened, /- \*\*Widened\*\* Managed Identity: has admin access to itself \(conditional\) to has admin access to itself$/m);
-    assert.match(report(model, plain), /- \*\*Removed\*\* Managed Identity has admin access to itself \(conditional\)/);
+    assert.match(widened, /- \*\*Widened\*\* Managed Identity \(entra-id\): has admin access to itself \(conditional\) to has admin access to itself$/m);
+    assert.match(report(model, plain), /- \*\*Removed\*\* Managed Identity \(entra-id\) has admin access to itself \(conditional\)/);
     assert.doesNotMatch(report(model, model), /Access changes/);
   });
 
@@ -364,8 +364,8 @@ describe("what a role's conditional access to itself gives without the condition
   });
 
   it("is a widening when what holds without the condition goes up, even if the level goes down", () => {
-    assert.match(report(onlyConditional, withFloor), /\*\*Widened\*\* Managed Identity: has unscoped access to itself \(conditional\) to has unscoped access to itself \(conditional; admin without the condition\)/);
-    assert.match(report(onlyConditional, plainAdmin), /\*\*Widened\*\* Managed Identity: .* to has admin access to itself$/m);
+    assert.match(report(onlyConditional, withFloor), /\*\*Widened\*\* Managed Identity \(entra-id\): has unscoped access to itself \(conditional\) to has unscoped access to itself \(conditional; admin without the condition\)/);
+    assert.match(report(onlyConditional, plainAdmin), /\*\*Widened\*\* Managed Identity \(entra-id\): .* to has admin access to itself$/m);
     assert.doesNotMatch(report(onlyConditional, plainAdmin), /Narrowed/);
     assert.match(report(plainAdmin, onlyConditional), /\*\*Widened\*\*/, "a stronger level behind a condition is wider than a plain admin");
     assert.match(report(withFloor, onlyConditional), /\*\*Narrowed\*\*/);

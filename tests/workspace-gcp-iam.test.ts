@@ -188,12 +188,13 @@ resource "google_storage_bucket_iam_member" "admin" {
     const section = report.split("#### Access changes")[1] ?? "";
     assert.ok(section.length > 0, report);
     const lines = section.split("\n").filter((line) => line.startsWith("- "));
-    // The widest first: unscoped grants, then admin, and what is cut is the least dangerous.
-    assert.match(lines[0] ?? "", /\*\*Added\*\* .* has unscoped access to /);
-    const order = lines.map((line) => (line.includes("unscoped") ? 0 : line.includes("admin") ? 1 : 2));
+    // Anyone on the internet first, then the widest: unscoped grants, then admin, and what is cut is the least dangerous.
+    // Impersonating an identity that holds unscoped access is as wide, so those lines are left out of the order below.
+    assert.match(lines[0] ?? "", /\*\*Added\*\* Anyone on the internet .* has unscoped access to /);
+    const order = lines.filter((line) => !line.includes("Anyone on the internet") && !line.includes(" runs as ")).map((line) => (line.includes("unscoped") ? 0 : line.includes("admin") ? 1 : 2));
     assert.deepEqual(order, [...order].sort());
-    assert.ok(lines.some((line) => line.includes("Anyone on the internet &#40;allUsers&#41; has unscoped access to Containers")));
-    assert.ok(lines.some((line) => line.includes("A person &#40;user&#41; has admin access to Any resource &#40;&#42;&#41; (conditional; read without the condition)")));
+    assert.ok(lines.some((line) => line.includes("Anyone on the internet &#40;allUsers&#41; (principal-all-users) has unscoped access to Containers")));
+    assert.ok(lines.some((line) => line.includes("A person &#40;user&#41; (principal-user) has admin access to Any resource &#40;&#42;&#41; (any-resource) (conditional; read without the condition)")));
     for (const text of ["@example.com", "roles/", "serviceAccount:", "oncall"]) assert.equal(report.includes(text), false, text);
   });
 });
