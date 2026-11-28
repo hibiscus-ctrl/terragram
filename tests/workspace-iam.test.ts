@@ -28,9 +28,13 @@ function read(source: string) {
   return result;
 }
 
-/** `source -> target: access` for every typed edge, in model order. */
+/**
+ * `source -> target: access` for every typed edge, in model order. The fixtures' roles are trusted by the Lambda
+ * service, and that trust edge (from the "An AWS service" stand-in) is read in workspace-iam-never-drop.test.ts:
+ * these tests are about what a role's policies grant.
+ */
 function typed(model: InfraModel): string[] {
-  return model.edges.filter((e) => e.access).map((e) => `${e.source} -> ${e.target}: ${e.access}`);
+  return model.edges.filter((e) => e.access && e.source !== "principal-aws-service").map((e) => `${e.source} -> ${e.target}: ${e.access}`);
 }
 
 const AWS_BASE = `
@@ -202,7 +206,7 @@ resource "aws_iam_role_policy_attachment" "queue" {
 `);
     assert.deepEqual(typed(model).slice(1), ["entra-id -> queue: write"]);
     assert.deepEqual(untranslated, []);
-    assert.equal(model.nodes.some((n) => n.kind === "external"), false, "the data source is read, not left as a block");
+    assert.equal(model.nodes.some((n) => n.kind === "external" && !n.id.startsWith("principal-")), false, "the data source is read, not left as a block");
   });
 
   it("calls a policy document that merges others unreadable", () => {

@@ -232,6 +232,23 @@ function readVal(text: string): Val | null {
   }
 }
 
+/** Whether a policy expression is a JSON object with nothing in it: `"{}"` or `jsonencode({})`. */
+function isEmptyDocument(expr: string | undefined): boolean {
+  const text = expr?.trim();
+  if (!text) return false;
+  const inner = text.startsWith("jsonencode(") ? callArgument(text, "jsonencode") : text;
+  if (inner === null) return false;
+  const value = readVal(inner.trim());
+  if (value?.t === "obj") return value.entries.length === 0;
+  if (value?.t !== "str") return false;
+  try {
+    const parsed: unknown = JSON.parse(value.text);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** The balanced text after `name(` in an expression, or null. */
 function callArgument(expr: string, name: string): string | null {
   const open = expr.indexOf(`${name}(`);
@@ -331,7 +348,12 @@ function heredocBody(expr: string): string | null {
 
 /* ---------------------------------------------------------------- policies -- */
 
+/** Who a resource-based policy statement names: the values by principal type (`AWS`, `Service`, `Federated`, `CanonicalUser`), and whether it is a `NotPrincipal`. */
+type PrincipalClause = { not: boolean; entries: Array<{ type: string; values: Val[] }> } | "unreadable";
+
 type Statement = {
+  /** The statement's Principal or NotPrincipal, absent for an identity policy. */
+  principal?: PrincipalClause;
   actions: Val[];
   notActions: boolean;
   resources: Val[];
@@ -403,14 +425,39 @@ function isCondition(v: Val): boolean {
   return narrows;
 }
 
-function statementOf(st: Val, conditionBlock = false): Statement {
+/** The Principal or NotPrincipal of a JSON statement: `"*"`, or an object of principal types. Anything else cannot be read. */
+function principalClauseOf(st: Val): PrincipalClause | undefined {
+  const named = valuesOf(st, "principal");
+  const not = valuesOf(st, "notprincipal");
+  if (named.length + not.length === 0) return undefined;
+  const entries: Array<{ type: string; values: Val[] }> = [];
+  for (const value of [...named, ...not]) {
+    if (value.t === "str" && value.text === "*") entries.push({ type: "AWS", values: [value] });
+    else if (value.t === "obj") for (const e of value.entries) entries.push({ type: e.key, values: listOf(e.value) });
+    else return "unreadable";
+  }
+  return { not: not.length > 0, entries };
+}
+
+/** The `principals` and `not_principals` blocks of a policy document statement. A generated one (`dynamic`) cannot be read. */
+function principalBlocksOf(statement: HclBlock): PrincipalClause | undefined {
+  const blocks = statement.blocks.filter((b) => b.type === "principals" || b.type === "not_principals");
+  if (statement.blocks.some((b) => b.type === "dynamic" && (b.labels[0] === "principals" || b.labels[0] === "not_principals"))) return "unreadable";
+  if (blocks.length === 0) return undefined;
+  const entries = blocks.map((b) => ({ type: stringValue(attributeOf(b, "type")) ?? "?", values: listOf(readVal(attributeOf(b, "identifiers") ?? "") ?? UNREADABLE) }));
+  return { not: blocks.some((b) => b.type === "not_principals"), entries };
+}
+
+function statementOf(st: Val, conditionBlock = false, principal?: PrincipalClause): Statement {
   const conditional = conditionBlock || valuesOf(st, "condition", "conditions").some(isCondition);
   const actions = valuesOf(st, "action", "actions");
   const notActions = valuesOf(st, "notaction", "notactions");
   const resources = valuesOf(st, "resource", "resources");
   const notResources = valuesOf(st, "notresource", "notresources");
   // A statement with no Action or no Resource key is not "grants nothing": it is unknown.
+  const clause = principal ?? principalClauseOf(st);
   return {
+    ...(clause ? { principal: clause } : {}),
     actions: actions.length + notActions.length > 0 ? [...actions, ...notActions].flatMap(listOf) : [UNREADABLE],
     notActions: notActions.length > 0,
     resources: resources.length + notResources.length > 0 ? [...resources, ...notResources].flatMap(listOf) : [UNREADABLE],
@@ -434,7 +481,7 @@ function statementsOfDataBlock(doc: HclBlock): Statement[] | null {
     // An attribute that cannot be read is kept as unreadable, not dropped: a dropped one reads as "grants nothing".
     const obj: Val = { t: "obj", entries: b.attributes.map((a) => ({ key: a.key, value: readVal(a.value) ?? UNREADABLE })) };
     if (isDeny(valuesOf(obj, "effect"))) continue;
-    out.push(statementOf(obj, b.blocks.some(isConditionBlock)));
+    out.push(statementOf(obj, b.blocks.some(isConditionBlock), principalBlocksOf(b)));
   }
   return out;
 }
@@ -742,6 +789,9 @@ function edgesOfStatements(
 
 /* -------------------------------------------------------------------- AWS -- */
 
+const GCP_FEDERATED_LABEL = "A federated identity";
+const GCP_OTHER_LABEL = "Another principal";
+
 /** What a policy attaches to: the kinds of identity AWS policies are given to, each with a fixed stand-in for one the picture does not draw. */
 type HolderKind = "role" | "user" | "group";
 type Holder = { id: string; standIn: boolean };
@@ -750,6 +800,40 @@ const AWS_HOLDER_STAND_INS: Record<HolderKind, { id: string; label: string }> = 
   user: { id: "principal-aws-user", label: "An IAM user (not drawn)" },
   group: { id: "principal-aws-group", label: "An IAM group (not drawn)" },
 };
+
+/**
+ * The principals a resource-based policy (a bucket policy, a trust policy, a queue policy, a Lambda permission) can
+ * name that the picture does not draw, one stand-in per kind, in fixed words: no account number, ARN or name from the
+ * file reaches the model. `principal-federated` and `principal-other` are the same nodes the Google Cloud reader uses.
+ */
+type PrincipalClass = "anyone" | "account" | "service" | "federated" | "other";
+const AWS_PRINCIPALS: Record<PrincipalClass, { id: string; label: string }> = {
+  anyone: { id: "principal-aws-anyone", label: "Anyone (*)" },
+  account: { id: "principal-aws-account", label: "An AWS account or principal (not drawn)" },
+  service: { id: "principal-aws-service", label: "An AWS service" },
+  federated: { id: "principal-federated", label: GCP_FEDERATED_LABEL },
+  other: { id: "principal-other", label: GCP_OTHER_LABEL },
+};
+
+/** The stand-ins that stand for anyone at all: a grant from one is public. Reports rank these first. */
+export const PUBLIC_PRINCIPAL_IDS: ReadonlySet<string> = new Set(["principal-aws-anyone", "principal-all-users", "principal-all-authenticated-users"]);
+
+/** A source of a resource-policy edge: a drawn node, or a stand-in. `uncertain`: the principal may be anyone. */
+type PolicySource = { id: string; drawn: boolean; cls: PrincipalClass | null; uncertain: boolean };
+
+/** The resource types that carry a policy of their own, the attribute naming what it is on, and the attribute holding it. */
+const AWS_RESOURCE_POLICIES = new Map<string, { target: string; policy: string }>([
+  ["aws_s3_bucket_policy", { target: "bucket", policy: "policy" }],
+  ["aws_sqs_queue_policy", { target: "queue_url", policy: "policy" }],
+  ["aws_sns_topic_policy", { target: "arn", policy: "policy" }],
+  ["aws_kms_key_policy", { target: "key_id", policy: "policy" }],
+  ["aws_secretsmanager_secret_policy", { target: "secret_arn", policy: "policy" }],
+  ["aws_ecr_repository_policy", { target: "repository", policy: "policy" }],
+  ["aws_efs_file_system_policy", { target: "file_system_id", policy: "policy" }],
+]);
+
+/** Resources whose own `policy` attribute is their resource policy: it names what the resource is on itself. */
+const AWS_INLINE_RESOURCE_POLICIES = new Set(["aws_s3_bucket", "aws_sqs_queue", "aws_sns_topic", "aws_kms_key", "aws_secretsmanager_secret"]);
 
 /** The resource types that give one identity a policy: the attribute naming the identity, and whether the policy is a managed one attached by ARN. */
 const AWS_POLICY_HOLDERS = new Map<string, { kind: HolderKind; attribute: string; attachment: boolean }>([
@@ -1009,6 +1093,116 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     }
   };
 
+  /** The stand-in node for a kind of principal, registered so the reader adds it once an edge starts there. */
+  const standIn = (cls: PrincipalClass): string => {
+    const stand = AWS_PRINCIPALS[cls];
+    out.principals.set(stand.id, stand.label);
+    return stand.id;
+  };
+
+  /** The nodes one principal value of one type names. A value that could be anyone at all is `uncertain`. */
+  const sourcesOfValue = (type: string, value: Val): PolicySource[] => {
+    const stand = (cls: PrincipalClass, uncertain = false): PolicySource => ({ id: standIn(cls), drawn: false, cls, uncertain });
+    const drawnSource = (id: string): PolicySource => ({ id, drawn: true, cls: null, uncertain: false });
+    const kind = type.toLowerCase();
+    if (value.t === "list") return value.items.flatMap((item) => sourcesOfValue(type, item));
+    if (value.t === "obj") return [stand("other", true)];
+    if (kind === "service") return [stand("service")];
+    if (kind === "federated") return [stand("federated")];
+    if (kind === "canonicaluser") return [stand("other")];
+    if (kind !== "aws") return [stand("other", true)];
+    if (value.t === "str") {
+      const template = /^\$\{([^{}"]*)\}$/.exec(value.text);
+      if (template) return sourcesOfValue(type, { t: "expr", text: template[1] ?? "", refs: extractReferences(template[1] ?? "") });
+      if (value.text === "*") return [stand("anyone")];
+      const named = identityArn(value.text);
+      if (named) {
+        const found = identities.named.get(`${named.kind}/${named.name.toLowerCase()}`) ?? [];
+        return found.length > 0 && !identities.unsure.has(named.kind) ? found.map(drawnSource) : [...found.map(drawnSource), stand("account")];
+      }
+      // An account id or an `arn:...:root`, written out or built from the account: some principal of that account.
+      if (/^\d{12}$/.test(value.text) || value.text.endsWith(":root") || value.text.startsWith("arn:")) return [stand("account")];
+      return [stand("other", true)];
+    }
+    const target = resolveReference(value.text, owner);
+    if (target.kind === "node") return [drawnSource(target.id)];
+    return [target.kind === "outside" ? stand("account") : stand("other", true)];
+  };
+
+  /** Who a statement's Principal names. No Principal, one that cannot be read and a NotPrincipal (everyone but them) cannot be bounded: they may be anyone. */
+  const sourcesOfStatement = (st: Statement): PolicySource[] => {
+    const clause = st.principal;
+    const anyone = (): PolicySource[] => [{ id: standIn("anyone"), drawn: false, cls: "anyone", uncertain: true }];
+    if (clause === undefined || clause === "unreadable") return [{ id: standIn("other"), drawn: false, cls: "other", uncertain: true }];
+    if (clause.not) return anyone();
+    const found = clause.entries.flatMap((entry) => entry.values.flatMap((value) => sourcesOfValue(entry.type, value)));
+    if (found.length === 0) return [{ id: standIn("other"), drawn: false, cls: "other", uncertain: true }];
+    return [...new Map(found.map((source) => [`${source.id}|${source.uncertain}`, source])).values()];
+  };
+
+  /** What the policy is on: the drawn node its attribute is exactly one reference to, else any resource, and then nothing it draws is better than unscoped. */
+  const policyTarget = (expr: string | undefined): { id: string; exact: boolean } => {
+    let read: Val | null = null;
+    try {
+      read = expr === undefined ? null : readVal(expr);
+    } catch {
+      read = null;
+    }
+    const text = read?.t === "expr" ? read.text : read?.t === "str" ? (/^\$\{([^{}"]*)\}$/.exec(read.text)?.[1] ?? "") : "";
+    const target = text === "" ? undefined : resolveReference(text, owner);
+    return target?.kind === "node" ? { id: target.id, exact: true } : { id: ANY_RESOURCE_ID, exact: false };
+  };
+
+  /**
+   * The edges a resource-based policy draws into what it is on, from the principals it names. `trust` is a role's
+   * assume-role policy: an action that only assumes the role is acting as it (`runs-as` from a drawn workload or a
+   * service, `admin` from another account or identity, unscoped from anyone), as for a Google Cloud service account.
+   * A policy that cannot be read is an unscoped grant from a principal that cannot be named.
+   */
+  const resourcePolicy = (target: { id: string; exact: boolean }, expr: string | undefined, trust: boolean, holders: HclBlock[]): void => {
+    const via: HclBlock[] = [];
+    let edges: IamEdge[];
+    try {
+      // A document with nothing in it (`"{}"`) names no principal and grants nothing.
+      if (isEmptyDocument(expr)) return;
+      const statements = statementsOf(expr, via);
+      if (statements === null) edges = [{ source: standIn("other"), target: target.id, access: "unscoped" }];
+      else {
+        edges = [];
+        for (const st of statements) {
+          if (st.actions.length === 0) continue;
+          const level = levelOf(st.actions, st.notActions);
+          const assumes = trust && !st.notActions && st.actions.every((a) => a.t === "str" && a.text.toLowerCase().startsWith("sts:"));
+          for (const source of sourcesOfStatement(st)) {
+            let access: EdgeAccess = level;
+            if (source.uncertain || level === "unscoped" || !target.exact) access = "unscoped";
+            else if (assumes) access = source.drawn || source.cls === "service" ? "runs-as" : source.cls === "anyone" ? "unscoped" : "admin";
+            edges.push({ source: source.id, target: target.id, access, ...(st.conditional ? ({ conditional: true } as const) : {}) });
+          }
+        }
+      }
+    } catch {
+      edges = [{ source: standIn("other"), target: target.id, access: "unscoped" }];
+    }
+    out.edges.push(...edges);
+    if (edges.length > 0) for (const b of [...holders, ...via]) out.consumed.add(b);
+  };
+
+  /** A Lambda permission: its `principal` may take its `action` on the function, narrowed by a source ARN, account or organisation. */
+  const lambdaPermission = (b: HclBlock): void => {
+    const target = policyTarget(attributeOf(b, "function_name"));
+    const principal = readVal(attributeOf(b, "principal") ?? "") ?? UNREADABLE;
+    const type = principal.t === "str" && /\.amazonaws\.com(\.cn)?$/.test(principal.text) ? "Service" : "AWS";
+    const action = readVal(attributeOf(b, "action") ?? "");
+    const level = action === null ? "unscoped" : levelOf([action], false);
+    const conditional = ["source_arn", "source_account", "principal_org_id"].some((key) => attributeOf(b, key) !== undefined);
+    for (const source of sourcesOfValue(type, principal)) {
+      const access: EdgeAccess = source.uncertain || level === "unscoped" || !target.exact ? "unscoped" : level;
+      out.edges.push({ source: source.id, target: target.id, access, ...(conditional ? ({ conditional: true } as const) : {}) });
+    }
+    out.consumed.add(b);
+  };
+
   for (const b of blocks) {
     if (b.type !== "resource") continue;
     const [type, name] = b.labels;
@@ -1033,9 +1227,19 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
         else if (inline.type === "dynamic" && inline.labels[0] === "inline_policy") opaque(source);
       }
       attach(source, attributeOf(b, "managed_policy_arns"), null);
+      // Who may assume the role: a policy on the role, from the principals it names.
+      if (attributeOf(b, "assume_role_policy") !== undefined) resourcePolicy({ id: source, exact: true }, attributeOf(b, "assume_role_policy"), true, []);
+    } else if (type === "aws_lambda_permission") {
+      lambdaPermission(b);
+    } else if (type && AWS_RESOURCE_POLICIES.has(type)) {
+      const spec = AWS_RESOURCE_POLICIES.get(type);
+      if (spec) resourcePolicy(policyTarget(attributeOf(b, spec.target)), attributeOf(b, spec.policy), false, [b]);
     } else if (type === "aws_iam_instance_profile" && holdersOf(attributeOf(b, "role"), "role").some((h) => !h.standIn)) {
       out.consumed.add(b);
     }
+    // A resource whose own `policy` is its resource policy is the resource it is on.
+    const own = type && name && AWS_INLINE_RESOURCE_POLICIES.has(type) ? owner(`${type}.${name}`) : undefined;
+    if (own && attributeOf(b, "policy") !== undefined) resourcePolicy({ id: own, exact: true }, attributeOf(b, "policy"), false, []);
   }
 }
 
@@ -1153,8 +1357,8 @@ const GCP_PRINCIPALS = {
   serviceAccount: "A service account (not drawn)",
   allUsers: "Anyone on the internet (allUsers)",
   allAuthenticatedUsers: "Any Google account (allAuthenticatedUsers)",
-  federated: "A federated identity",
-  other: "Another principal",
+  federated: GCP_FEDERATED_LABEL,
+  other: GCP_OTHER_LABEL,
 } as const;
 
 type GcpPrincipal = keyof typeof GCP_PRINCIPALS;

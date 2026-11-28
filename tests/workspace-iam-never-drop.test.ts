@@ -39,10 +39,7 @@ resource "aws_sqs_queue" "jobs" {
 
 resource "aws_iam_role" "fn" {
   name = "fn"
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{ Action = "sts:AssumeRole", Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" } }]
-  })
+  assume_role_policy = "{}"
 }
 
 resource "aws_lambda_function" "api" {
@@ -328,5 +325,174 @@ resource "google_artifact_registry_repository_iam_member" "g" {
 `),
       ["principal-all-users -> object-storage: read"],
     );
+  });
+});
+
+describe("resource-based and trust policies draw edges into the resource from the principals they name", () => {
+  const edgesOf = (extra: string, keep = (e: string) => !e.startsWith("functions -> ")) => typed(read(BASE + extra).model).filter(keep);
+  const bucketPolicy = (statement: string) => `
+resource "aws_s3_bucket_policy" "p" {
+  bucket = aws_s3_bucket.data.id
+  policy = jsonencode({ Statement = [${statement}] })
+}
+`;
+
+  it("draws Principal \"*\" and {AWS: \"*\"} as Anyone (*)", () => {
+    for (const principal of [`"*"`, `{ AWS = "*" }`, `{ AWS = ["*"] }`]) {
+      const model = read(BASE + bucketPolicy(`{ Effect = "Allow", Principal = ${principal}, Action = "s3:GetObject", Resource = "arn:aws:s3:::data-bucket/*" }`)).model;
+      assert.ok(typed(model).includes("principal-aws-anyone -> object-storage: read"), `${principal}: ${typed(model).join(" | ")}`);
+      assert.equal(model.nodes.find((n) => n.id === "principal-aws-anyone")?.label, "Anyone (*)");
+    }
+  });
+
+  it("keeps a condition as conditional and never lowers the level", () => {
+    assert.deepEqual(
+      edgesOf(bucketPolicy(`{ Effect = "Allow", Principal = "*", Action = "s3:*", Resource = "*", Condition = { StringEquals = { "aws:SourceVpce" = "vpce-1" } } }`)),
+      ["principal-aws-anyone -> object-storage: admin, conditional"],
+    );
+  });
+
+  it("draws NotPrincipal, an unreadable Principal and a missing one as unscoped", () => {
+    assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Allow", NotPrincipal = { AWS = "arn:aws:iam::123456789012:root" }, Action = "s3:GetObject", Resource = "*" }`)), [
+      "principal-aws-anyone -> object-storage: unscoped",
+    ]);
+    assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Allow", Principal = var.principal, Action = "s3:GetObject", Resource = "*" }`)), ["principal-other -> object-storage: unscoped"]);
+    assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Allow", Action = "s3:GetObject", Resource = "*" }`)), ["principal-other -> object-storage: unscoped"]);
+    assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Allow", Principal = { AWS = var.arn }, Action = "s3:GetObject", Resource = "*" }`)), ["principal-other -> object-storage: unscoped"]);
+  });
+
+  it("draws an account, a service and a federated principal from their own stand-ins, and a drawn role as itself", () => {
+    assert.deepEqual(
+      edgesOf(
+        bucketPolicy(`{ Effect = "Allow", Principal = { AWS = "arn:aws:iam::123456789012:root", Service = "cloudtrail.amazonaws.com", Federated = "cognito-identity.amazonaws.com" }, Action = "s3:PutObject", Resource = "*" }`),
+      ).sort(),
+      [
+        "principal-aws-account -> object-storage: write",
+        "principal-aws-service -> object-storage: write",
+        "principal-federated -> object-storage: write",
+      ],
+    );
+    assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Allow", Principal = { AWS = aws_iam_role.fn.arn }, Action = "s3:GetObject", Resource = "*" }`)), ["entra-id -> object-storage: read"]);
+    assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Allow", Principal = { AWS = "arn:aws:iam::123456789012:role/fn" }, Action = "s3:GetObject", Resource = "*" }`)), ["entra-id -> object-storage: read"]);
+  });
+
+  it("reads a policy document data source with principals and not_principals blocks", () => {
+    const model = read(`${BASE}
+data "aws_iam_policy_document" "p" {
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+  }
+  statement {
+    actions   = ["s3:PutObject"]
+    resources = ["*"]
+    not_principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::123456789012:root"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "p" {
+  bucket = aws_s3_bucket.data.id
+  policy = data.aws_iam_policy_document.p.json
+}
+`).model;
+    assert.deepEqual(typed(model).filter((e) => !e.startsWith("functions")), ["principal-aws-anyone -> object-storage: unscoped"]);
+  });
+
+  it("draws a trust policy: the service that assumes a role runs as it, another account is admin, anyone is unscoped", () => {
+    const trust = (principal: string) =>
+      edgesOf(`
+resource "aws_iam_role" "t" {
+  name = "t"
+  assume_role_policy = jsonencode({ Statement = [{ Effect = "Allow", Principal = ${principal}, Action = "sts:AssumeRole" }] })
+}
+`).filter((e) => e.includes("-> entra-id-2"));
+    assert.deepEqual(trust(`{ Service = "ecs-tasks.amazonaws.com" }`), ["principal-aws-service -> entra-id-2: runs-as"]);
+    assert.deepEqual(trust(`{ AWS = "arn:aws:iam::123456789012:root" }`), ["principal-aws-account -> entra-id-2: admin"]);
+    assert.deepEqual(trust(`{ AWS = "*" }`), ["principal-aws-anyone -> entra-id-2: unscoped"]);
+    assert.deepEqual(trust(`{ AWS = aws_iam_role.fn.arn }`), ["entra-id -> entra-id-2: runs-as"]);
+    assert.deepEqual(trust(`{ Federated = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com" }`), ["principal-federated -> entra-id-2: admin"]);
+  });
+
+  it("draws a Lambda permission, an SQS, SNS, KMS, Secrets Manager and ECR policy", () => {
+    const model = read(`${BASE}
+resource "aws_lambda_permission" "any" {
+  statement_id  = "any"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api.function_name
+  principal     = "*"
+}
+
+resource "aws_lambda_permission" "s3" {
+  statement_id  = "s3"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api.function_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = aws_s3_bucket.data.arn
+}
+
+resource "aws_sqs_queue_policy" "q" {
+  queue_url = aws_sqs_queue.jobs.id
+  policy    = jsonencode({ Statement = [{ Effect = "Allow", Principal = "*", Action = "sqs:SendMessage", Resource = "*" }] })
+}
+
+resource "aws_kms_key" "k" {
+  description = "k"
+  policy      = jsonencode({ Statement = [{ Effect = "Allow", Principal = { AWS = "*" }, Action = "kms:*", Resource = "*" }] })
+}
+
+resource "aws_secretsmanager_secret" "s" {
+  name = "s"
+}
+
+resource "aws_secretsmanager_secret_policy" "s" {
+  secret_arn = aws_secretsmanager_secret.s.arn
+  policy     = jsonencode({ Statement = [{ Effect = "Allow", Principal = "*", Action = "secretsmanager:GetSecretValue", Resource = "*" }] })
+}
+
+resource "aws_ecr_repository" "r" {
+  name = "r"
+}
+
+resource "aws_ecr_repository_policy" "r" {
+  repository = aws_ecr_repository.r.name
+  policy     = jsonencode({ Statement = [{ Effect = "Allow", Principal = "*", Action = "ecr:BatchGetImage" }] })
+}
+`).model;
+    const edges = typed(model);
+    const ids = new Map(model.nodes.map((n) => [n.id, n.kind]));
+    const into = (kind: string) => edges.filter((e) => e.startsWith("principal-aws-") && ids.get(e.split(" -> ")[1]?.split(":")[0] ?? "") === kind);
+    assert.deepEqual(into("functions"), ["principal-aws-anyone -> functions: write", "principal-aws-service -> functions: write, conditional"], edges.join(" | "));
+    assert.ok(edges.includes("principal-aws-anyone -> queue: write"), edges.join(" | "));
+    // The key and the secret are one node, at the stronger of the two (the key's own policy); a repository the picture does not draw is any resource.
+    assert.ok(edges.includes("principal-aws-anyone -> key-vault: admin"), edges.join(" | "));
+    assert.ok(edges.includes(`principal-aws-anyone -> ${ANY_RESOURCE_ID}: unscoped`), edges.join(" | "));
+  });
+
+  it("is unscoped when the policy is on something that is not drawn or cannot be read", () => {
+    assert.deepEqual(
+      edgesOf(`
+resource "aws_sqs_queue_policy" "q" {
+  queue_url = var.queue_url
+  policy    = jsonencode({ Statement = [{ Effect = "Allow", Principal = "*", Action = "sqs:SendMessage", Resource = "*" }] })
+}
+
+resource "aws_sns_topic_policy" "t" {
+  arn    = aws_sns_topic.t.arn
+  policy = var.policy
+}
+`),
+      [`principal-aws-anyone -> ${ANY_RESOURCE_ID}: unscoped`, `principal-other -> ${ANY_RESOURCE_ID}: unscoped`].sort(),
+    );
+  });
+
+  it("does not read a Deny statement as a grant", () => {
+    assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Deny", Principal = "*", Action = "s3:*", Resource = "*" }`)), []);
   });
 });
