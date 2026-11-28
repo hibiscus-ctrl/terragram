@@ -658,13 +658,25 @@ function selfLevelOfBroad(actions: Val[], notActions: boolean): "admin" | "unsco
   return level;
 }
 
+/**
+ * What an identity holds when its policy cannot be seen (a variable, a file, a managed policy that is not defined
+ * here or in the table): an unscoped grant over anything, and over the identity itself, since a policy that
+ * may say anything may rewrite the policy it is attached to. The second edge is kept apart as `self` by `readIam`.
+ */
+function opaqueGrant(source: string): IamEdge[] {
+  return [
+    { source, target: ANY_RESOURCE_ID, access: "unscoped" },
+    { source, target: source, access: "unscoped" },
+  ];
+}
+
 function edgesOfStatements(
   source: string,
   statements: Statement[] | null,
   owner: (address: string) => string | undefined,
   identities: Identities,
 ): IamEdge[] {
-  if (statements === null) return [{ source, target: ANY_RESOURCE_ID, access: "unscoped" }];
+  if (statements === null) return opaqueGrant(source);
   const out: IamEdge[] = [];
   for (const st of statements) {
     if (st.actions.length === 0 || st.resources.length === 0) continue;
@@ -828,7 +840,7 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
 
   /** A policy the text does not show (generated, merged, a file): the holder has an unscoped grant. */
   const opaque = (source: string): void => {
-    out.edges.push({ source, target: ANY_RESOURCE_ID, access: "unscoped" });
+    out.edges.push(...opaqueGrant(source));
   };
 
   /** Fails closed: a policy that cannot be read, or that makes the reader throw, is an unscoped grant. */
@@ -836,7 +848,7 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     try {
       return read();
     } catch {
-      return [{ source, target: ANY_RESOURCE_ID, access: "unscoped" }];
+      return opaqueGrant(source);
     }
   };
 
@@ -901,7 +913,7 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
    */
   const attach = (source: string, expr: string | undefined, holder: HclBlock | null): void => {
     const unscoped = () => {
-      out.edges.push({ source, target: ANY_RESOURCE_ID, access: "unscoped" });
+      out.edges.push(...opaqueGrant(source));
       if (holder) out.consumed.add(holder);
     };
     if (expr === undefined) {

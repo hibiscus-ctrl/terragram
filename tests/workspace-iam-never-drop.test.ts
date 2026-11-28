@@ -124,3 +124,54 @@ resource "aws_iam_user_policy" "u" {
     assert.ok(typed(model).includes("principal-aws-user -> object-storage: unscoped"), typed(model).join(" | "));
   });
 });
+
+describe("a policy the reader cannot see may rewrite its own holder", () => {
+  const selfOf = (model: InfraModel, id = "entra-id") => model.nodes.find((n) => n.id === id)?.selfAccess;
+
+  it("records unscoped access to itself for a policy that is a variable or a file", () => {
+    for (const policy of ["var.policy", `file("policy.json")`, "data.aws_iam_policy_document.gone.json"]) {
+      const { model } = read(`${BASE}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = ${policy}
+}
+`);
+      assert.ok(typed(model).includes(`entra-id -> ${ANY_RESOURCE_ID}: unscoped`), policy);
+      assert.equal(selfOf(model), "unscoped", policy);
+    }
+  });
+
+  it("records it for a managed policy the table does not know, and for generated inline policies", () => {
+    const unknown = read(`${BASE}
+resource "aws_iam_role_policy_attachment" "x" {
+  role       = aws_iam_role.fn.name
+  policy_arn = "arn:aws:iam::123456789012:policy/Custom"
+}
+`);
+    assert.equal(selfOf(unknown.model), "unscoped");
+    const generated = read(`${BASE}
+resource "aws_iam_role" "dyn" {
+  name = "dyn"
+  assume_role_policy = "{}"
+  dynamic "inline_policy" {
+    for_each = var.policies
+    content {
+      name   = "x"
+      policy = "{}"
+    }
+  }
+}
+`);
+    assert.equal(selfOf(generated.model, "entra-id-2"), "unscoped");
+  });
+
+  it("leaves a readable policy that cannot change the role without one", () => {
+    const { model } = read(`${BASE}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = ${READ_DATA}
+}
+`);
+    assert.equal(selfOf(model), undefined);
+  });
+});
