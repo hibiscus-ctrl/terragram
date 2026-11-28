@@ -1,7 +1,7 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { MAX_MANAGED_EDGES, MAX_MANAGED_TARGETS, managedPolicyGrants, SERVICE_RESOURCE_TYPES } from "./aws-managed-policies.ts";
+import { MANAGED_WITHOUT_IAM_WRITE, MAX_MANAGED_EDGES, MAX_MANAGED_TARGETS, managedPolicyGrants, SERVICE_RESOURCE_TYPES } from "./aws-managed-policies.ts";
 import { attributeOf, extractReferences, type HclBlock, stringValue } from "./hcl.ts";
 import type { EdgeAccess } from "./model.ts";
 
@@ -41,6 +41,13 @@ export type IamReading = {
   consumed: Set<HclBlock>;
   /** The stand-ins for principals the picture does not draw that an edge starts at, by node id (see `GCP_PRINCIPALS`). The reader adds a node for each. */
   principals: Map<string, string>;
+  /**
+   * The nodes whose own grants reach the node itself at `admin` or `unscoped`: a role whose policy may rewrite
+   * the role (`iam:PutRolePolicy` on its own ARN), a service account that may mint tokens for itself. Such a
+   * grant cannot be an edge (nothing here draws a node to itself), but it is an escalation path, so it is carried as
+   * its own entry, one per node, `conditional` as an edge would be. Lower levels on oneself are not escalation and are not listed.
+   */
+  self: IamEdge[];
 };
 
 const RANK: Record<EdgeAccess, number> = { "runs-as": 0, read: 1, write: 2, admin: 3, unscoped: 4 };
@@ -504,8 +511,10 @@ const HOLE = "";
  * that contains `*` or `?`, an escape or a `%{` directive could name more than it shows.
  * Returns true when the string reaches beyond what can be drawn.
  */
-function stringReach(text: string, owner: (address: string) => string | undefined, add: (id: string) => void): boolean {
+function stringReach(text: string, owner: (address: string) => string | undefined, add: (id: string) => void, identities: Identities): boolean {
   if (/[\\]|%\{|\$\$/.test(text)) return true;
+  const named = identityArn(text);
+  if (named) return identityReach(named, identities, add);
   let masked = "";
   for (let i = 0; i < text.length; ) {
     if (text[i] === "$" && text[i + 1] === "{") {
@@ -531,23 +540,58 @@ function stringReach(text: string, owner: (address: string) => string | undefine
   return path === -1 || wildcard < path + 2;
 }
 
+/** The drawn roles and users a literal ARN may name, by the name the file gives them. */
+type Identities = {
+  /** Node ids by `role/<lowercase name>` or `user/<lowercase name>`. */
+  named: Map<string, string[]>;
+  /** The kinds (`role`, `user`) with a drawn member whose name is not a plain string: an ARN may name it. */
+  unsure: Set<string>;
+};
+
+const NO_IDENTITIES: Identities = { named: new Map(), unsure: new Set() };
+
+const ARN_OPEN_PART = /^(?:[A-Za-z0-9-]*|\$\{[^{}:"]*\})$/;
+
+/** A `role/...` or `user/...` ARN with a literal name: the partition and account may be a reference (a wildcard one is not read, so it stays broad); the name is the last path segment. */
+function identityArn(text: string): { kind: "role" | "user"; name: string } | null {
+  if (text.length > 512) return null;
+  const parts = text.split(":");
+  const [head, partition, service, region, account, resource] = parts;
+  if (parts.length !== 6 || head !== "arn" || service !== "iam" || region !== "") return null;
+  if (!ARN_OPEN_PART.test(partition ?? "") || !ARN_OPEN_PART.test(account ?? "")) return null;
+  const m = /^(role|user)\/([A-Za-z0-9+=,.@_/-]+)$/.exec(resource ?? "");
+  const name = m?.[2]?.split("/").pop();
+  return m && name ? { kind: m[1] === "user" ? "user" : "role", name } : null;
+}
+
+/**
+ * The drawn identity a literal ARN names, whatever its account (the file does not say which account a role is in).
+ * A drawn identity whose name this reader cannot read might be it, so the ARN then reaches beyond what is drawn.
+ * A name no drawn identity has is not drawn, which adds nothing, as for any other resource the picture leaves out.
+ */
+function identityReach(named: { kind: "role" | "user"; name: string }, identities: Identities, add: (id: string) => void): boolean {
+  const found = identities.named.get(`${named.kind}/${named.name.toLowerCase()}`) ?? [];
+  for (const id of found) add(id);
+  return found.length === 0 && identities.unsure.has(named.kind);
+}
+
 type Reach = { targets: string[]; broad: boolean };
 
 /** Which drawn resources a Resource value points at, and whether it also reaches beyond them. */
-function reachOf(values: Val[], owner: (address: string) => string | undefined): Reach {
+function reachOf(values: Val[], owner: (address: string) => string | undefined, identities: Identities = NO_IDENTITIES): Reach {
   const reach: Reach = { targets: [], broad: false };
   const add = (id: string | undefined) => {
     if (id && !reach.targets.includes(id)) reach.targets.push(id);
   };
   for (const v of values) {
     if (v.t === "list") {
-      const inner = reachOf(v.items, owner);
+      const inner = reachOf(v.items, owner, identities);
       for (const t of inner.targets) add(t);
       reach.broad ||= inner.broad;
     } else if (v.t === "obj") {
       reach.broad = true;
     } else if (v.t === "str") {
-      if (stringReach(v.text, owner, add)) reach.broad = true;
+      if (stringReach(v.text, owner, add, identities)) reach.broad = true;
     } else {
       const target = resolveReference(v.text, owner);
       if (target.kind === "node") add(target.id);
@@ -570,20 +614,69 @@ function levelOf(actions: Val[], notActions: boolean): EdgeAccess {
   return level;
 }
 
+/** Whether an action may change who can use what in IAM: `*`, or an `iam:` action (the service may be a pattern) that is admin by its name. */
+function changesIam(action: string): boolean {
+  if (action === "*") return true;
+  const [service = "", name = ""] = action.split(":");
+  return globMatches(service, "iam") && actionLevel({ t: "str", text: `iam:${name}`, interpolated: false, refs: [] }) === "admin";
+}
+
+/** Whether `pattern`, with `*` and `?`, matches `text`. */
+function globMatches(pattern: string, text: string): boolean {
+  let p = 0;
+  let t = 0;
+  let star = -1;
+  let mark = 0;
+  while (t < text.length) {
+    if (p < pattern.length && (pattern[p] === "?" || pattern[p] === text[t])) {
+      p++;
+      t++;
+    } else if (p < pattern.length && pattern[p] === "*") {
+      star = p++;
+      mark = t;
+    } else if (star !== -1) {
+      p = star + 1;
+      t = ++mark;
+    } else return false;
+  }
+  while (pattern[p] === "*") p++;
+  return p === pattern.length;
+}
+
+/**
+ * What a grant over more than the picture draws (`*`, a wildcard ARN, a variable) gives the identity that
+ * holds it over itself: `admin` when an action in it changes IAM, `unscoped` when an action cannot be read
+ * (or is a NotAction), null when no action could. Whatever it cannot bound may include the holder, as an own-ARN grant does.
+ */
+function selfLevelOfBroad(actions: Val[], notActions: boolean): "admin" | "unscoped" | null {
+  if (notActions || actions.length === 0) return "unscoped";
+  let level: "admin" | null = null;
+  for (const a of actions) {
+    if (actionLevel(a) === null) return "unscoped";
+    if (a.t === "str" && changesIam(a.text.toLowerCase())) level = "admin";
+  }
+  return level;
+}
+
 function edgesOfStatements(
   source: string,
   statements: Statement[] | null,
   owner: (address: string) => string | undefined,
+  identities: Identities,
 ): IamEdge[] {
   if (statements === null) return [{ source, target: ANY_RESOURCE_ID, access: "unscoped" }];
   const out: IamEdge[] = [];
   for (const st of statements) {
     if (st.actions.length === 0 || st.resources.length === 0) continue;
-    const reach = st.notResources ? { targets: [], broad: true } : reachOf(st.resources, owner);
+    const reach = st.notResources ? { targets: [], broad: true } : reachOf(st.resources, owner, identities);
     const level = levelOf(st.actions, st.notActions);
     const conditional = st.conditional ? ({ conditional: true } as const) : {};
-    for (const target of reach.targets) if (target !== source) out.push({ source, target, access: level, ...conditional });
-    if (reach.broad) out.push({ source, target: ANY_RESOURCE_ID, access: "unscoped", ...conditional });
+    for (const target of reach.targets) out.push({ source, target, access: level, ...conditional });
+    if (reach.broad) {
+      out.push({ source, target: ANY_RESOURCE_ID, access: "unscoped", ...conditional });
+      const own = selfLevelOfBroad(st.actions, st.notActions);
+      if (own) out.push({ source, target: source, access: own, ...conditional });
+    }
   }
   return out;
 }
@@ -596,6 +689,18 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
   for (const b of blocks) {
     if (b.type === "resource" && b.labels[0] === "aws_iam_policy") policies.set(`aws_iam_policy.${b.labels[1]}`, b);
     if (b.type === "data" && b.labels[0] === "aws_iam_policy_document") documents.set(`${b.labels[0]}.${b.labels[1]}`, b);
+  }
+
+  // The drawn roles and users a literal ARN may name.
+  const identities: Identities = { named: new Map(), unsure: new Set() };
+  for (const b of blocks) {
+    const [type, label] = b.labels;
+    const kind = type === "aws_iam_role" ? "role" : type === "aws_iam_user" ? "user" : undefined;
+    const id = b.type === "resource" && kind && label ? owner(`${type}.${label}`) : undefined;
+    if (!kind || !id) continue;
+    const name = stringValue(attributeOf(b, "name"));
+    if (name === undefined || /[$%{}\\]/.test(name)) identities.unsure.add(kind);
+    else identities.named.set(`${kind}/${name.toLowerCase()}`, [...(identities.named.get(`${kind}/${name.toLowerCase()}`) ?? []), id]);
   }
 
   const principalsOf = (expr: string | undefined): string[] => {
@@ -647,7 +752,7 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
   /** The grant of one policy expression. `holders` are the blocks that are consumed once it has drawn an edge. */
   const grant = (source: string, expr: string | undefined, holders: HclBlock[]): number => {
     const via: HclBlock[] = [];
-    const edges = guarded(source, () => edgesOfStatements(source, statementsOf(expr, via), owner));
+    const edges = guarded(source, () => edgesOfStatements(source, statementsOf(expr, via), owner, identities));
     out.edges.push(...edges);
     if (edges.length > 0) for (const b of [...holders, ...via]) out.consumed.add(b);
     return edges.length;
@@ -686,6 +791,8 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     for (const [service, access, conditional] of grants) {
       const flag = conditional ? ({ conditional: true } as const) : {};
       out.push({ source, target: ANY_RESOURCE_ID, access, ...flag });
+      // A policy that changes IAM may change the role it is attached to, however many roles are drawn.
+      if (access === "admin" && (service === "iam" || (service === "*" && !MANAGED_WITHOUT_IAM_WRITE.has(arn)))) out.push({ source, target: source, access, ...flag });
       const targets = service === "*" ? [] : drawnOf(service);
       if (targets.length > 0 && targets.length <= MAX_MANAGED_TARGETS && drawn + targets.length <= MAX_MANAGED_EDGES) {
         for (const target of targets) out.push({ source, target, access, ...flag });
@@ -845,7 +952,7 @@ function readAzure(blocks: HclBlock[], owner: (address: string) => string | unde
       const roleName = stringValue(attributeOf(b, "role_definition_name"));
       const level: EdgeAccess = (roleName === undefined ? null : azureRoleLevel(roleName)) ?? "unscoped";
       const target = azureScopeTarget(attributeOf(b, "scope") ?? "", owner);
-      edge = target === undefined ? unscoped : target === source ? null : { source, target, access: level };
+      edge = target === undefined ? unscoped : { source, target, access: level };
     } catch {
       edge = unscoped;
     }
@@ -965,7 +1072,8 @@ const GCP_NOT_A_TARGET = new Set([
 const GCP_ADMIN_ROLES = new Set(["roles/editor", "roles/cloudbuild.builds.editor"]);
 
 /** The roles that let a principal act as a service account. */
-const GCP_IMPERSONATION_ROLES = new Set(["roles/iam.serviceAccountUser", "roles/iam.serviceAccountTokenCreator"]);
+const GCP_TOKEN_CREATOR = "roles/iam.serviceAccountTokenCreator";
+const GCP_IMPERSONATION_ROLES = new Set(["roles/iam.serviceAccountUser", GCP_TOKEN_CREATOR]);
 
 type GcpLevel = "read" | "write" | "admin" | "unscoped" | "impersonate";
 
@@ -1197,8 +1305,15 @@ function readGcp(blocks: HclBlock[], owner: (address: string) => string | undefi
       const reached = reach ?? reachOfTarget(targetBlock, service);
       for (const source of sources) {
         for (const id of reached.ids) {
-          if (id === source.id) continue;
-          edge(source.id, id, accessOf(source, service === "service_account"), g.conditional);
+          const onServiceAccount = service === "service_account";
+          if (id !== source.id || level !== "impersonate") {
+            edge(source.id, id, accessOf(source, onServiceAccount), g.conditional);
+          } else if (!onServiceAccount) {
+            edge(source.id, id, "unscoped", g.conditional);
+          } else if (g.role?.t === "str" && g.role.text === GCP_TOKEN_CREATOR) {
+            // An account that may mint tokens for itself can sign as itself, whatever its own roles are: an escalation path, so `admin`. Acting as itself (`serviceAccountUser`) adds nothing.
+            edge(source.id, id, "admin", g.conditional);
+          }
         }
         // A target that cannot be pinned down is unscoped, whatever the role says; one that is not drawn is anything, at the role's level.
         if (reached.broad) edge(source.id, ANY_RESOURCE_ID, "unscoped", g.conditional);
@@ -1393,7 +1508,7 @@ function readGcp(blocks: HclBlock[], owner: (address: string) => string | undefi
  * (`aws_s3_bucket.data`, `module.api`) to the id of the node that block belongs to.
  */
 export function readIam(blocks: HclBlock[], owner: (address: string) => string | undefined): IamReading {
-  const reading: IamReading = { edges: [], consumed: new Set(), principals: new Map() };
+  const reading: IamReading = { edges: [], consumed: new Set(), principals: new Map(), self: [] };
   // Whatever cloud the file is mostly on, every cloud's grants in it are read: each is typed by its own resource types, and one that no reader read would be a grant the picture understates.
   readAws(blocks, owner, reading);
   readAzure(blocks, owner, reading);
@@ -1406,7 +1521,10 @@ export function readIam(blocks: HclBlock[], owner: (address: string) => string |
     const existing = merged.get(key);
     merged.set(key, existing ? { source: edge.source, target: edge.target, ...mergeAccess(existing, edge) } : edge);
   }
-  reading.edges = [...merged.values()];
+  // A grant on oneself is not an edge: it is kept apart, and only where it is an escalation path (`admin`, or `unscoped` when the reader cannot tell).
+  const all = [...merged.values()];
+  reading.edges = all.filter((e) => e.source !== e.target);
+  reading.self = all.filter((e) => e.source === e.target && (e.access === "admin" || e.access === "unscoped"));
   return reading;
 }
 

@@ -1,7 +1,7 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { type EdgeAccess, edgeAccessLabel, type ModelEdge, type ModelNode } from "terragram-engine/model";
+import { type EdgeAccess, edgeAccessLabel, type ModelEdge, type ModelNode, selfAccessPhrase } from "terragram-engine/model";
 
 import type { ModelDiff } from "./model-diff.ts";
 
@@ -80,7 +80,8 @@ function draw(nodes: DrawNode[], edges: DrawEdge[]): string {
   const ids = new Map(nodes.map((n, i) => [n.node.id, `n${i}`]));
   const lines = ["flowchart LR"];
   for (const { node } of nodes) {
-    lines.push(`  ${ids.get(node.id)}["${mermaidText(node.label || node.id)}<br/>${mermaidText(node.kind)}"]`);
+    const self = selfAccessPhrase(node);
+    lines.push(`  ${ids.get(node.id)}["${mermaidText(node.label || node.id)}<br/>${mermaidText(node.kind)}${self ? `<br/>${self}` : ""}"]`);
   }
   const styled: Record<Exclude<State, "same">, number[]> = { added: [], removed: [], changed: [] };
   edges.forEach((edge, index) => {

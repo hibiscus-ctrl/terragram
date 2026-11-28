@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { layoutPositions, NODE_HEIGHT, NODE_WIDTH } from "./layout.ts";
-import { CATEGORY_META, EDGE_ACCESS_META, type EdgeAccess, type InfraModel, edgeAccessLabel } from "./model.ts";
+import { CATEGORY_META, EDGE_ACCESS_META, type EdgeAccess, type InfraModel, type ModelNode, edgeAccessLabel, selfAccessLabel } from "./model.ts";
 
 /**
  * Render the laid-out model to a standalone SVG string — a real, dependency-free
@@ -13,6 +13,14 @@ import { CATEGORY_META, EDGE_ACCESS_META, type EdgeAccess, type InfraModel, edge
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** The line on a card whose node has access to itself: fixed wording, in the colour of an admin edge, so it survives greyscale as text. */
+function selfLine(node: ModelNode, x: number, y: number): string {
+  if (!node.selfAccess) return "";
+  const text = `self: ${selfAccessLabel(node)}`;
+  return `
+  <text x="${x + 12}" y="${y + 57}" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="${EDGE_ACCESS_META.admin.color}">${esc(text)}</text>`;
 }
 
 export function modelToSvg(model: InfraModel): string {
@@ -62,7 +70,7 @@ export function modelToSvg(model: InfraModel): string {
   <rect x="${x}" y="${y}" width="${NODE_WIDTH}" height="${NODE_HEIGHT}" rx="9" fill="#ffffff" stroke="${border}" stroke-width="1.5"/>
   <circle cx="${x + 12}" cy="${y + 18}" r="3" fill="${meta.color}"/>
   <text x="${x + 22}" y="${y + 21}" font-family="'JetBrains Mono',monospace" font-size="9" font-weight="600" fill="${meta.color}" letter-spacing="0.5">${esc(meta.label.toUpperCase())}</text>
-  <text x="${x + 12}" y="${y + 44}" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">${esc(n.node.label.slice(0, 22))}</text>
+  <text x="${x + 12}" y="${y + 44}" font-family="'JetBrains Mono',monospace" font-size="12" font-weight="700" fill="#211d16">${esc(n.node.label.slice(0, 22))}</text>${selfLine(n.node, x, y)}
 </g>`;
     })
     .join("");
