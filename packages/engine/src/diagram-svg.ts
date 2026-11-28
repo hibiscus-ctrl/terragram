@@ -1,6 +1,7 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { cleanText } from "./graph/text.ts";
 import { layoutPositions, NODE_HEIGHT, NODE_WIDTH } from "./layout.ts";
 import { CATEGORY_META, EDGE_ACCESS_META, type EdgeAccess, type InfraModel, type ModelNode, edgeAccessLabel, selfAccessLabel } from "./model.ts";
 
@@ -12,7 +13,7 @@ import { CATEGORY_META, EDGE_ACCESS_META, type EdgeAccess, type InfraModel, type
  */
 
 function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return cleanText(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /** The line on a card whose node has access to itself: fixed wording, in the colour of an admin edge, so it survives greyscale as text. */
