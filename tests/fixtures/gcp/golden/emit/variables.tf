@@ -31,14 +31,24 @@ variable "kubernetes_master_cidr" {
 
 variable "labels" {
   type        = map(string)
-  description = "Labels added to every resource — owner and cost_centre are what a reviewer asks for first. Merged over the plan's own labels, so a key set here wins. Keys and values are lowercase letters, digits, hyphens and underscores."
+  description = "Labels added to every resource — owner and cost_centre are what a reviewer asks for first. Merged over the plan's own labels, so a key set here wins. Keys start with a lowercase letter; keys and values are lowercase letters, digits, hyphens and underscores, at most 63 characters each."
   default     = {}
+
+  validation {
+    condition     = alltrue([for k, v in var.labels : can(regex("^[a-z][a-z0-9_-]{0,62}$", k)) && can(regex("^[a-z0-9_-]{0,63}$", v))])
+    error_message = "Label keys start with a lowercase letter; keys and values hold only lowercase letters, digits, hyphens and underscores, and are at most 63 characters (a value may be empty)."
+  }
 }
 
 variable "name_prefix" {
   type        = string
-  description = "Short prefix applied to every resource name."
+  description = "Short prefix applied to every resource name: 1 to 20 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen."
   default     = "infra-prod"
+
+  validation {
+    condition     = can(regex("^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$", var.name_prefix))
+    error_message = "Use 1 to 20 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen."
+  }
 }
 
 variable "org_id" {

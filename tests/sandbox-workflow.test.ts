@@ -80,4 +80,31 @@ describe("sandbox-google workflow", () => {
     const settings = cliConfig.split("\n").filter((line) => line.trim() !== "" && !line.trim().startsWith("#"));
     assert.deepEqual(settings, ["disable_checkpoint = true"]);
   });
+
+  it("runs the job that gets a token only from main, and stops a run from any other branch with an error", () => {
+    // A dispatch can pick any branch, and the branch's own scripts/sandbox-gcp.sh would run with the cloud token.
+    const names = [...workflow.matchAll(/^ {2}([a-z][\w-]*):$/gm)].map((m) => m[1] as string).filter((name) => name !== "workflow_dispatch");
+    const jobs = names.filter((name) => workflow.includes(`\n  ${name}:\n    name:`));
+    assert.ok(jobs.length >= 2, "the jobs were found");
+    let guarded = 0;
+    for (const name of jobs) {
+      const text = job(name);
+      if (!/^ {4}environment:|^ {6}id-token:/m.test(text)) continue;
+      guarded++;
+      assert.match(text, /^ {4}if: github\.ref == 'refs\/heads\/main'$/m, `${name} runs only from main`);
+    }
+    assert.ok(guarded >= 1, "a job with a token was found");
+
+    // The job that has no token runs first and says why nothing runs, instead of the others being skipped without a word.
+    const plans = job("plans");
+    const from = plans.indexOf("\n      - ") + 1;
+    const to = plans.indexOf("\n      - ", from + 1);
+    const step = plans.slice(from, to);
+    assert.match(step, /^ {6}- name: .*main/);
+    assert.match(step, /if: github\.ref != 'refs\/heads\/main'/);
+    assert.match(step, /::error::/);
+    assert.match(step, /exit 1/);
+    assert.doesNotMatch(step, /run:.*\$\{\{/s, "the ref reaches the shell through the environment, not the script text");
+    assert.match(step, /REF: \$\{\{ github\.ref \}\}/);
+  });
 });

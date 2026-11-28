@@ -196,13 +196,13 @@ resource "google_compute_global_address" "load_balancer" {
 }
 
 resource "google_service_account" "entra_id" {
-  account_id   = trim(substr("sa-${var.name_prefix}-entra-id", 0, 30), "-")
+  account_id   = length("sa-${var.name_prefix}-entra-id") <= 30 ? "sa-${var.name_prefix}-entra-id" : "${trim(substr("sa-${var.name_prefix}-entra-id", 0, 23), "-")}-${substr(sha256("sa-${var.name_prefix}-entra-id"), 0, 6)}"
   display_name = "Identity for entra-id"
   depends_on   = [google_project_service.enabled]
 }
 
 resource "google_service_account" "entra_id_2" {
-  account_id   = trim(substr("sa-${var.name_prefix}-entra-id-2", 0, 30), "-")
+  account_id   = length("sa-${var.name_prefix}-entra-id-2") <= 30 ? "sa-${var.name_prefix}-entra-id-2" : "${trim(substr("sa-${var.name_prefix}-entra-id-2", 0, 23), "-")}-${substr(sha256("sa-${var.name_prefix}-entra-id-2"), 0, 6)}"
   display_name = "Identity for entra-id-2"
   depends_on   = [google_project_service.enabled]
 }
@@ -274,7 +274,7 @@ resource "google_cloud_run_v2_service" "containers" {
 }
 
 resource "google_service_account" "containers" {
-  account_id   = trim(substr("sa-${var.name_prefix}-containers", 0, 30), "-")
+  account_id   = length("sa-${var.name_prefix}-containers") <= 30 ? "sa-${var.name_prefix}-containers" : "${trim(substr("sa-${var.name_prefix}-containers", 0, 23), "-")}-${substr(sha256("sa-${var.name_prefix}-containers"), 0, 6)}"
   display_name = "Runs the containers service"
   depends_on   = [google_project_service.enabled]
 }
@@ -316,7 +316,7 @@ resource "google_cloudfunctions2_function" "functions" {
 }
 
 resource "google_service_account" "functions" {
-  account_id   = trim(substr("sa-${var.name_prefix}-functions", 0, 30), "-")
+  account_id   = length("sa-${var.name_prefix}-functions") <= 30 ? "sa-${var.name_prefix}-functions" : "${trim(substr("sa-${var.name_prefix}-functions", 0, 23), "-")}-${substr(sha256("sa-${var.name_prefix}-functions"), 0, 6)}"
   display_name = "Runs the functions function"
   depends_on   = [google_project_service.enabled]
 }
@@ -497,7 +497,7 @@ resource "google_container_node_pool" "kubernetes_nodes" {
 }
 
 resource "google_service_account" "kubernetes_nodes" {
-  account_id   = trim(substr("sa-${var.name_prefix}-kubernetes-nodes", 0, 30), "-")
+  account_id   = length("sa-${var.name_prefix}-kubernetes-nodes") <= 30 ? "sa-${var.name_prefix}-kubernetes-nodes" : "${trim(substr("sa-${var.name_prefix}-kubernetes-nodes", 0, 23), "-")}-${substr(sha256("sa-${var.name_prefix}-kubernetes-nodes"), 0, 6)}"
   display_name = "Runs the kubernetes cluster's nodes"
   depends_on   = [google_project_service.enabled]
 }
@@ -563,7 +563,7 @@ resource "google_compute_instance" "virtual_machine" {
 }
 
 resource "google_service_account" "virtual_machine" {
-  account_id   = trim(substr("sa-${var.name_prefix}-virtual-machine", 0, 30), "-")
+  account_id   = length("sa-${var.name_prefix}-virtual-machine") <= 30 ? "sa-${var.name_prefix}-virtual-machine" : "${trim(substr("sa-${var.name_prefix}-virtual-machine", 0, 23), "-")}-${substr(sha256("sa-${var.name_prefix}-virtual-machine"), 0, 6)}"
   display_name = "Runs the virtual-machine instance"
   depends_on   = [google_project_service.enabled]
 }
@@ -693,7 +693,7 @@ resource "google_sql_database_instance" "postgres" {
 }
 
 resource "google_service_account" "postgres_app" {
-  account_id   = trim(substr("sa-${var.name_prefix}-postgres-app", 0, 30), "-")
+  account_id   = length("sa-${var.name_prefix}-postgres-app") <= 30 ? "sa-${var.name_prefix}-postgres-app" : "${trim(substr("sa-${var.name_prefix}-postgres-app", 0, 23), "-")}-${substr(sha256("sa-${var.name_prefix}-postgres-app"), 0, 6)}"
   display_name = "Connects to the postgres database with IAM authentication"
   depends_on   = [google_project_service.enabled]
 }

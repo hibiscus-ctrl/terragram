@@ -21,6 +21,7 @@ import {
   GCP_BETA_REF,
   GCP_EDGE_PREFIX,
   GCP_LABELS,
+  GCP_ROLES,
   type GcpBackend,
   type GcpPlan,
   gcpBackend,
@@ -447,7 +448,7 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
       block("data", ["google_storage_project_service_account", originName], []),
       block("resource", ["google_kms_crypto_key_iam_member", originName], [
         { key: "crypto_key_id", value: `google_kms_crypto_key.${target.name}.id` },
-        { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+        { key: "role", value: quote(GCP_ROLES.keyUser) },
         { key: "member", value: `"serviceAccount:\${${agent}}"` },
       ]),
     ];
@@ -625,7 +626,7 @@ function encryptUnderKeyStore(emitted: readonly Emitted[], wired: readonly HclBl
     const email = service === "storage" ? `${KEY_AGENTS[service]}.${name}.email_address` : `${KEY_AGENTS[service]}.${name}.email`;
     const grant = block("resource", ["google_kms_crypto_key_iam_member", name], [
       { key: "crypto_key_id", value: key },
-      { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+      { key: "role", value: quote(GCP_ROLES.keyUser) },
       { key: "member", value: `"serviceAccount:\${${email}}"` },
     ]);
     added.push(agent, grant);

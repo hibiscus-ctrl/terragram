@@ -7,6 +7,9 @@ name: Sandbox (Google Cloud)
 # provider and the service account, and the provider accepts the token of that environment's job,
 # from this workflow file on main, started by hand, and no other. No key is created or stored.
 #
+# It runs only from main (a dispatch from another branch fails in the first job and never reaches an approval),
+# because the scripts it runs with a token are the checked-out branch's own.
+#
 # Two jobs, so no package of this repository's dependency tree runs where a token can be had. "plans"
 # installs the dependencies (without their install scripts) and generates the plans, and has no
 # id-token permission and no environment. "round-trip" has both: it installs nothing, and runs only
@@ -17,8 +20,10 @@ name: Sandbox (Google Cloud)
 # Terraform and the generator's placeholders), and Terraform then installs only the providers of the
 # committed lock files (scripts/sandbox-gcp-locks/, init with -lockfile=readonly, no plugin
 # cache, the CLI configuration scripts/sandbox-gcp.tfrc). Both jobs' summaries give the plans' digest.
-# Before it applies anything it checks that no service account of the project holds Editor or Owner
-# (a plan may attach any service account of the project to what it creates), and stops if one does.
+# Before it applies anything it checks that no service account of the project holds Editor, Owner or a role that
+# can act as, mint credentials for or widen the access of others (Service Account Token Creator, Service Account
+# User beyond the signed-in account, Project IAM Admin, Security Admin, Role Admin, Service Account Key Admin;
+# a plan may attach any service account of the project to what it creates), and stops if one does.
 #
 # The plans are the generator's own, with the changes a shared project needs (scripts/lib/sandbox-gcp.ts
 # lists them, and the run's summary says which): no App Engine application (one per project, for good),
@@ -59,6 +64,17 @@ jobs:
       contents: read
     timeout-minutes: 15
     steps:
+      # A dispatch can pick any branch, and a branch's own scripts/sandbox-gcp.sh would run with the cloud token
+      # after the reviewers approve. Only main may. This job has no token, so it says so, loudly, and the
+      # round-trip job (which has its own `if`) never starts.
+      - name: Refuse a run that is not from main
+        if: github.ref != 'refs/heads/main'
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          echo "::error::The sandbox runs only from main, not from $REF: a branch's scripts would run with the cloud token. Start the workflow from main."
+          exit 1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -97,6 +113,8 @@ jobs:
   round-trip:
     name: round-trip (${{ inputs.plan }})
     needs: plans
+    # Only from main: the scripts it runs with a token are the branch's own. The `plans` job fails a run from any other branch first.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: sandbox
     permissions:
@@ -144,9 +162,9 @@ jobs:
           export_environment_variables: false
 
       # Before anything is changed: a plan may attach any service account of the project to what it
-      # creates, so none may hold Editor or Owner. Every step that changes the project needs this to have
+      # creates, so none may hold Editor, Owner or a role that mints or widens access. Every step that changes the project needs this to have
       # passed, always() steps included.
-      - name: No service account holds Editor or Owner
+      - name: No service account can mint or widen access
         id: preflight
         timeout-minutes: 5
         env:
