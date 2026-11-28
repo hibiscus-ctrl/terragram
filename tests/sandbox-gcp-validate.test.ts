@@ -12,8 +12,8 @@ import { assembleModel } from "terragram-engine/engine";
 import { GCP_IMAGES, GCP_LOG_DELIVERY_MEMBER, GCP_ROLES } from "terragram-engine/kinds";
 import { emitTerraform } from "terragram-engine/terraform";
 import { GCP_PLANS } from "../scripts/emit-plans.ts";
-import { adaptForSandbox } from "../scripts/lib/sandbox-gcp.ts";
-import { ALLOWED_DATA, ALLOWED_IMAGES, ALLOWED_PROVIDERS, ALLOWED_RESOURCES, ALLOWED_ROLES, DENIED_DATA, LOG_DELIVERY_MEMBER, PINNED_SOURCES, PLAN_IDS, PlanRejected, validatePlans, validateSource } from "../scripts/sandbox-gcp-validate.mjs";
+import { adaptForSandbox, dropBlock } from "../scripts/lib/sandbox-gcp.ts";
+import { ALLOWED_DATA, ALLOWED_IMAGES, ALLOWED_PROVIDERS, ALLOWED_RESOURCES, ALLOWED_ROLES, DATA_SHAPES, DENIED_DATA, LOG_DELIVERY_MEMBER, PINNED_SOURCES, PLAN_IDS, PlanRejected, SHAPES, validatePlans, validateSource } from "../scripts/sandbox-gcp-validate.mjs";
 
 
 /**
@@ -47,10 +47,10 @@ const write = (root: string, rel: string, content: string) => {
   mkdirSync(dirname(join(root, rel)), { recursive: true });
   writeFileSync(join(root, rel), content);
 };
-/** Appends a block to a plan's main.tf and expects the plans to be refused for `why`. */
-const refusesAppended = (block: string, why: RegExp) => {
+/** Appends a block to a plan's main.tf (the site's, unless another file is named) and expects the plans to be refused for `why`. */
+const refusesAppended = (block: string, why: RegExp, file = "gcp-site/main.tf") => {
   const root = plans();
-  write(root, "gcp-site/main.tf", `${read(root, "gcp-site/main.tf")}\n${block}\n`);
+  write(root, file, `${read(root, file)}\n${block}\n`);
   assert.throws(() => validatePlans(root), (e) => e instanceof PlanRejected && why.test(e.message), block);
 };
 const refusesWhole = (mutate: (root: string) => void, why: RegExp) => {
@@ -162,7 +162,7 @@ describe("the sandbox's check of the plans", () => {
     for (const type of exposing) {
       refusesAppended(`data "${type}" "x" {\n}`, /hands out a token/);
       refusesAppended(`locals {\n  t = data.${type}.x.access_token\n}`, /hands out a token/);
-      refusesAppended(`resource "google_storage_bucket_object" "x" {\n  name    = "x"\n  bucket  = "b"\n  content = data.${type}.x.access_token\n}`, /bucket object may set only/);
+      refusesAppended(`resource "google_storage_bucket_object" "x" {\n  name    = "x"\n  bucket  = "b"\n  content = data.${type}.x.access_token\n}`, /hands out a token/);
       ALLOWED_DATA.add(type);
       try {
         refusesAppended(`data "${type}" "x" {\n}`, /hands out a token/);
@@ -177,17 +177,17 @@ describe("the sandbox's check of the plans", () => {
   });
 
   it("refuses an attribute that reads a local path, and a bucket object that is not its archive", () => {
-    const object = (attrs: string) => `resource "google_storage_bucket_object" "x" {\n  name   = "x"\n  bucket = "b"\n${attrs}\n}`;
+    const object = (attrs: string) => `resource "google_storage_bucket_object" "x" {\n  name   = "x"\n  bucket = google_storage_bucket.object_storage.name\n${attrs}\n}`;
     refusesAppended(object('  source = "/etc/passwd"'), /source may only be the output_path/);
-    refusesAppended(object('  source = "${path.module}/src/x"'), /source may only be the output_path/);
+    refusesAppended(object('  source = "${path.module}/src/x"'), /source may only be the output_path|a reference to path/);
     refusesAppended(object("  source = data.archive_file.not_declared.output_path"), /source may only be the output_path/);
     refusesAppended(object("  source = data.archive_file.functions.output_base64sha256"), /source may only be the output_path/);
     refusesAppended(object("  source = data.google_project.x.number"), /source may only be the output_path|data google_project/);
-    refusesAppended(object('  source_file = "/etc/passwd"'), /bucket object may set only/);
-    refusesAppended(object('  content = "inline"'), /bucket object may set only/);
-    refusesAppended(object("  content = data.google_project.x.number"), /bucket object may set only/);
-    refusesAppended(object("  content = jsonencode(data.google_storage_project_service_account.x)"), /bucket object may set only/);
-    refusesAppended(object("  retention {\n  }"), /bucket object may set only/);
+    refusesAppended(object('  source_file = "/etc/passwd"'), /the attribute source_file/);
+    refusesAppended(object('  content = "inline"'), /content is not an attribute of a google_storage_bucket_object/);
+    refusesAppended(object("  content = data.google_project.x.number"), /content is not an attribute of a google_storage_bucket_object/);
+    refusesAppended(object("  content = jsonencode(data.google_storage_project_service_account.x)"), /content is not an attribute of a google_storage_bucket_object/);
+    refusesAppended(object("  retention {\n  }"), /the block retention is not one of a google_storage_bucket_object/);
     refusesAppended('resource "google_storage_bucket" "x" {\n  name   = "x"\n  source = "/etc/passwd"\n}', /the attribute source/);
     refusesAppended('resource "google_storage_bucket" "x" {\n  name = "x"\n  inner {\n    source_dir = "/"\n  }\n}', /the attribute source_dir/);
     refusesAppended('resource "google_compute_instance" "x" {\n  credentials = "x"\n}', /the attribute credentials/);
@@ -195,7 +195,9 @@ describe("the sandbox's check of the plans", () => {
     refusesAppended('output "x" {\n  value = path["cwd"]\n}', /reference to path/);
     refusesAppended('output "x" {\n  value = "${path.root}"\n}', /reference to path/);
     // What the generator writes is its archive, and its own placeholder.
-    validateSource(object("  source = data.archive_file.functions.output_path").replace('resource', 'data "archive_file" "functions" {\n  type        = "zip"\n  source_dir  = "${path.module}/src/functions"\n  output_path = "${path.module}/.terraform/functions.zip"\n}\n\nresource'), "x.tf");
+    const archive = 'data "archive_file" "functions" {\n  type        = "zip"\n  source_dir  = "${path.module}/src/functions"\n  output_path = "${path.module}/.terraform/functions.zip"\n}\n';
+    const bucket = 'resource "google_storage_bucket" "object_storage" {\n  name                        = "x"\n  uniform_bucket_level_access = true\n  public_access_prevention    = "enforced"\n}\n';
+    validateSource(`${archive}\n${bucket}\n${object("  source = data.archive_file.functions.output_path")}\n`, "x.tf");
   });
 
   it("refuses a function that reads the disk wherever the name is, whatever follows it", () => {
@@ -362,7 +364,7 @@ describe("the sandbox's check of the plans", () => {
   it("is not fooled by text that looks like structure", () => {
     // Braces, comment markers and quotes inside strings and comments do not move the blocks.
     const decoys = 'locals {\n  a = "} # {"\n  b = "// }"\n  c = "\\" } \\""\n}\n';
-    validateSource(`${decoys}resource "google_storage_bucket" "x" {\n  name = "${"${var.name_prefix}"}-x" # } provisioner\n  /* provisioner "local-exec" { */\n}\n`, "x.tf");
+    validateSource(`${decoys}resource "google_storage_bucket" "x" {\n  name = "${"${var.name_prefix}"}-x" # } provisioner\n  uniform_bucket_level_access = true\n  public_access_prevention = "enforced"\n  /* provisioner "local-exec" { */\n}\n`, "x.tf");
     refusesSource(`${decoys}resource "terraform_data" "x" {\n}\n`, /not a resource type the generator writes/);
     refusesSource(`${decoys}module "x" {\n}\n`, /module block/);
     refusesSource('locals {\n  a = "}"\n}\nterraform {\n  backend "s3" {\n  }\n}\n', /not backend/);
@@ -450,7 +452,7 @@ describe("the sandbox's check of what the plans grant and run", () => {
   it("allows allUsers only as roles/run.invoker on a Cloud Run service, where the load balancer needs it", () => {
     tamper("gcp-serverless/main.tf", /role\s+= "roles\/run\.invoker"\n\s+member\s+= "allUsers"/, 'role     = "roles/run.invoker"\n  member   = "allAuthenticatedUsers"', /member "allAuthenticatedUsers"/);
     refusesAppended('resource "google_storage_bucket_iam_member" "x" {\n  bucket = google_storage_bucket.object_storage.name\n  role   = "roles/storage.objectViewer"\n  member = "allUsers"\n}', /member "allUsers"/);
-    refusesAppended('resource "google_cloud_run_v2_service_iam_member" "x" {\n  name     = google_cloud_run_v2_service.containers.name\n  location = var.region\n  role     = "roles/run.invoker"\n  member   = "user:attacker@example.com"\n}', /member "user:attacker@example\.com"/);
+    refusesAppended('resource "google_cloud_run_v2_service_iam_member" "x" {\n  name     = google_cloud_run_v2_service.containers.name\n  location = google_cloud_run_v2_service.containers.location\n  role     = "roles/run.invoker"\n  member   = "user:attacker@example.com"\n}', /member "user:attacker@example\.com"/, "gcp-serverless/main.tf");
     refusesAppended('resource "google_cloud_run_v2_service_iam_member" "x" {\n  name     = "any-service"\n  location = var.region\n  role     = "roles/run.invoker"\n  member   = "allUsers"\n}', /name .* a reference/);
     refusesAppended('resource "google_project_iam_member" "x" {\n  project = "another-project"\n  role    = "roles/logging.logWriter"\n  member  = "serviceAccount:${google_service_account.virtual_machine.email}"\n}', /project/);
   });
@@ -487,6 +489,7 @@ describe("the sandbox's check of what the plans grant and run", () => {
     tamper("gcp-platform/main.tf", /scopes = \["cloud-platform"\]/, 'scopes = ["cloud-platform", "https://www.googleapis.com/auth/devstorage.full_control"]', /scopes/);
     refusesAppended('resource "google_cloudfunctions2_function" "x" {\n  service_config {\n    environment_variables = { LD_PRELOAD = "x" }\n  }\n}', /environment variable LD_PRELOAD/);
     refusesAppended('resource "google_cloudfunctions2_function" "x" {\n  service_config {\n    environment_variables = { LOG_BUCKET = "attacker" }\n  }\n}', /a reference/);
+    refusesAppended('resource "google_cloudfunctions2_function" "x" {\n  service_config {\n    environment_variables = { REDIS_HOST = google_redis_instance.redis_cache.auth_string }\n  }\n}', /must not read an attribute that holds a secret/, "gcp-data/main.tf");
     refusesAppended('resource "google_cloudfunctions2_function" "x" {\n  service_config {\n    secret_environment_variables {\n    }\n  }\n}', /secret_environment_variables/);
   });
 
@@ -497,7 +500,7 @@ describe("the sandbox's check of what the plans grant and run", () => {
 
   it("still passes the four plans, and a Cloud Function that gets its environment from the plan's own resources", () => {
     validatePlans(plans());
-    acceptsAppended('resource "google_cloudfunctions2_function" "fn" {\n  service_config {\n    environment_variables = { PUBSUB_TOPIC = google_pubsub_topic.queue.id }\n  }\n}');
+    acceptsAppended('resource "google_cloudfunctions2_function" "fn" {\n  service_config {\n    ingress_settings = "ALLOW_INTERNAL_AND_GCLB"\n    service_account_email = google_service_account.functions.email\n    environment_variables = { PUBSUB_TOPIC = google_pubsub_topic.queue.id }\n  }\n}');
   });
 });
 
@@ -507,3 +510,250 @@ function acceptsAppended(block: string): void {
   write(root, "gcp-serverless/main.tf", `${read(root, "gcp-serverless/main.tf")}\n${block}\n`);
   validatePlans(root);
 }
+
+/**
+ * Default deny. Every type the check allows has a shape listing exactly the attributes and blocks the generator writes (a type with
+ * none is refused, and so is anything a shape does not list, at any depth), a grant targets only a resource of the right type that
+ * the plan declares, what a provider would widen by default has to be written, and a value that comes from a variable is held to
+ * the same allowlist as one written out.
+ */
+describe("the sandbox's check, by shape", () => {
+  type Shape = { attrs?: Record<string, unknown>; blocks?: Record<string, Shape>; required?: string[] };
+  const tamper = (file: string, from: string | RegExp, to: string, why: RegExp) => {
+    const root = plans();
+    const before = read(root, file);
+    const changed = before.replace(from, to);
+    assert.notEqual(changed, before, `${file} has ${from}`);
+    write(root, file, changed);
+    assert.throws(() => validatePlans(root), (e) => e instanceof PlanRejected && why.test(e.message), `${from} -> ${to}`);
+  };
+  const accepts = (file: string, from: string | RegExp, to: string) => {
+    const root = plans();
+    const before = read(root, file);
+    const changed = before.replace(from, to);
+    assert.notEqual(changed, before, `${file} has ${from}`);
+    write(root, file, changed);
+    validatePlans(root);
+  };
+  const appended = (file: string, block: string, why: RegExp) => refusesAppended(block, why, file);
+  const IAP = /source_ranges\s+= \["35\.235\.240\.0\/20"\]/;
+  /** What the generator can write, from its source: the types of resources and of data sources. */
+  const generator = ["gcp-kinds.ts", "terraform.ts", "kinds.ts"].map((name) => readFileSync(new URL(`../packages/engine/src/${name}`, import.meta.url), "utf8")).join("\n");
+  const written = (kind: string) => [...new Set([...generator.matchAll(new RegExp(`block\\("${kind}", \\["([a-z0-9_]+)"`, "g"))].map((m) => m[1] as string).filter((type) => type.startsWith("google_") || type === "archive_file"))].sort();
+  /** Blocks of the nested shapes, as paths: ["settings", "ip_configuration"]. */
+  const blockPaths = (shape: Shape, prefix: string[] = []): string[][] => Object.entries(shape.blocks ?? {}).flatMap(([name, nested]) => [[...prefix, name], ...blockPaths(nested, [...prefix, name])]);
+  const nest = (path: readonly string[], inner: string) => path.reduceRight((body, name) => `${name} {\n${body}\n}`, inner);
+
+  it("has a shape for every type it allows, and every type the generator can write is shaped or left out of the sandbox's plans on purpose", () => {
+    assert.deepEqual(Object.keys(SHAPES).sort(), [...ALLOWED_RESOURCES].sort());
+    assert.deepEqual(Object.keys(DATA_SHAPES).sort(), [...ALLOWED_DATA].filter((type) => type !== "archive_file").sort());
+    // The types the sandbox's plans drop (App Engine, the project, an audit config): named, so a new type is a decision and not an oversight.
+    const dropped = new Set(["google_app_engine_application", "google_app_engine_service_network_settings", "google_app_engine_standard_app_version", "google_project", "google_project_iam_audit_config"]);
+    const resources = written("resource");
+    assert.ok(resources.length > 40, `found ${resources.length} types`);
+    for (const type of resources) {
+      if (dropped.has(type)) {
+        assert.ok(!Object.hasOwn(SHAPES, type), `${type} is dropped and has a shape`);
+        refusesAppended(`resource "${type}" "x" {\n}`, /is not a resource type the generator writes/);
+      } else {
+        assert.ok(Object.hasOwn(SHAPES, type), `the generator writes ${type}, which has no shape`);
+      }
+    }
+    for (const type of dropped) assert.ok(resources.includes(type), `${type} is no longer written: remove it from the list`);
+    for (const type of written("data")) assert.ok(type === "archive_file" || Object.hasOwn(DATA_SHAPES, type), `the generator reads ${type}, which has no shape`);
+  });
+
+  it("refuses a type that is allowed but has no shape", () => {
+    ALLOWED_RESOURCES.add("google_zzz_unshaped");
+    try {
+      refusesAppended('resource "google_zzz_unshaped" "x" {\n}', /has no shape/);
+    } finally {
+      ALLOWED_RESOURCES.delete("google_zzz_unshaped");
+    }
+    ALLOWED_DATA.add("google_zzz_unshaped");
+    try {
+      refusesAppended('data "google_zzz_unshaped" "x" {\n}', /has no shape/);
+    } finally {
+      ALLOWED_DATA.delete("google_zzz_unshaped");
+    }
+  });
+
+  it("refuses an allowed type with an attribute or a nested block the generator does not write, at every depth", () => {
+    for (const [type, shape] of Object.entries(SHAPES) as [string, Shape][]) {
+      for (const path of [[], ...blockPaths(shape)]) {
+        refusesSource(`resource "${type}" "probe" {\n${nest(path, '  zzz_unknown = "x"')}\n}\n`, /zzz_unknown is not an attribute of/);
+        refusesSource(`resource "${type}" "probe" {\n${nest(path, '  zzz_block {\n  }')}\n}\n`, /the block zzz_block is not one of/);
+        refusesSource(`resource "${type}" "probe" {\n${nest(path, '  zzz_block "label" {\n  }')}\n}\n`, /the block zzz_block is not one of/);
+      }
+    }
+    for (const [type, shape] of Object.entries(DATA_SHAPES) as [string, Shape][]) {
+      assert.deepEqual(blockPaths(shape), []);
+      refusesSource(`data "${type}" "probe" {\n  zzz_unknown = "x"\n}\n`, /zzz_unknown is not an attribute of/);
+    }
+  });
+
+  it("refuses a dynamic block at any depth, and a name that runs code or lets someone in written as a block or a label", () => {
+    appended("gcp-site/main.tf", 'resource "google_compute_instance" "x" {\n  dynamic "metadata_startup_script" {\n    for_each = [1]\n    content {\n    }\n  }\n}', /a dynamic block/);
+    appended("gcp-site/main.tf", 'resource "google_storage_bucket" "x" {\n  dynamic "versioning" {\n    for_each = [1]\n    content {\n      enabled = true\n    }\n  }\n}', /a dynamic block/);
+    appended("gcp-site/main.tf", 'resource "google_sql_database_instance" "x" {\n  settings {\n    ip_configuration {\n      dynamic "authorized_networks" {\n        for_each = [1]\n        content {\n          value = "0.0.0.0/0"\n        }\n      }\n    }\n  }\n}', /a dynamic block/);
+    appended("gcp-site/main.tf", 'resource "google_storage_bucket" "x" {\n  versioning {\n    dynamic "versioning" {\n    }\n  }\n}', /a dynamic block/);
+    appended("gcp-site/main.tf", 'resource "google_compute_instance" "x" {\n  metadata_startup_script {\n  }\n}', /the block metadata_startup_script, which runs code/);
+    appended("gcp-site/main.tf", 'resource "google_compute_instance" "x" {\n  command {\n  }\n}', /the block command, which runs code/);
+    appended("gcp-site/main.tf", 'resource "google_cloud_run_v2_service" "x" {\n  template {\n    containers {\n      args {\n      }\n    }\n  }\n}', /the block args, which runs code/);
+    appended("gcp-site/main.tf", 'resource "google_compute_instance" "x" {\n  metadata "startup-script" {\n  }\n}', /the block startup-script, which runs code/);
+    appended("gcp-site/main.tf", 'resource "google_sql_database_instance" "x" {\n  settings {\n    ip_configuration {\n      authorized_networks {\n        value = "0.0.0.0/0"\n      }\n    }\n  }\n}', /the block authorized_networks, which runs code/);
+    appended("gcp-site/main.tf", 'resource "google_sql_database_instance" "x" {\n  authorized_networks {\n  }\n}', /the block authorized_networks/);
+    appended("gcp-site/main.tf", 'resource "google_storage_bucket" "x" {\n  role_entity {\n  }\n}', /the block role_entity/);
+  });
+
+  it("refuses a Cloud SQL instance that is not private, in any way of writing it", () => {
+    tamper("gcp-data/main.tf", /ipv4_enabled\s+= false/, "ipv4_enabled = true", /ipv4_enabled must be false/);
+    tamper("gcp-data/main.tf", /ipv4_enabled\s+= false/, "ipv4_enabled = var.public", /ipv4_enabled must be false/);
+    tamper("gcp-data/main.tf", /\n\s+ipv4_enabled\s+= false/, "", /ip_configuration must set ipv4_enabled/);
+    tamper("gcp-data/main.tf", /ip_configuration \{/, 'ip_configuration {\n      authorized_networks = [{ value = "0.0.0.0/0" }]', /authorized_networks/);
+    tamper("gcp-data/main.tf", /\n\s+ip_configuration \{[^}]*\}/, "", /settings must set ip_configuration/);
+    tamper("gcp-data/main.tf", /maintenance_window \{/, "user_labels = {}\n    maintenance_window {", /user_labels is not an attribute/);
+    tamper("gcp-data/main.tf", /(resource "google_sql_database_instance" "[a-z_]+" \{)/, '$1\n  replica_configuration {\n  }', /the block replica_configuration is not one of/);
+    tamper("gcp-data/main.tf", /private_network\s+= var\.network_id/, 'private_network = "projects/another/global/networks/x"', /private_network must be var\.network_id/);
+    tamper("gcp-data/main.tf", /private_network\s+= var\.network_id/, "private_network = var.other", /private_network must be var\.network_id/);
+    tamper("gcp-data/main.tf", /(resource "google_sql_user" "[a-z_]+" \{)/, '$1\n  password = "x"', /password is not an attribute of a google_sql_user/);
+    tamper("gcp-data/main.tf", /type\s+= "CLOUD_IAM_SERVICE_ACCOUNT"/, 'type = "BUILT_IN"', /type must be "CLOUD_IAM_SERVICE_ACCOUNT"/);
+  });
+
+  it("refuses a cluster with inline nodes, or with its control plane open or not private", () => {
+    tamper("gcp-platform/main.tf", /master_auth \{/, 'node_config {\n    metadata = { startup-script = "x" }\n  }\n  master_auth {', /the block node_config is not one of a google_container_cluster/);
+    tamper("gcp-platform/main.tf", /master_auth \{/, "node_pool {\n  }\n  master_auth {", /the block node_pool is not one of a google_container_cluster/);
+    tamper("gcp-platform/main.tf", /\n\s+private_cluster_config \{[^}]*\}/, "", /must set private_cluster_config/);
+    tamper("gcp-platform/main.tf", /\n\s+master_authorized_networks_config \{[\s\S]*?\n {2}\}\n/, "\n", /must set master_authorized_networks_config/);
+    tamper("gcp-platform/main.tf", /\n\s+cidr_blocks \{[\s\S]*?\n {4}\}\n/, "\n", /master_authorized_networks_config must set cidr_blocks/);
+    tamper("gcp-platform/main.tf", /\n\s+cidr_block\s+= var\.gke_authorized_cidr/, "", /cidr_blocks must set cidr_block/);
+    tamper("gcp-platform/main.tf", /gcp_public_cidrs_access_enabled\s+= false/, "gcp_public_cidrs_access_enabled = true", /gcp_public_cidrs_access_enabled must be false/);
+    tamper("gcp-platform/main.tf", /\n\s+gcp_public_cidrs_access_enabled\s+= false/, "", /must set gcp_public_cidrs_access_enabled/);
+    tamper("gcp-platform/main.tf", /enable_private_nodes\s+= true/, "enable_private_nodes = false", /enable_private_nodes must be true/);
+    tamper("gcp-platform/main.tf", /\n\s+enable_private_nodes\s+= true/, "", /must set enable_private_nodes/);
+    tamper("gcp-platform/main.tf", /enable_private_endpoint\s+= false/, "enable_private_endpoint = false\n    public_endpoint = true", /public_endpoint is not an attribute/);
+    tamper("gcp-platform/main.tf", /enable_legacy_abac\s+= false/, "enable_legacy_abac = true", /enable_legacy_abac must be false/);
+  });
+
+  it("refuses a Pub/Sub subscription that pushes", () => {
+    tamper("gcp-data/main.tf", /(resource "google_pubsub_subscription" "[a-z_0-9]+" \{)/, '$1\n  push_config {\n    push_endpoint = "https://evil.example"\n  }', /the block push_config is not one of a google_pubsub_subscription/);
+    tamper("gcp-data/main.tf", /(resource "google_pubsub_subscription" "[a-z_0-9]+" \{)/, '$1\n  bigquery_config {\n  }', /the block bigquery_config is not one of/);
+  });
+
+  it("requires an ingress firewall rule to name the sources the generator writes, and no other selector", () => {
+    tamper("gcp-platform/main.tf", IAP, "", /must set source_ranges/);
+    tamper("gcp-platform/main.tf", IAP, 'source_ranges = ["0.0.0.0/0"]', /source_ranges must be/);
+    tamper("gcp-platform/main.tf", IAP, 'source_ranges = ["35.235.240.0/20", "0.0.0.0/0"]', /source_ranges must be/);
+    tamper("gcp-platform/main.tf", IAP, "source_ranges = []", /source_ranges must be/);
+    tamper("gcp-platform/main.tf", IAP, "source_ranges = var.ranges", /source_ranges must be/);
+    tamper("gcp-platform/main.tf", IAP, 'source_ranges = ["35.235.240.0/20"]\n  source_tags = ["any"]', /source_tags is not an attribute/);
+    tamper("gcp-platform/main.tf", IAP, 'source_ranges = ["35.235.240.0/20"]\n  source_service_accounts = ["x@y"]', /source_service_accounts is not an attribute/);
+    tamper("gcp-platform/main.tf", IAP, 'source_ranges = ["35.235.240.0/20"]\n  target_tags = ["any"]', /target_tags is not an attribute/);
+    tamper("gcp-platform/main.tf", /direction\s+= "INGRESS"/, 'direction = "EGRESS"', /direction must be "INGRESS"/);
+    tamper("gcp-platform/main.tf", /\n\s+direction\s+= "INGRESS"/, "", /must set direction/);
+    tamper("gcp-platform/main.tf", /source_ranges\s+= \[google_compute_subnetwork\.vnet\.ip_cidr_range\]/, "source_ranges = [google_compute_subnetwork.ghost.ip_cidr_range]", /source_ranges must be/);
+    tamper("gcp-platform/main.tf", /source_ranges\s+= \[google_compute_subnetwork\.vnet\.ip_cidr_range\]/, "source_ranges = [google_compute_subnetwork.vnet.id]", /source_ranges must be/);
+    appended("gcp-platform/main.tf", 'resource "google_compute_firewall" "open" {\n  name    = "open"\n  network = google_compute_network.vnet.id\n  allow {\n    protocol = "tcp"\n  }\n}', /must set source_ranges/);
+    appended("gcp-platform/main.tf", 'resource "google_compute_firewall" "tags" {\n  name        = "tags"\n  network     = google_compute_network.vnet.id\n  direction   = "INGRESS"\n  source_tags = ["any"]\n  allow {\n    protocol = "tcp"\n  }\n}', /source_tags is not an attribute|must set source_ranges/);
+  });
+
+  it("lets a grant target only a resource of the right type that the plan declares", () => {
+    tamper("gcp-serverless/main.tf", /name\s+= google_cloud_run_v2_service\.containers\.name/, "name = var.service", /name must be a reference to a google_cloud_run_v2_service/);
+    tamper("gcp-serverless/main.tf", /name\s+= google_cloud_run_v2_service\.containers\.name/, "name = google_cloud_run_v2_service.ghost.name", /name must be a reference to a google_cloud_run_v2_service/);
+    tamper("gcp-serverless/main.tf", /name\s+= google_cloud_run_v2_service\.containers\.name/, "name = google_cloud_run_v2_service.containers.uri", /name must be a reference to a google_cloud_run_v2_service/);
+    tamper("gcp-serverless/main.tf", /name\s+= google_cloud_run_v2_service\.containers\.name/, "name = data.google_project.x.name", /name must be a reference to a google_cloud_run_v2_service/);
+    tamper("gcp-serverless/main.tf", /(google_cloud_run_v2_service_iam_member" "[a-z_]+" \{[^}]*?location\s+= )google_cloud_run_v2_service\.containers\.location/, "$1var.region", /location must be a reference to a google_cloud_run_v2_service/);
+    tamper("gcp-serverless/main.tf", /(google_cloud_run_service_iam_member" "[a-z_]+" \{\s+service\s+= )google_cloudfunctions2_function\.functions\.service_config\[0\]\.service/, "$1var.service", /service must be a reference to a google_cloudfunctions2_function/);
+    tamper("gcp-serverless/main.tf", /(google_cloud_run_service_iam_member" "[a-z_]+" \{\s+service\s+= )google_cloudfunctions2_function\.functions\.service_config\[0\]\.service/, "$1google_cloudfunctions2_function.ghost.service_config[0].service", /service must be a reference to a google_cloudfunctions2_function/);
+    tamper("gcp-serverless/main.tf", /(google_cloud_run_service_iam_member" "[a-z_]+" \{\s+service\s+= )google_cloudfunctions2_function\.functions\.service_config\[0\]\.service/, "$1google_cloudfunctions2_function.functions.id", /service must be a reference to a google_cloudfunctions2_function/);
+    tamper("gcp-site/main.tf", /bucket = google_storage_bucket\.object_storage_logs\.name/, "bucket = var.bucket", /bucket must be a reference to a google_storage_bucket/);
+    tamper("gcp-site/main.tf", /bucket = google_storage_bucket\.object_storage_logs\.name/, "bucket = google_storage_bucket.ghost.name", /bucket must be a reference to a google_storage_bucket/);
+    tamper("gcp-site/main.tf", /bucket = google_storage_bucket\.object_storage_logs\.name/, "bucket = google_storage_bucket.object_storage_logs.url", /bucket must be a reference to a google_storage_bucket/);
+    tamper("gcp-site/main.tf", /bucket = google_storage_bucket\.object_storage_logs\.name/, 'bucket = "another-bucket"', /bucket must be a reference to a google_storage_bucket/);
+    tamper("gcp-data/main.tf", /crypto_key_id = google_kms_crypto_key\.key_vault\.id/, "crypto_key_id = var.key", /crypto_key_id must be a reference to a google_kms_crypto_key/);
+    tamper("gcp-data/main.tf", /crypto_key_id = google_kms_crypto_key\.key_vault\.id/, "crypto_key_id = google_kms_crypto_key.ghost.id", /crypto_key_id must be a reference to a google_kms_crypto_key/);
+    tamper("gcp-data/main.tf", /crypto_key_id = google_kms_crypto_key\.key_vault\.id/, "crypto_key_id = data.google_kms_crypto_key.other.id", /a reference to data google_kms_crypto_key/);
+    // A bucket object, a log bucket and a key are named the same way: by a reference to a resource of the plan.
+    tamper("gcp-serverless/main.tf", /bucket\s+= google_storage_bucket\.functions_source\.name\n\s+source/, 'bucket = "another-bucket"\n  source', /bucket must be a reference to a google_storage_bucket/);
+    tamper("gcp-data/main.tf", /kms_key_name = google_kms_crypto_key\.key_vault\.id/, 'kms_key_name = "projects/another/locations/global/keyRings/r/cryptoKeys/k"', /kms_key_name must be a reference to a google_kms_crypto_key/);
+  });
+
+  it("holds the project, the network and a control plane's authorised block to the allowlist, wherever the value comes from", () => {
+    // The project is the sandbox's, and nothing in the plans may say another: not a provider, not a grant, not a default, not a file of values.
+    tamper("gcp-platform/main.tf", /project\s+= var\.project_id/, 'project = "another-project"', /project must be var\.project_id/);
+    tamper("gcp-platform/main.tf", /project\s+= var\.project_id/, "project = var.other_project", /project must be var\.project_id/);
+    tamper("gcp-platform/variables.tf", /variable "project_id" \{/, 'variable "project_id" {\n  default = "another-project"', /variable project_id has a default/);
+    tamper("gcp-platform/variables.tf", /variable "project_id" \{/, 'variable "project_id" {\n  default = var.x', /variable project_id has a default/);
+    refusesWhole((r) => write(r, "gcp-platform/terraform.tfvars", 'project_id = "another-project"\n'), /tfvars file/);
+    refusesWhole((r) => write(r, "gcp-site/prod.tfvars", 'kubernetes_master_cidr = "8.8.8.0/28"\n'), /tfvars file/);
+    refusesWhole((r) => write(r, "gcp-site/prod.auto.tfvars", ""), /a file that is not/);
+    refusesAppended('provider "google-beta" {\n  region = var.region\n}', /a provider must set project/);
+    refusesAppended('provider "google-beta" {\n  project = "another-project"\n}', /project must be var\.project_id/);
+    refusesAppended('resource "google_logging_project_bucket_config" "x" {\n  project   = "another-project"\n  location  = "global"\n  bucket_id = "_Default"\n}', /project must be var\.project_id/);
+    refusesAppended('resource "google_project_service" "x" {\n  for_each = toset(["compute.googleapis.com"])\n  project  = "another-project"\n  service  = each.value\n}', /project must be var\.project_id/);
+    refusesAppended('resource "google_project_service" "x" {\n  for_each = toset(["evil.example.com"])\n  service  = each.value\n}', /for_each must be toset of the Google APIs/);
+    // A control plane's authorised block is a variable with the sandbox's value, and its default may not widen it.
+    tamper("gcp-platform/main.tf", /cidr_block\s+= var\.gke_authorized_cidr/, 'cidr_block = "0.0.0.0/0"', /cidr_block must be var\.gke_authorized_cidr/);
+    tamper("gcp-platform/main.tf", /cidr_block\s+= var\.gke_authorized_cidr/, 'cidr_block = "10.0.0.0/8"', /cidr_block must be var\.gke_authorized_cidr/);
+    tamper("gcp-platform/main.tf", /cidr_block\s+= var\.gke_authorized_cidr/, "cidr_block = var.kubernetes_master_cidr", /cidr_block must be var\.gke_authorized_cidr/);
+    tamper("gcp-platform/main.tf", /cidr_block\s+= var\.gke_authorized_cidr/, "cidr_block = local.everywhere", /cidr_block must be var\.gke_authorized_cidr/);
+    tamper("gcp-platform/variables.tf", /variable "gke_authorized_cidr" \{/, 'variable "gke_authorized_cidr" {\n  default = "0.0.0.0/0"', /variable gke_authorized_cidr has a default/);
+    tamper("gcp-platform/variables.tf", /variable "gke_authorized_cidr" \{/, 'variable "gke_authorized_cidr" {\n  default = "10.0.0.0/8"', /variable gke_authorized_cidr has a default/);
+    tamper("gcp-platform/variables.tf", /variable "gke_authorized_cidr" \{/, 'variable "gke_authorized_cidr" {\n  default = "0.1.2.0/24"', /variable gke_authorized_cidr has a default/);
+    tamper("gcp-platform/variables.tf", /variable "gke_authorized_cidr" \{/, 'variable "gke_authorized_cidr" {\n  default = var.other', /variable gke_authorized_cidr has a default/);
+    accepts("gcp-platform/variables.tf", /variable "gke_authorized_cidr" \{/, 'variable "gke_authorized_cidr" {\n  default = "192.0.2.0/24"');
+    tamper("gcp-platform/main.tf", /master_ipv4_cidr_block\s+= var\.kubernetes_master_cidr/, 'master_ipv4_cidr_block = "172.16.0.0/28"', /master_ipv4_cidr_block must be var\.kubernetes_master_cidr/);
+    tamper("gcp-platform/variables.tf", /default\s+= "172\.16\.0\.0\/28"/, 'default = "8.8.8.0/28"', /variable kubernetes_master_cidr has a default/);
+    tamper("gcp-platform/variables.tf", /default\s+= "172\.16\.0\.0\/28"/, 'default = "10.0.0.0/16"', /variable kubernetes_master_cidr has a default/);
+    accepts("gcp-platform/variables.tf", /default\s+= "172\.16\.0\.0\/28"/, 'default = "192.168.0.0/28"');
+    // The network the databases and the cache are placed in is the sandbox's, handed in by variable, and has no default to swap.
+    tamper("gcp-data/variables.tf", /variable "network_id" \{/, 'variable "network_id" {\n  default = "projects/another/global/networks/x"', /variable network_id has a default/);
+    tamper("gcp-data/variables.tf", /variable "subnetwork_id" \{/, 'variable "subnetwork_id" {\n  default = "x"', /variable subnetwork_id has a default/);
+    tamper("gcp-data/main.tf", /authorized_network\s+= var\.network_id/, 'authorized_network = "projects/another/global/networks/x"', /authorized_network must be var\.network_id/);
+    tamper("gcp-data/main.tf", /(resource "google_compute_global_address" "private_services" \{[\s\S]*?network\s+= )var\.network_id/, '$1"projects/another/global/networks/x"', /network must be var\.network_id/);
+    // A subnetwork's range is what a firewall trusts, so it is a private one.
+    tamper("gcp-platform/main.tf", /ip_cidr_range\s+= cidrsubnet\("10\.0\.0\.0\/16", 8, 1\)/, 'ip_cidr_range = "0.0.0.0/0"', /ip_cidr_range must be a private range/);
+    tamper("gcp-platform/main.tf", /ip_cidr_range\s+= cidrsubnet\("10\.0\.0\.0\/16", 8, 1\)/, 'ip_cidr_range = "8.8.8.0/24"', /ip_cidr_range must be a private range/);
+    tamper("gcp-platform/main.tf", /ip_cidr_range\s+= cidrsubnet\("10\.0\.0\.0\/16", 8, 1\)/, 'ip_cidr_range = cidrsubnet("8.8.0.0/16", 8, 1)', /ip_cidr_range must be a private range/);
+    tamper("gcp-platform/main.tf", /ip_cidr_range\s+= cidrsubnet\("10\.0\.0\.0\/16", 8, 1\)/, "ip_cidr_range = cidrsubnet(var.range, 8, 1)", /ip_cidr_range must be a private range/);
+    tamper("gcp-platform/main.tf", /ip_cidr_range\s+= cidrsubnet\("10\.0\.0\.0\/16", 8, 1\)/, "ip_cidr_range = var.range", /ip_cidr_range must be a private range/);
+    accepts("gcp-platform/main.tf", /ip_cidr_range\s+= cidrsubnet\("10\.0\.0\.0\/16", 8, 1\)/, 'ip_cidr_range = cidrsubnet("172.16.0.0/12", 8, 1)');
+    accepts("gcp-platform/main.tf", /ip_cidr_range\s+= cidrsubnet\("10\.0\.0\.0\/16", 8, 1\)/, 'ip_cidr_range = "192.168.4.0/24"');
+  });
+
+  it("requires what a provider would otherwise widen by default: the service account a workload runs as", () => {
+    tamper("gcp-platform/main.tf", /\n\s+service_account \{[^}]*\}/, "", /a google_compute_instance must set service_account/);
+    tamper("gcp-platform/main.tf", /\n\s+service_account\s+= google_service_account\.kubernetes_nodes\.email/, "", /node_config must set service_account/);
+    tamper("gcp-serverless/main.tf", /\n\s+service_account\s+= google_service_account\.containers\.email/, "", /template must set service_account/);
+    tamper("gcp-serverless/main.tf", /\n\s+service_account_email\s+= google_service_account\.functions\.email/, "", /must set service_account_email/);
+    tamper("gcp-serverless/main.tf", /\n\s+ingress\s+= "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"/, "", /must set ingress/);
+    tamper("gcp-serverless/main.tf", /ingress\s+= "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"/, 'ingress = "INGRESS_TRAFFIC_ALL"', /ingress must be "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"/);
+    tamper("gcp-serverless/main.tf", /ingress_settings\s+= "ALLOW_INTERNAL_AND_GCLB"/, 'ingress_settings = "ALLOW_ALL"', /ingress_settings must be/);
+    tamper("gcp-site/main.tf", /\n\s+public_access_prevention\s+= "enforced"/, "", /must set public_access_prevention/);
+    tamper("gcp-site/main.tf", /public_access_prevention\s+= "enforced"/, 'public_access_prevention = "inherited"', /public_access_prevention must be "enforced"/);
+    tamper("gcp-platform/main.tf", /\n\s+network_interface \{[^}]*\}/, '\n  network_interface {\n    subnetwork = google_compute_subnetwork.vnet.id\n    access_config {\n    }\n  }', /the block access_config is not one of/);
+  });
+
+  it("refuses a variable, an output and a provider that set more than the generator writes", () => {
+    refusesAppended('variable "x" {\n  ephemeral = true\n}', /a variable may set only/);
+    refusesAppended('variable "x" {\n  type = string\n  precondition {\n  }\n}', /a variable may set only/);
+    refusesAppended('output "x" {\n  value = 1\n  precondition {\n  }\n}', /an output may set only/);
+    refusesAppended('output "x" {\n  value    = 1\n  ephemeral = true\n}', /an output may set only/);
+    validateSource('variable "x" {\n  type = string\n  validation {\n    condition     = true\n    error_message = "x"\n  }\n}\noutput "y" {\n  value     = 1\n  sensitive = true\n}\n', "x.tf");
+  });
+
+  it("accepts what the generator writes for the same plans in other files, and the golden output once the sandbox's changes are made", () => {
+    // The Google Cloud plans of the emit gate's fixture, with the changes of `adaptForSandbox` (no project, no audit configuration, a load balancer that admits Cloud Run).
+    // It also writes a Cloud Run service open to all ingress and a private service connection that is abandoned on destroy, which the sandbox never runs: both are named here.
+    let main = readFileSync(new URL("./fixtures/gcp/golden/emit/main.tf", import.meta.url), "utf8");
+    main = dropBlock(dropBlock(main, "resource", ["google_project", "project"]), "resource", ["google_project_iam_audit_config", "project"]);
+    main = main.replaceAll("google_project.project.project_id", "var.project_id").replaceAll("google_project.project, ", "");
+    refusesSource(main, /ingress must be "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"/);
+    main = main.replaceAll("INGRESS_TRAFFIC_ALL", "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER");
+    refusesSource(main, /deletion_policy is not an attribute of a google_service_networking_connection/);
+    main = main.replace(/\n\s+deletion_policy\s+= "ABANDON"/, "");
+    validateSource(main, "golden/main.tf");
+    validateSource(readFileSync(new URL("../scripts/sandbox-gcp-network/main.tf", import.meta.url), "utf8"), "network/main.tf");
+  });
+});
+

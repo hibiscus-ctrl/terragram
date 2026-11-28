@@ -26,6 +26,16 @@
  *   `local-exec`, no `remote-exec`, no heredoc, no reference to `path`, and no use at all of a function that
  *   reads a file or runs a provider's own function (the name alone is refused, whatever follows it).
  *
+ * - DEFAULT DENY, by type: every resource type and data source it allows has a shape (`SHAPES`, `DATA_SHAPES`) listing exactly the attributes and
+ *   nested blocks the generator writes of it, each with the check of its value, at every depth; a type with no shape, and an attribute or a block
+ *   a shape does not list, is refused, and so is a `dynamic` block anywhere (the attributes it would set are not seen). A shape also says what must be
+ *   written because the provider's own default is wider (an ingress firewall's `source_ranges` and `direction`, a workload's service account, a Cloud SQL
+ *   instance's `ipv4_enabled = false`, a cluster's private and authorised-network blocks), so leaving it out is refused, not passed. A grant's target
+ *   (`bucket`, `crypto_key_id`, `name`, `service`) is a reference to a resource of the right type that the plan declares, never a variable, a data
+ *   source or an undeclared address; a CIDR, a project or a network is the one variable the sandbox sets (`var.project_id`, `var.gke_authorized_cidr`,
+ *   `var.kubernetes_master_cidr`, `var.network_id`), whose default `VARIABLES` holds to the same allowlist, and a `*.tfvars` file in a plan is refused
+ *   (the workflow writes its own, after this check).
+ *
  * - the VALUES of what grants access or runs code, not only the names of its attributes: a grant is one of the exact
  *   roles the generator writes (`ALLOWED_ROLES`), of a role the type of grant carries, to a member that is a service
  *   account the plan creates, a service agent it names, Google's own log delivery group or, for a Cloud Run invoker, `allUsers`;
@@ -205,11 +215,11 @@ for (const type of ALLOWED_DATA) if (DENIED_DATA.has(type) || TOKEN_LIKE.test(ty
 
 /** Attributes that read a local path or carry a credential: refused in any resource, at any depth. */
 const LOCAL_PATH_ATTRIBUTES = new Set(["source", "source_file", "source_dir", "source_content", "source_content_filename", "credentials", "access_token", "impersonate_service_account", "key_file", "private_key_path"]);
-/** What a bucket object may set: its content is the archive the plan zipped, by its `source`, and nothing written inline. */
-const BUCKET_OBJECT_ATTRIBUTES = new Set(["name", "bucket", "source", "content_type", "depends_on"]);
 
 const TOP_LEVEL = { terraform: 0, provider: 1, variable: 1, locals: 0, resource: 2, data: 2, output: 1 };
 const PROVIDER_ATTRIBUTES = new Set(["project", "region", "zone", "default_labels"]);
+const VARIABLE_ATTRIBUTES = new Set(["type", "description", "default", "sensitive", "nullable"]);
+const OUTPUT_ATTRIBUTES = new Set(["value", "description", "sensitive"]);
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 // Compared in lower case, and refused as a bare identifier wherever it appears: HCL reads a call with a newline,
 // a comment or a template between the name and its parenthesis, so the name alone is what is refused.
@@ -452,6 +462,32 @@ function checkProviderBlock(block, where) {
   for (const item of block.body) {
     if (item.kind !== "attr" || !PROVIDER_ATTRIBUTES.has(item.name)) reject(`${where}:${item.line}`, `a provider may set only ${[...PROVIDER_ATTRIBUTES].join(", ")}`);
   }
+  // Without a project the provider reads one from the environment; with another, everything is built there.
+  const project = block.body.find((item) => item.kind === "attr" && item.name === "project");
+  if (project === undefined) reject(`${where}:${block.line}`, "a provider must set project");
+  projectVariable(project.value, `${where}:${project.line}`, undefined, "project");
+}
+
+/** A variable the plan declares: its settings, and for one an attribute names (`VARIABLES`), a default that the allowlist holds. */
+function checkVariableBlock(block, where) {
+  for (const item of block.body) {
+    const at = `${where}:${item.line}`;
+    if (item.kind === "attr" ? !VARIABLE_ATTRIBUTES.has(item.name) : item.type !== "validation" || item.labels.length > 0 || item.body.some((b) => b.kind !== "attr" || (b.name !== "condition" && b.name !== "error_message"))) {
+      reject(at, `a variable may set only ${[...VARIABLE_ATTRIBUTES].join(", ")} and a validation`);
+    }
+  }
+  const [name] = block.labels;
+  if (!Object.hasOwn(VARIABLES, name)) return;
+  const given = block.body.find((item) => item.kind === "attr" && item.name === "default");
+  const text = given === undefined ? undefined : plainString(given.value);
+  if ((given !== undefined && text === undefined) || !VARIABLES[name](text)) reject(`${where}:${block.line}`, `variable ${name} has a default that is not one the generator writes`);
+}
+
+/** An output: a value, and nothing that sets a condition on it. */
+function checkOutputBlock(block, where) {
+  for (const item of block.body) {
+    if (item.kind !== "attr" || !OUTPUT_ATTRIBUTES.has(item.name)) reject(`${where}:${item.line}`, `an output may set only ${[...OUTPUT_ATTRIBUTES].join(", ")}`);
+  }
 }
 
 /** Every attribute of a body and of the blocks in it, with the block types that lead to it. */
@@ -511,23 +547,46 @@ function referenceOf(value) {
   return parts;
 }
 
-/** A reference to something of the plan: a Google resource or data source, or a variable. */
-function isPlanReference(value) {
-  const parts = referenceOf(value);
-  return parts !== undefined && parts.length >= 2 && (parts[0] === "var" || parts[0] === "data" || parts[0].startsWith("google_"));
-}
+/** What follows `type.name` of a reference, joined: `service_config[0].service`. */
+const pathAfter = (parts) => parts.slice(2).reduce((text, part) => (part.startsWith("[") ? text + part : text === "" ? part : `${text}.${part}`), "");
 
 // What a value may be, by attribute: each takes (tokens, where, declared, name) and refuses by throwing.
+/** A value the generator writes that decides nothing about access: a name, a size, a label. */
 const anyValue = () => {};
-const reference = (value, at, _declared, name) => {
-  if (!isPlanReference(value)) reject(at, `${name} must be a reference to a resource or variable of the plan`);
-};
-const projectVariable = (value, at, _declared, name) => {
+/**
+ * A reference to an attribute of a resource the plan declares, as one of `alternatives` (`[type, path...]`): never a variable, a data
+ * source, an undeclared resource or another attribute of the resource.
+ */
+const refTo = (...alternatives) => (value, at, declared, name) => {
   const parts = referenceOf(value);
-  if (parts?.join(".") !== "var.project_id") reject(at, `${name} must be var.project_id`);
+  const ok = parts !== undefined && parts.length >= 3 && alternatives.some(([type, ...paths]) => parts[0] === type && declares(declared, "resource", type, parts[1]) && paths.includes(pathAfter(parts)));
+  if (!ok) reject(at, `${name} must be a reference to ${alternatives.map(([type, ...paths]) => `a ${type} the plan declares (${paths.map((p) => `${type}.<name>.${p}`).join(" or ")})`).join(" or ")}`);
 };
+const ref = (type, ...paths) => refTo([type, ...paths]);
+/** The plan's own network, or the `network_id` the sandbox's network root hands the plan that has none. */
+const network = (value, at, declared, name) => {
+  if (!tryCheck(variable("network_id"), value, at, declared, name) && !tryCheck(ref("google_compute_network", "id"), value, at, declared, name)) reject(at, `${name} must be var.network_id or the id of a google_compute_network the plan declares`);
+};
+/** A reference to any resource of Google the plan declares: what a container's environment is made of. */
+const declaredReference = (value, at, declared, name) => {
+  const parts = referenceOf(value);
+  if (!(parts !== undefined && parts.length >= 3 && parts[0].startsWith("google_") && declares(declared, "resource", parts[0], parts[1]))) reject(at, `${name} must be a reference to a resource the plan declares`);
+  // A container's environment is readable by whoever can read the service: not what a resource holds as a secret.
+  if (SECRET_ATTRIBUTE.test(pathAfter(parts))) reject(at, `${name} must not read an attribute that holds a secret (${pathAfter(parts)})`);
+};
+const SECRET_ATTRIBUTE = /password|secret|auth_string|private_key|token|credential|certificate|key_data/i;
+/** Exactly `var.<variable>`, one the sandbox sets or the plan declares with a default that `VARIABLES` holds to the allowlist. */
+const variable = (variableName) => (value, at, _declared, name) => {
+  if (referenceOf(value)?.join(".") !== `var.${variableName}`) reject(at, `${name} must be var.${variableName}`);
+};
+const projectVariable = variable("project_id");
 const literal = (...words) => (value, at, _declared, name) => {
   if (!(value.length === 1 && value[0].t === "id" && words.includes(value[0].v))) reject(at, `${name} must be ${words.join(" or ")}`);
+};
+/** A string written out, one of `words`. */
+const oneOf = (...words) => (value, at, _declared, name) => {
+  const given = plainString(value);
+  if (given === undefined || !words.includes(given)) reject(at, `${name} must be ${words.map((w) => `"${w}"`).join(" or ")}`);
 };
 const serviceAccountEmail = (value, at, declared, name) => {
   const parts = referenceOf(value);
@@ -554,29 +613,96 @@ const stringList = (...allowed) => (value, at, _declared, name) => {
   const shaped = value[0]?.v === "[" && value.at(-1)?.v === "]" && inside.every((t, i) => (i % 2 === 0 ? t.t === "str" && t.inner.length === 0 : t.t === "p" && t.v === ","));
   if (!shaped || !inside.filter((t) => t.t === "str").every((t) => allowed.includes(t.v)) || inside.length === 0) reject(at, `${name} must be exactly ${allowed.join(", ")}`);
 };
+/** `[reference]`: one element, and it a reference of the kind `check` holds. */
+const listOf = (check) => (value, at, declared, name) => {
+  if (!(value[0]?.v === "[" && value.at(-1)?.v === "]" && value.length > 2)) reject(at, `${name} must be a list of one reference`);
+  check(value.slice(1, -1), at, declared, name);
+};
+/** `toset([...])` of the Google APIs a plan switches on. */
+const serviceSet = (value, at, _declared, name) => {
+  const inside = value.slice(3, -2);
+  const shaped = value[0]?.v === "toset" && value[1]?.v === "(" && value[2]?.v === "[" && value.at(-2)?.v === "]" && value.at(-1)?.v === ")" && inside.length > 0;
+  const named = shaped && inside.every((t, i) => (i % 2 === 0 ? t.t === "str" && t.inner.length === 0 && /^[a-z0-9.-]+\.googleapis\.com$/.test(t.v) : t.t === "p" && t.v === ","));
+  if (!named) reject(at, `${name} must be toset of the Google APIs, written out`);
+};
+const eachValue = (value, at, _declared, name) => {
+  if (referenceOf(value)?.join(".") !== "each.value") reject(at, `${name} must be each.value`);
+};
+const googleApi = (value, at, _declared, name) => {
+  const given = plainString(value);
+  if (given === undefined || !/^[a-z0-9.-]+\.googleapis\.com$/.test(given)) reject(at, `${name} must be a Google API written out`);
+};
+/** The archive the plan zipped, by `output_path`: the one thing a bucket object may hold. */
+const archiveOutput = (value, at, declared, name) => {
+  if (!isOwnArchiveOutput(value, declared.data.get("archive_file") ?? new Set())) reject(at, `${name} may only be the output_path of an archive_file of the plan`);
+};
+
 /** `{ NAME = reference }`: a name the generator writes, whose value is a reference to a resource of the plan. */
-const environment = (value, at, _declared, name) => {
+const environment = (value, at, declared, name) => {
   if (!(value[0]?.v === "{" && value.at(-1)?.v === "}")) reject(at, `${name} must be an object of references`);
   const inside = value.slice(1, -1);
   for (let i = 0; i < inside.length; ) {
     const [key, eq] = [inside[i], inside[i + 1]];
     if (key?.t !== "id" || eq?.v !== "=") reject(at, `${name} must be an object of references`);
-    let end = i + 2;
-    while (end < inside.length && inside[end].v !== ",") end++;
-    checkEnvironmentEntry(key.v, inside.slice(i + 2, end), at);
-    i = end + 1;
+    // The value is one reference (dots and indexes), whatever follows it: a comma, or the next name on the next line.
+    let end = i + 3;
+    while (end < inside.length && ((inside[end].v === "." && inside[end + 1]?.t === "id") || (inside[end].v === "[" && inside[end + 1]?.t === "num" && inside[end + 2]?.v === "]"))) end += inside[end].v === "." ? 2 : 3;
+    if (!ENVIRONMENT_NAMES.has(key.v)) reject(at, `environment variable ${key.v} is not one the generator writes`);
+    declaredReference(inside.slice(i + 2, end), at, declared, `the value of environment variable ${key.v}`);
+    i = inside[end]?.v === "," ? end + 1 : end;
   }
 };
-function checkEnvironmentEntry(name, value, at) {
-  if (!ENVIRONMENT_NAMES.has(name)) reject(at, `environment variable ${name} is not one the generator writes`);
-  if (!isPlanReference(value)) reject(at, `the value of environment variable ${name} must be a reference to a resource of the plan`);
+
+/** `a.b.c.d/n` as `{ octets, prefix }`, or `undefined`: no leading zeros, nothing after the prefix. */
+function parseCidr(text) {
+  const m = /^(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\/(0|[1-9]\d?)$/.exec(text);
+  if (m === null) return undefined;
+  const octets = m.slice(1, 5).map(Number);
+  const prefix = Number(m[5]);
+  return octets.some((o) => o > 255) || prefix > 32 ? undefined : { octets, prefix };
 }
+/** Inside 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16. */
+const isPrivateRange = ({ octets: [a, b], prefix }) => (a === 10 && prefix >= 8) || (a === 172 && b >= 16 && b <= 31 && prefix >= 12) || (a === 192 && b === 168 && prefix >= 16);
+/** A subnetwork's range, which a firewall's source trusts: a private range written out, or `cidrsubnet` of one. */
+const subnetRange = (value, at, _declared, name) => {
+  const text = plainString(value);
+  const sig = value;
+  const call = sig.length === 8 && sig[0].v === "cidrsubnet" && sig[1].v === "(" && sig[2].t === "str" && sig[2].inner.length === 0 && sig[3].v === "," && sig[4].t === "num" && sig[5].v === "," && sig[6].t === "num" && sig[7].v === ")";
+  const cidr = parseCidr(text ?? (call ? sig[2].v : ""));
+  if (cidr === undefined || !isPrivateRange(cidr)) reject(at, `${name} must be a private range, written out or as cidrsubnet of one`);
+};
+const IAP_RANGE = "35.235.240.0/20";
+/** A firewall's sources: the plan's own subnetwork or Google's IAP range, and nothing else. */
+const sourceRanges = (value, at, declared, name) => {
+  const inside = value.slice(1, -1);
+  const listed = value[0]?.v === "[" && value.at(-1)?.v === "]";
+  const iap = inside.length === 1 && inside[0].t === "str" && inside[0].inner.length === 0 && inside[0].v === IAP_RANGE;
+  if (!listed || !(iap || tryCheck(ref("google_compute_subnetwork", "ip_cidr_range"), inside, at, declared, name))) reject(at, `${name} must be the plan's own subnetwork or Google's IAP range (${IAP_RANGE})`);
+};
+function tryCheck(check, value, at, declared, name) {
+  try {
+    check(value, at, declared, name);
+    return true;
+  } catch (error) {
+    if (error instanceof PlanRejected) return false;
+    throw error;
+  }
+}
+/** The variables a security-relevant attribute may name, and what each may hold as a default (the sandbox sets the rest itself, after this check). */
+const VARIABLES = {
+  project_id: (text) => text === undefined,
+  network_id: (text) => text === undefined,
+  subnetwork_id: (text) => text === undefined,
+  gke_authorized_cidr: (text) => text === undefined || ((c) => c !== undefined && c.prefix >= 24 && c.octets[0] !== 0)(parseCidr(text)),
+  kubernetes_master_cidr: (text) => text === undefined || ((c) => c !== undefined && c.prefix === 28 && isPrivateRange(c))(parseCidr(text)),
+};
 
 /**
  * Checks the items of a block against what the generator writes: `attrs` maps each attribute it may set to the check of its
- * value, `blocks` each nested block to the same of its own. Anything else is refused.
+ * value, `blocks` each nested block to the same of its own, `required` the names that must be set (an attribute or a block
+ * whose absence would leave a provider's own, wider default). Anything else is refused.
  */
-function checkShape(items, shape, where, declared, what) {
+function checkShape(items, shape, where, declared, what, line) {
   for (const item of items) {
     const at = `${where}:${item.line}`;
     if (item.kind === "attr") {
@@ -586,95 +712,23 @@ function checkShape(items, shape, where, declared, what) {
     } else {
       const nested = Object.hasOwn(shape.blocks ?? {}, item.type) ? shape.blocks[item.type] : undefined;
       if (nested === undefined) reject(at, `the block ${item.type} is not one of ${what} the generator writes`);
-      checkShape(item.body, nested, where, declared, `${what}'s ${item.type}`);
+      if (item.labels.length > 0) reject(at, `the block ${item.type} has a label, which the generator does not write`);
+      checkShape(item.body, nested, where, declared, `${what}'s ${item.type}`, item.line);
     }
+  }
+  for (const name of shape.required ?? []) {
+    if (!items.some((item) => (item.kind === "attr" ? item.name : item.type) === name)) reject(`${where}:${line}`, `${what} must set ${name}`);
   }
 }
 
-const node = (attrs, blocks) => ({ attrs, blocks });
+const node = (attrs, blocks, required) => ({ attrs, blocks, required });
+/** A resource's shape: its attributes and blocks, and the `depends_on` any of them may carry. */
+const resource = (attrs, blocks, required) => node({ ...attrs, depends_on: anyValue }, blocks, required);
 const SHIELDED = node({ enable_secure_boot: literal("true"), enable_vtpm: literal("true"), enable_integrity_monitoring: literal("true") });
-
-/** The workloads: what they run as, from, with and where they are let in from. */
-const SHAPES = {
-  google_compute_instance: node(
-    {
-      name: anyValue,
-      machine_type: anyValue,
-      zone: anyValue,
-      can_ip_forward: literal("false"),
-      labels: anyValue,
-      depends_on: anyValue,
-      metadata: settings({ "block-project-ssh-keys": ["true"], "enable-oslogin": ["TRUE"], "serial-port-enable": ["false"] }),
-    },
-    {
-      boot_disk: node({}, { initialize_params: node({ image: image(VM_IMAGE), size: anyValue, type: anyValue }) }),
-      network_interface: node({ subnetwork: anyValue }),
-      service_account: node({ email: serviceAccountEmail, scopes: stringList("cloud-platform") }),
-      shielded_instance_config: SHIELDED,
-    },
-  ),
-  google_container_node_pool: node(
-    { name: anyValue, cluster: anyValue, location: anyValue, node_count: anyValue, depends_on: anyValue },
-    {
-      management: node({ auto_repair: anyValue, auto_upgrade: anyValue }),
-      node_config: node(
-        {
-          machine_type: anyValue,
-          image_type: anyValue,
-          service_account: serviceAccountEmail,
-          oauth_scopes: stringList("https://www.googleapis.com/auth/cloud-platform"),
-          metadata: settings({ "disable-legacy-endpoints": ["true"] }),
-        },
-        { workload_metadata_config: node({ mode: anyValue }), shielded_instance_config: SHIELDED },
-      ),
-    },
-  ),
-  google_cloud_run_v2_service: node(
-    { name: anyValue, location: anyValue, ingress: anyValue, deletion_protection: anyValue, labels: anyValue, depends_on: anyValue },
-    {
-      template: node(
-        { service_account: serviceAccountEmail, execution_environment: anyValue },
-        {
-          scaling: node({ min_instance_count: anyValue, max_instance_count: anyValue }),
-          containers: node(
-            { image: image(CLOUD_RUN_IMAGE) },
-            {
-              ports: node({ container_port: anyValue }),
-              resources: node({ limits: anyValue }),
-              env: node({
-                name: (value, at, _declared, name) => {
-                  const given = plainString(value);
-                  if (given === undefined || !ENVIRONMENT_NAMES.has(given)) reject(at, `environment variable ${given ?? name} is not one the generator writes`);
-                },
-                value: reference,
-              }),
-            },
-          ),
-          vpc_access: node({ egress: anyValue }, { network_interfaces: node({ network: anyValue, subnetwork: anyValue }) }),
-        },
-      ),
-    },
-  ),
-  google_cloudfunctions2_function: node(
-    { name: anyValue, location: anyValue, labels: anyValue, depends_on: anyValue },
-    {
-      build_config: node(
-        { runtime: anyValue, entry_point: anyValue },
-        { source: node({}, { storage_source: node({ bucket: reference, object: reference }) }) },
-      ),
-      service_config: node({
-        available_memory: anyValue,
-        timeout_seconds: anyValue,
-        max_instance_count: anyValue,
-        ingress_settings: anyValue,
-        vpc_connector: anyValue,
-        vpc_connector_egress_settings: anyValue,
-        service_account_email: serviceAccountEmail,
-        environment_variables: environment,
-      }),
-    },
-  ),
-};
+const KMS_KEY = ["google_kms_crypto_key", "id"];
+const SUBNETWORK = ["google_compute_subnetwork", "id"];
+const BUCKET_NAME = ["google_storage_bucket", "name"];
+const URL_MAP_TARGET = [["google_compute_backend_service", "id"], ["google_compute_backend_bucket", "id"]];
 
 const PROJECT_ROLES = ["roles/logging.logWriter", "roles/monitoring.metricWriter", "roles/monitoring.viewer", "roles/artifactregistry.reader", "roles/cloudsql.instanceUser", "roles/cloudsql.client"];
 /** The members a grant may name, by shape. A shape that names something of the plan is refused when the plan does not have it. */
@@ -688,18 +742,322 @@ const MEMBERS = {
   public: { exact: "allUsers" },
 };
 const grants = (role, ...members) => ({ [role]: members });
-/** The grants, by type: the other attributes they may set, and for each role they carry, the members it may be given to. */
+/** The grants, by type: where they point (a reference to a resource of the right type the plan declares), and for each role they carry, the members it may be given to. */
 const GRANTS = {
   google_project_iam_member: { attrs: { project: projectVariable }, blocks: { condition: node({ title: anyValue, expression: anyValue }) }, roles: Object.assign({}, ...PROJECT_ROLES.map((r) => grants(r, "ownAccount"))) },
-  google_storage_bucket_iam_member: { attrs: { bucket: reference }, roles: { ...grants("roles/storage.objectCreator", "logDelivery"), ...grants("roles/storage.objectViewer", "ownAccount", "loadBalancerAgent") } },
-  google_kms_crypto_key_iam_member: { attrs: { crypto_key_id: reference }, roles: grants("roles/cloudkms.cryptoKeyEncrypterDecrypter", "identity", "storageAgent", "bigqueryAgent") },
-  google_cloud_run_v2_service_iam_member: { attrs: { name: reference, location: reference }, roles: grants("roles/run.invoker", "public") },
-  google_cloud_run_service_iam_member: { attrs: { service: reference, location: reference }, roles: grants("roles/run.invoker", "public") },
+  google_storage_bucket_iam_member: { attrs: { bucket: ref(...BUCKET_NAME) }, roles: { ...grants("roles/storage.objectCreator", "logDelivery"), ...grants("roles/storage.objectViewer", "ownAccount", "loadBalancerAgent") } },
+  google_kms_crypto_key_iam_member: { attrs: { crypto_key_id: ref(...KMS_KEY) }, roles: grants("roles/cloudkms.cryptoKeyEncrypterDecrypter", "identity", "storageAgent", "bigqueryAgent") },
+  google_cloud_run_v2_service_iam_member: { attrs: { name: ref("google_cloud_run_v2_service", "name"), location: ref("google_cloud_run_v2_service", "location") }, roles: grants("roles/run.invoker", "public") },
+  google_cloud_run_service_iam_member: { attrs: { service: ref("google_cloudfunctions2_function", "service_config[0].service"), location: ref("google_cloudfunctions2_function", "location") }, roles: grants("roles/run.invoker", "public") },
+};
+
+/**
+ * What each resource type the check allows may set: every attribute and nested block, with the check of its value, and what it
+ * must set. A type with no entry here is refused, and so is an attribute or a block the entry does not list; the plans of the
+ * generator are what is listed, and `tests/sandbox-gcp-validate.test.ts` fails on a type of `gcp-kinds.ts` that is not.
+ */
+export const SHAPES = {
+  ...Object.fromEntries(Object.entries(GRANTS).map(([type, grant]) => [type, resource({ ...grant.attrs, role: anyValue, member: anyValue }, grant.blocks, ["role", "member"])])),
+  google_bigquery_dataset: resource({ dataset_id: anyValue, location: anyValue, delete_contents_on_destroy: anyValue }, { default_encryption_configuration: node({ kms_key_name: ref(...KMS_KEY) }) }),
+  google_cloud_run_v2_service: resource(
+    { name: anyValue, location: anyValue, ingress: oneOf("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"), deletion_protection: anyValue },
+    {
+      template: node(
+        { service_account: serviceAccountEmail, execution_environment: anyValue },
+        {
+          scaling: node({ min_instance_count: anyValue, max_instance_count: anyValue }),
+          vpc_access: node({ egress: anyValue }, { network_interfaces: node({ network: ref("google_compute_network", "id"), subnetwork: ref(...SUBNETWORK) }) }),
+          containers: node(
+            { image: image(CLOUD_RUN_IMAGE) },
+            {
+              ports: node({ container_port: anyValue }),
+              resources: node({ limits: anyValue }),
+              env: node(
+                {
+                  name: (value, at, _declared, name) => {
+                    const given = plainString(value);
+                    if (given === undefined || !ENVIRONMENT_NAMES.has(given)) reject(at, `environment variable ${given ?? name} is not one the generator writes`);
+                  },
+                  value: declaredReference,
+                },
+                {},
+                ["name", "value"],
+              ),
+            },
+            ["image"],
+          ),
+        },
+        ["service_account", "containers"],
+      ),
+    },
+    ["ingress", "template"],
+  ),
+  google_cloudfunctions2_function: resource(
+    { name: anyValue, location: anyValue },
+    {
+      build_config: node(
+        { runtime: anyValue, entry_point: anyValue },
+        { source: node({}, { storage_source: node({ bucket: ref(...BUCKET_NAME), object: ref("google_storage_bucket_object", "name") }, {}, ["bucket", "object"]) }, ["storage_source"]) },
+        ["source"],
+      ),
+      service_config: node(
+        {
+          available_memory: anyValue,
+          timeout_seconds: anyValue,
+          max_instance_count: anyValue,
+          ingress_settings: oneOf("ALLOW_INTERNAL_AND_GCLB"),
+          service_account_email: serviceAccountEmail,
+          environment_variables: environment,
+        },
+        {},
+        ["service_account_email", "ingress_settings"],
+      ),
+    },
+    ["service_config"],
+  ),
+  google_compute_backend_bucket: resource({ name: anyValue, bucket_name: ref(...BUCKET_NAME), enable_cdn: anyValue, edge_security_policy: ref("google_compute_security_policy", "id") }),
+  google_compute_backend_service: resource(
+    { name: anyValue, protocol: anyValue, load_balancing_scheme: anyValue, enable_cdn: anyValue, security_policy: ref("google_compute_security_policy", "id") },
+    { backend: node({ group: ref("google_compute_region_network_endpoint_group", "id") }, {}, ["group"]), log_config: node({ enable: anyValue, sample_rate: anyValue }) },
+  ),
+  google_compute_firewall: resource(
+    { name: anyValue, network: ref("google_compute_network", "name", "id"), direction: oneOf("INGRESS"), source_ranges: sourceRanges },
+    {
+      allow: node({ protocol: oneOf("tcp", "udp", "icmp"), ports: stringList("22") }, {}, ["protocol"]),
+      log_config: node({ metadata: anyValue }),
+    },
+    ["source_ranges", "direction", "network", "allow"],
+  ),
+  google_compute_global_address: resource({ name: anyValue, ip_version: anyValue, purpose: anyValue, address_type: anyValue, prefix_length: anyValue, network: network }),
+  google_compute_global_forwarding_rule: resource({
+    name: anyValue,
+    target: refTo(["google_compute_target_http_proxy", "id"], ["google_compute_target_https_proxy", "id"]),
+    ip_address: ref("google_compute_global_address", "id"),
+    port_range: anyValue,
+    load_balancing_scheme: anyValue,
+  }),
+  google_compute_instance: resource(
+    {
+      name: anyValue,
+      machine_type: anyValue,
+      zone: anyValue,
+      can_ip_forward: literal("false"),
+      metadata: settings({ "block-project-ssh-keys": ["true"], "enable-oslogin": ["TRUE"], "serial-port-enable": ["false"] }),
+    },
+    {
+      boot_disk: node({}, { initialize_params: node({ image: image(VM_IMAGE), size: anyValue, type: anyValue }, {}, ["image"]) }, ["initialize_params"]),
+      network_interface: node({ subnetwork: ref(...SUBNETWORK) }, {}, ["subnetwork"]),
+      service_account: node({ email: serviceAccountEmail, scopes: stringList("cloud-platform") }, {}, ["email", "scopes"]),
+      shielded_instance_config: SHIELDED,
+    },
+    ["boot_disk", "network_interface", "service_account"],
+  ),
+  google_compute_managed_ssl_certificate: resource({ name: anyValue }, { managed: node({ domains: anyValue }) }),
+  google_compute_network: resource({ name: anyValue, auto_create_subnetworks: anyValue, routing_mode: anyValue }),
+  google_compute_region_network_endpoint_group: resource(
+    { name: anyValue, region: anyValue, network_endpoint_type: anyValue },
+    { cloud_run: node({ service: refTo(["google_cloud_run_v2_service", "name"], ["google_cloudfunctions2_function", "service_config[0].service"]) }, {}, ["service"]) },
+  ),
+  google_compute_router: resource({ name: anyValue, network: ref("google_compute_network", "id"), region: anyValue }),
+  google_compute_router_nat: resource(
+    { name: anyValue, router: ref("google_compute_router", "name"), region: anyValue, nat_ip_allocate_option: anyValue, source_subnetwork_ip_ranges_to_nat: anyValue },
+    { log_config: node({ enable: anyValue, filter: anyValue }) },
+  ),
+  google_compute_security_policy: resource(
+    { name: anyValue, description: anyValue, type: anyValue },
+    {
+      rule: node(
+        { action: anyValue, priority: anyValue, description: anyValue },
+        { match: node({ versioned_expr: anyValue }, { config: node({ src_ip_ranges: anyValue }), expr: node({ expression: anyValue }) }) },
+      ),
+      advanced_options_config: node({ json_parsing: anyValue, log_level: anyValue }),
+      adaptive_protection_config: node({}, { layer_7_ddos_defense_config: node({ enable: anyValue }) }),
+    },
+  ),
+  google_compute_ssl_policy: resource({ name: anyValue, profile: anyValue, min_tls_version: anyValue }),
+  google_compute_subnetwork: resource(
+    { name: anyValue, network: ref("google_compute_network", "id"), region: anyValue, ip_cidr_range: subnetRange, private_ip_google_access: anyValue },
+    { log_config: node({ aggregation_interval: anyValue, flow_sampling: anyValue, metadata: anyValue }) },
+    ["ip_cidr_range"],
+  ),
+  google_compute_target_http_proxy: resource({ name: anyValue, url_map: ref("google_compute_url_map", "id") }),
+  google_compute_target_https_proxy: resource({
+    name: anyValue,
+    url_map: ref("google_compute_url_map", "id"),
+    ssl_certificates: listOf(ref("google_compute_managed_ssl_certificate", "id")),
+    ssl_policy: ref("google_compute_ssl_policy", "id"),
+  }),
+  google_compute_url_map: resource(
+    { name: anyValue, default_service: refTo(...URL_MAP_TARGET) },
+    {
+      default_url_redirect: node({ host_redirect: anyValue, https_redirect: anyValue, strip_query: anyValue, redirect_response_code: anyValue }),
+      host_rule: node({ hosts: anyValue, path_matcher: anyValue }),
+      path_matcher: node(
+        { name: anyValue, default_service: refTo(...URL_MAP_TARGET) },
+        {
+          route_rules: node(
+            { priority: anyValue, service: refTo(...URL_MAP_TARGET) },
+            { match_rules: node({ full_path_match: anyValue }), route_action: node({}, { url_rewrite: node({ path_prefix_rewrite: anyValue }) }) },
+          ),
+        },
+      ),
+    },
+  ),
+  google_container_cluster: resource(
+    {
+      name: anyValue,
+      location: anyValue,
+      network: ref("google_compute_network", "id"),
+      subnetwork: ref(...SUBNETWORK),
+      networking_mode: anyValue,
+      remove_default_node_pool: anyValue,
+      initial_node_count: anyValue,
+      enable_shielded_nodes: anyValue,
+      enable_intranode_visibility: anyValue,
+      enable_legacy_abac: literal("false"),
+      deletion_protection: anyValue,
+      resource_labels: anyValue,
+    },
+    {
+      ip_allocation_policy: node({}),
+      private_cluster_config: node(
+        { enable_private_nodes: literal("true"), enable_private_endpoint: literal("false"), master_ipv4_cidr_block: variable("kubernetes_master_cidr") },
+        {},
+        ["enable_private_nodes", "master_ipv4_cidr_block"],
+      ),
+      master_authorized_networks_config: node(
+        { gcp_public_cidrs_access_enabled: literal("false") },
+        { cidr_blocks: node({ cidr_block: variable("gke_authorized_cidr"), display_name: anyValue }, {}, ["cidr_block"]) },
+        ["gcp_public_cidrs_access_enabled", "cidr_blocks"],
+      ),
+      master_auth: node({}, { client_certificate_config: node({ issue_client_certificate: literal("false") }) }),
+      workload_identity_config: node({ workload_pool: anyValue }),
+      release_channel: node({ channel: anyValue }),
+      network_policy: node({ enabled: anyValue, provider: anyValue }),
+      addons_config: node({}, { network_policy_config: node({ disabled: anyValue }) }),
+      binary_authorization: node({ evaluation_mode: anyValue }),
+    },
+    ["private_cluster_config", "master_authorized_networks_config"],
+  ),
+  google_container_node_pool: resource(
+    { name: anyValue, cluster: ref("google_container_cluster", "id"), location: anyValue, node_count: anyValue },
+    {
+      management: node({ auto_repair: anyValue, auto_upgrade: anyValue }),
+      node_config: node(
+        {
+          machine_type: anyValue,
+          image_type: anyValue,
+          service_account: serviceAccountEmail,
+          oauth_scopes: stringList("https://www.googleapis.com/auth/cloud-platform"),
+          metadata: settings({ "disable-legacy-endpoints": ["true"] }),
+        },
+        { workload_metadata_config: node({ mode: anyValue }), shielded_instance_config: SHIELDED },
+        ["service_account", "oauth_scopes"],
+      ),
+    },
+    ["cluster", "node_config"],
+  ),
+  google_dns_managed_zone: resource(
+    { name: anyValue, dns_name: anyValue, visibility: anyValue, force_destroy: anyValue },
+    { dnssec_config: node({ state: anyValue }), cloud_logging_config: node({ enable_logging: anyValue }) },
+  ),
+  google_dns_record_set: resource({ managed_zone: ref("google_dns_managed_zone", "name"), name: anyValue, type: anyValue, ttl: anyValue, rrdatas: anyValue }),
+  google_firestore_database: resource({ name: anyValue, location_id: anyValue, type: anyValue, point_in_time_recovery_enablement: anyValue, delete_protection_state: anyValue, deletion_policy: anyValue }),
+  google_kms_crypto_key: resource(
+    { name: anyValue, key_ring: ref("google_kms_key_ring", "id"), purpose: anyValue, rotation_period: anyValue },
+    { version_template: node({ algorithm: anyValue, protection_level: anyValue }) },
+  ),
+  google_kms_key_ring: resource({ name: anyValue, location: anyValue }),
+  google_logging_project_bucket_config: resource({ project: projectVariable, location: anyValue, bucket_id: anyValue, retention_days: anyValue }, {}, ["project"]),
+  google_monitoring_alert_policy: resource(
+    { display_name: anyValue, combiner: anyValue, notification_channels: listOf(ref("google_monitoring_notification_channel", "id")) },
+    { conditions: node({ display_name: anyValue }, { condition_matched_log: node({ filter: anyValue }) }), alert_strategy: node({}, { notification_rate_limit: node({ period: anyValue }) }) },
+  ),
+  google_monitoring_notification_channel: resource({ display_name: anyValue, type: oneOf("email"), labels: anyValue }),
+  google_project_service: resource({ for_each: serviceSet, service: eachValue, project: projectVariable, disable_on_destroy: anyValue }),
+  google_project_service_identity: resource({ provider: literal("google-beta"), service: googleApi }),
+  google_pubsub_subscription: resource(
+    { name: anyValue, topic: ref("google_pubsub_topic", "id"), ack_deadline_seconds: anyValue, message_retention_duration: anyValue, enable_message_ordering: anyValue, enable_exactly_once_delivery: anyValue },
+    {
+      dead_letter_policy: node({ dead_letter_topic: ref("google_pubsub_topic", "id"), max_delivery_attempts: anyValue }),
+      expiration_policy: node({ ttl: anyValue }),
+    },
+  ),
+  google_pubsub_topic: resource({ name: anyValue, message_retention_duration: anyValue, kms_key_name: ref(...KMS_KEY) }),
+  google_redis_instance: resource({
+    name: anyValue,
+    region: anyValue,
+    tier: anyValue,
+    memory_size_gb: anyValue,
+    redis_version: anyValue,
+    authorized_network: network,
+    connect_mode: oneOf("PRIVATE_SERVICE_ACCESS"),
+    auth_enabled: literal("true"),
+    transit_encryption_mode: anyValue,
+  }, {}, ["authorized_network", "connect_mode"]),
+  google_secret_manager_secret: resource(
+    { secret_id: anyValue },
+    {
+      replication: node(
+        {},
+        { user_managed: node({}, { replicas: node({ location: anyValue }, { customer_managed_encryption: node({ kms_key_name: ref(...KMS_KEY) }) }) }) },
+      ),
+    },
+  ),
+  google_service_account: resource({ account_id: anyValue, display_name: anyValue }),
+  google_service_networking_connection: resource({ network: network, service: oneOf("servicenetworking.googleapis.com"), reserved_peering_ranges: listOf(ref("google_compute_global_address", "name")) }, {}, ["network"]),
+  google_sql_database: resource({ name: anyValue, instance: ref("google_sql_database_instance", "name") }),
+  google_sql_database_instance: resource(
+    { name: anyValue, database_version: anyValue, region: anyValue, deletion_protection: anyValue },
+    {
+      settings: node(
+        { tier: anyValue, edition: anyValue, availability_type: anyValue, disk_type: anyValue, disk_autoresize: anyValue, deletion_protection_enabled: anyValue },
+        {
+          ip_configuration: node({ ipv4_enabled: literal("false"), private_network: network, ssl_mode: anyValue }, {}, ["ipv4_enabled", "private_network"]),
+          backup_configuration: node(
+            { enabled: anyValue, start_time: anyValue, point_in_time_recovery_enabled: anyValue, binary_log_enabled: anyValue },
+            { backup_retention_settings: node({ retained_backups: anyValue }) },
+          ),
+          insights_config: node({ query_insights_enabled: anyValue }),
+          maintenance_window: node({ day: anyValue, hour: anyValue }),
+          database_flags: node({ name: anyValue, value: anyValue }),
+        },
+        ["ip_configuration"],
+      ),
+    },
+    ["settings"],
+  ),
+  google_sql_user: resource({ name: anyValue, instance: ref("google_sql_database_instance", "name"), type: oneOf("CLOUD_IAM_SERVICE_ACCOUNT") }, {}, ["instance", "type"]),
+  google_storage_bucket: resource(
+    {
+      name: anyValue,
+      location: anyValue,
+      storage_class: anyValue,
+      uniform_bucket_level_access: literal("true"),
+      public_access_prevention: oneOf("enforced"),
+      force_destroy: anyValue,
+      labels: anyValue,
+    },
+    {
+      versioning: node({ enabled: anyValue }),
+      logging: node({ log_bucket: ref(...BUCKET_NAME), log_object_prefix: anyValue }),
+      encryption: node({ default_kms_key_name: ref(...KMS_KEY) }),
+      lifecycle_rule: node({}, { condition: node({ age: anyValue }), action: node({ type: anyValue }) }),
+      website: node({ main_page_suffix: anyValue, not_found_page: anyValue }),
+    },
+    ["uniform_bucket_level_access", "public_access_prevention"],
+  ),
+  google_storage_bucket_object: resource({ name: anyValue, bucket: ref(...BUCKET_NAME), source: archiveOutput }, {}, ["bucket", "source"]),
+};
+/** The data sources the plans read, and what they set: `archive_file` has its own check. */
+export const DATA_SHAPES = {
+  google_bigquery_default_service_account: resource({}),
+  google_project: resource({}),
+  google_storage_project_service_account: resource({}),
 };
 
 function checkGrant(block, type, where, declared) {
   const grant = GRANTS[type];
-  checkShape(block.body, { attrs: { ...grant.attrs, role: anyValue, member: anyValue, depends_on: anyValue }, blocks: grant.blocks }, where, declared, `a ${type}`);
   const at = `${where}:${block.line}`;
   const role = block.body.find((item) => item.kind === "attr" && item.name === "role");
   const member = block.body.find((item) => item.kind === "attr" && item.name === "member");
@@ -724,21 +1082,22 @@ function checkGrant(block, type, where, declared) {
   reject(at, `member "${raw}" is not one the generator grants role "${roleName}" to on ${type}`);
 }
 
-/** Network access: a firewall's sources are the plan's own subnetwork or Google's IAP range, and a control plane's authorised block a variable. */
-function checkNetworkAccess(items, where) {
-  for (const item of attributesOf(items)) {
+/** The names a body and the blocks in it set, at every depth: a name that runs code, a local path, a credential or a `dynamic` block (whose attributes no check here would see). */
+function checkNamesIn(items, where, type) {
+  for (const item of items) {
     const at = `${where}:${item.line}`;
-    if (item.name === "cidr_block" && !isPlanReference(item.value)) reject(at, "cidr_block must be a reference to a variable of the plan");
-    if (item.name === "source_ranges") {
-      const inside = item.value.slice(1, -1);
-      const shaped = item.value[0]?.v === "[" && item.value.at(-1)?.v === "]" && inside.length > 0;
-      const ok = shaped && (isPlanReference(inside) || (inside.length === 1 && inside[0].t === "str" && inside[0].v === "35.235.240.0/20"));
-      if (!ok) reject(at, "source_ranges must be the plan's own subnetwork or Google's IAP range (35.235.240.0/20)");
+    if (item.kind === "attr") {
+      if (LOCAL_PATH_ATTRIBUTES.has(item.name) && !(type === "google_storage_bucket_object" && item.name === "source")) reject(at, `the attribute ${item.name}, which reads a local path or carries a credential`);
+      if (CODE_ATTRIBUTES.has(item.name.toLowerCase())) reject(at, `the attribute ${item.name}, which runs code or lets someone in`);
+    } else {
+      if (item.type === "dynamic") reject(at, "a dynamic block, whose attributes are not seen: the generator does not write one");
+      for (const word of [item.type, ...item.labels]) if (CODE_ATTRIBUTES.has(word.toLowerCase())) reject(at, `the block ${word}, which runs code or lets someone in`);
+      checkNamesIn(item.body, where, type);
     }
   }
 }
 
-function checkObjectBlock(block, where, archives, declared) {
+function checkObjectBlock(block, where, declared) {
   const [type] = block.labels;
   const here = `${where}:${block.line}`;
   if (block.type === "data" && type === "archive_file") {
@@ -762,22 +1121,12 @@ function checkObjectBlock(block, where, archives, declared) {
   } else if (type === undefined || !ALLOWED_RESOURCES.has(type)) {
     reject(here, `resource ${type ?? ""} is not a resource type the generator writes`);
   }
-  if (type === "google_storage_bucket_object") {
-    for (const item of block.body) {
-      const at = `${where}:${item.line}`;
-      if (item.kind !== "attr" || !BUCKET_OBJECT_ATTRIBUTES.has(item.name)) reject(at, "a bucket object may set only name, bucket, source and content_type, and a block or an inline content is refused");
-      if (item.name === "source" && !isOwnArchiveOutput(item.value, archives)) reject(at, "a bucket object's source may only be the output_path of an archive_file of the plan");
-    }
-    return;
-  }
-  for (const item of attributesOf(block.body)) {
-    if (LOCAL_PATH_ATTRIBUTES.has(item.name)) reject(`${where}:${item.line}`, `the attribute ${item.name}, which reads a local path or carries a credential`);
-    if (CODE_ATTRIBUTES.has(item.name.toLowerCase())) reject(`${where}:${item.line}`, `the attribute ${item.name}, which runs code or lets someone in`);
-  }
-  if (block.type !== "resource") return;
-  checkNetworkAccess(block.body, where);
-  if (Object.hasOwn(GRANTS, type)) checkGrant(block, type, where, declared);
-  if (Object.hasOwn(SHAPES, type)) checkShape(block.body, SHAPES[type], where, declared, `a ${type}`);
+  checkNamesIn(block.body, where, type);
+  // Default deny: a type with no shape is refused, whatever else says it is allowed.
+  const shape = block.type === "data" ? (Object.hasOwn(DATA_SHAPES, type) ? DATA_SHAPES[type] : undefined) : Object.hasOwn(SHAPES, type) ? SHAPES[type] : undefined;
+  if (shape === undefined) reject(here, `${block.type} ${type} has no shape: the generator's attributes of it are not listed`);
+  checkShape(block.body, shape, where, declared, `a ${type}`, block.line);
+  if (block.type === "resource" && Object.hasOwn(GRANTS, type)) checkGrant(block, type, where, declared);
 }
 
 /** The references in a value that reach outside the plan: `path` (the runner's directories) and any data source not allowed. */
@@ -828,7 +1177,6 @@ export function validateSource(text, where, declared) {
 }
 
 function checkSource(items, where, declared) {
-  const archives = new Set(items.filter((item) => item.kind === "block" && item.type === "data" && item.labels[0] === "archive_file" && item.labels.length === 2).map((item) => item.labels[1]));
   for (const item of items) {
     const here = `${where}:${item.line}`;
     if (item.kind !== "block") reject(here, "an attribute outside a block");
@@ -836,10 +1184,12 @@ function checkSource(items, where, declared) {
     if (item.labels.length !== TOP_LEVEL[item.type]) reject(here, `a ${item.type} block takes ${TOP_LEVEL[item.type]} label${TOP_LEVEL[item.type] === 1 ? "" : "s"}`);
     if (item.type === "terraform") checkTerraformBlock(item, where);
     if (item.type === "provider") checkProviderBlock(item, where);
-    if (item.type === "resource" || item.type === "data") checkObjectBlock(item, where, archives, declared);
+    if (item.type === "variable") checkVariableBlock(item, where);
+    if (item.type === "output") checkOutputBlock(item, where);
     if (item.type === "locals" && item.body.some((b) => b.kind !== "attr")) reject(here, "locals may hold attributes only");
-    // The archive_file blocks are the one place `${path.module}` is written, and are held to their own pattern above.
+    // The archive_file blocks are the one place `${path.module}` is written, and are held to their own pattern below.
     if (!(item.type === "data" && item.labels[0] === "archive_file")) for (const value of valuesOf(item.body)) checkReferences(value, where);
+    if (item.type === "resource" || item.type === "data") checkObjectBlock(item, where, declared);
   }
 }
 
@@ -901,10 +1251,8 @@ export function validatePlans(root) {
         declaredIn(items, declared);
         sources.push({ rel: file.rel, items });
       } else if (/^[A-Za-z0-9_-]+\.tfvars$/.test(inside)) {
-        const text = new TextDecoder("utf-8").decode(file.content);
-        if (hasHiddenCharacter(text)) reject(file.rel, "a control or direction-changing character");
-        const { items } = parseBody(tokenize(text, file.rel), 0, false, file.rel);
-        if (items.some((item) => item.kind !== "attr")) reject(file.rel, "a tfvars file may hold attributes only");
+        // The generator writes none, and Terraform reads `terraform.tfvars` of the directory by itself: the workflow sets the variables, in a file of its own, after this check.
+        reject(file.rel, "a tfvars file, which the generator does not write: it would set variables that the check cannot hold to an allowlist");
       } else if (Object.hasOwn(PINNED_SOURCES, file.rel)) {
         if (sha256(file.content) !== PINNED_SOURCES[file.rel]) reject(file.rel, "a placeholder source that is not the generator's");
       } else {
