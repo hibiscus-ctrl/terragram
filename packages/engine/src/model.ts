@@ -115,6 +115,9 @@ export function selfAccessLabel(node: { selfAccess?: SelfAccess | undefined; sel
   return edgeAccessLabel({ access: node.selfAccess, conditional: node.selfConditional, unconditional: node.selfUnconditional });
 }
 
+/** The most edges a model holds. */
+export const MAX_MODEL_EDGES = 600;
+
 const modelEdgeSchema = z.object({
   id: z.string().min(1).max(80),
   source: z.string().min(1).max(80),
@@ -133,7 +136,7 @@ export type ModelEdge = z.infer<typeof modelEdgeSchema>;
  *  prompt (token cost) or the snapshot store. */
 export const infraModelSchema = z.object({
   nodes: z.array(modelNodeSchema).max(300),
-  edges: z.array(modelEdgeSchema).max(600),
+  edges: z.array(modelEdgeSchema).max(MAX_MODEL_EDGES),
   /** `manual` once the reviewer has drawn or deleted a connection themselves. From
    *  then on chat turns may add nodes and edges but never re-derive the topology,
    *  so a hand-built diagram is not silently rewritten. */

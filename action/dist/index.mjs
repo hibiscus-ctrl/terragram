@@ -20429,6 +20429,7 @@ function selfAccessLabel(node2) {
   if (!node2.selfAccess) return void 0;
   return edgeAccessLabel({ access: node2.selfAccess, conditional: node2.selfConditional, unconditional: node2.selfUnconditional });
 }
+var MAX_MODEL_EDGES = 600;
 var modelEdgeSchema = external_exports.object({
   id: external_exports.string().min(1).max(80),
   source: external_exports.string().min(1).max(80),
@@ -20442,7 +20443,7 @@ var modelEdgeSchema = external_exports.object({
 });
 var infraModelSchema = external_exports.object({
   nodes: external_exports.array(modelNodeSchema).max(300),
-  edges: external_exports.array(modelEdgeSchema).max(600),
+  edges: external_exports.array(modelEdgeSchema).max(MAX_MODEL_EDGES),
   /** `manual` once the reviewer has drawn or deleted a connection themselves. From
    *  then on chat turns may add nodes and edges but never re-derive the topology,
    *  so a hand-built diagram is not silently rewritten. */
@@ -26185,6 +26186,27 @@ function writeRegularFile(root, target, content, label) {
   }
 }
 
+// ../packages/engine/src/iam.ts
+var RANK = { "runs-as": 0, read: 1, write: 2, admin: 3, unscoped: 4 };
+function strongerAccess(a, b) {
+  return a !== void 0 && RANK[a] >= RANK[b] ? a : b;
+}
+function unconditionalLevel(t) {
+  return t?.conditional === true ? t.unconditional : t?.access;
+}
+function mergeAccess(a, b) {
+  const access = strongerAccess(a?.access, b.access);
+  const holds = (t) => t?.access === access;
+  const conditional = [a, b].filter(holds).every((t) => t?.conditional === true);
+  if (!conditional) return { access };
+  const floor = [unconditionalLevel(a), unconditionalLevel(b)].reduce(
+    (best, level) => level === void 0 || level === "runs-as" ? best : strongerAccess(best, level),
+    void 0
+  );
+  return floor !== void 0 && floor !== access ? { access, conditional: true, unconditional: floor } : { access, conditional: true };
+}
+var PUBLIC_PRINCIPAL_IDS = /* @__PURE__ */ new Set(["principal-aws-anyone", "principal-all-users", "principal-all-authenticated-users"]);
+
 // src/model-diff.ts
 function nodeSignature(node2, withSelf = true) {
   const attributes = Object.entries(node2.attributes ?? {}).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
@@ -26195,6 +26217,20 @@ function onlySelfAccessChanged(before, after) {
   return nodeSignature(before, false) === nodeSignature(after, false);
 }
 var edgeKey = (edge) => `${edge.source}\0${edge.target}`;
+function edgesByPair(edges) {
+  const out = /* @__PURE__ */ new Map();
+  for (const edge of edges) {
+    const key = edgeKey(edge);
+    const existing = out.get(key);
+    if (!existing || !edge.access) {
+      if (!existing) out.set(key, edge);
+      continue;
+    }
+    const { access: _a3, conditional: _c, unconditional: _u, ...rest } = existing;
+    out.set(key, { ...rest, ...mergeAccess(existing, { ...edge, access: edge.access }) });
+  }
+  return out;
+}
 var byId = (a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 function diffModels(base, head) {
   const baseNodes = new Map(base.nodes.map((n) => [n.id, n]));
@@ -26207,8 +26243,8 @@ function diffModels(base, head) {
     else nodes.changed.push({ before, after: node2 });
   }
   for (const node2 of [...base.nodes].sort(byId)) if (!headNodes.has(node2.id)) nodes.removed.push(node2);
-  const baseEdges = new Map(base.edges.map((e) => [edgeKey(e), e]));
-  const headEdges = new Map(head.edges.map((e) => [edgeKey(e), e]));
+  const baseEdges = edgesByPair(base.edges);
+  const headEdges = edgesByPair(head.edges);
   const edges = { added: [], removed: [], changed: [], unchanged: [] };
   for (const [key, edge] of headEdges) {
     const before = baseEdges.get(key);
@@ -26239,6 +26275,13 @@ function parseModelDocument(text) {
 ${issues}` };
   }
   const { nodes, edges, topology, cloud } = parsed.data;
+  const seen = /* @__PURE__ */ new Map();
+  for (const [index, edge] of edges.entries()) {
+    const key = `${edge.source}\0${edge.target}`;
+    const first = seen.get(key);
+    if (first !== void 0) return { ok: false, problem: `it draws two edges between the same two nodes: edges ${first + 1} and ${index + 1} join the same two nodes` };
+    seen.set(key, index);
+  }
   const problems = attributeProblems(resourceNodes({ nodes, edges, topology }), cloud ?? DEFAULT_CLOUD);
   if (problems.length > 0) return { ok: false, problem: `it has values that cannot be used:
 ${problems.map((p) => `  ${p}`).join("\n")}` };
@@ -26283,15 +26326,6 @@ function readBaseModel(host, root, baseSha, modelPath) {
   return { state: "found", document: parsed.document };
 }
 
-// ../packages/engine/src/iam.ts
-var RANK = { "runs-as": 0, read: 1, write: 2, admin: 3, unscoped: 4 };
-function strongerAccess(a, b) {
-  return a !== void 0 && RANK[a] >= RANK[b] ? a : b;
-}
-function unconditionalLevel(t) {
-  return t?.conditional === true ? t.unconditional : t?.access;
-}
-
 // src/report.ts
 var MAX_LISTED = 12;
 var MAX_DIFF_CHARS = 24e3;
@@ -26303,22 +26337,44 @@ function listed(items, render) {
   if (items.length > MAX_LISTED) shown.push(`- and ${items.length - MAX_LISTED} more`);
   return shown;
 }
-function accessLines(diff) {
+var RANK_PUBLIC = 0;
+var RANK_NARROWED = 4;
+var RANK_REMOVED = 5;
+var levelRank = (access) => access === "unscoped" ? 1 : access === "admin" ? 2 : 3;
+function accessRows(diff) {
   const names = /* @__PURE__ */ new Map();
-  for (const n of [...diff.nodes.unchanged, ...diff.nodes.added, ...diff.nodes.removed, ...diff.nodes.changed.map((c) => c.after)]) {
-    names.set(n.id, markdownText(n.label || n.id));
-  }
-  const name = (id) => names.get(id) ?? markdownText(id);
+  const everyNode = [...diff.nodes.unchanged, ...diff.nodes.added, ...diff.nodes.removed, ...diff.nodes.changed.flatMap((c) => [c.before, c.after])];
+  for (const n of everyNode) names.set(n.id, n.label);
+  const name = (id) => {
+    const label = names.get(id);
+    return label && label !== id ? `${markdownText(label)} (${markdownText(id)})` : markdownText(id);
+  };
   const phrase = (access) => EDGE_ACCESS_META[access].phrase;
+  const everyEdge = [...diff.edges.unchanged, ...diff.edges.added, ...diff.edges.removed, ...diff.edges.changed.flatMap((c) => [c.before, c.after])];
+  const outgoing = /* @__PURE__ */ new Map();
+  for (const e of everyEdge) if (e.access) outgoing.set(e.source, [...outgoing.get(e.source) ?? [], e]);
+  const selfLevels = /* @__PURE__ */ new Map();
+  for (const n of everyNode) if (n.selfAccess) selfLevels.set(n.id, strongerAccess(selfLevels.get(n.id), n.selfAccess));
+  const widestOf = (id, path = /* @__PURE__ */ new Set()) => {
+    if (path.has(id)) return void 0;
+    const next = new Set(path).add(id);
+    let best = selfLevels.get(id);
+    for (const e of outgoing.get(id) ?? []) {
+      const level = e.access === "runs-as" ? widestOf(e.target, next) : e.access;
+      if (level) best = strongerAccess(best, level);
+    }
+    return best;
+  };
+  const levelOf = (e) => e.access === "runs-as" ? widestOf(e.target) ?? "admin" : e.access ?? "runs-as";
   const rows = [];
-  const row = (source, target, rank, text) => rows.push({ rank, key: `${source}\0${target}`, text });
-  const widest = (access) => access === "unscoped" ? 0 : access === "admin" ? 1 : 2;
+  const row = (source, target, rank, kind, level, text) => rows.push({ rank, key: `${source}\0${target}`, text, kind, level });
+  const widestRank = (e) => PUBLIC_PRINCIPAL_IDS.has(e.source) ? RANK_PUBLIC : levelRank(levelOf(e));
   const when = (e) => e.conditional ? e.unconditional ? ` (conditional; ${e.unconditional} without the condition)` : " (conditional)" : "";
   for (const e of diff.edges.added) {
-    if (e.access) row(e.source, e.target, widest(e.access), `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}${when(e)}`);
+    if (e.access) row(e.source, e.target, widestRank(e), "added", levelOf(e), `**Added** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}${when(e)}`);
   }
   for (const e of diff.edges.removed) {
-    if (e.access) row(e.source, e.target, 4, `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}${when(e)}`);
+    if (e.access) row(e.source, e.target, RANK_REMOVED, "removed", levelOf(e), `**Removed** ${name(e.source)} ${phrase(e.access)} ${name(e.target)}${when(e)}`);
   }
   for (const { before, after } of diff.edges.changed) {
     if (before.access === after.access && Boolean(before.conditional) === Boolean(after.conditional) && before.unconditional === after.unconditional) continue;
@@ -26330,38 +26386,52 @@ function accessLines(diff) {
     row(
       after.source,
       after.target,
-      widened ? widest(after.access) : 3,
+      widened ? widestRank(after) : RANK_NARROWED,
+      widened ? "widened" : "narrowed",
+      levelOf(after),
       `**${widened ? "Widened" : "Narrowed"}** ${name(after.source)} to ${name(after.target)}: ${from} to ${to}`
     );
   }
   const selfOf = (n) => n?.selfAccess ? selfAccessPhrase(n) : void 0;
   const selfRank = (access) => access === "unscoped" ? 2 : access === "admin" ? 1 : 0;
-  const selfLevel = (n) => n?.selfAccess === "unscoped" ? 0 : n?.selfAccess === "admin" ? 1 : 2;
+  const selfLevel = (n) => levelRank(n?.selfAccess);
+  const own2 = (n) => n.selfAccess ?? "admin";
   for (const n of diff.nodes.added) {
     const now = selfOf(n);
-    if (now) row(n.id, n.id, selfLevel(n), `**Added** ${name(n.id)} ${now}`);
+    if (now) row(n.id, n.id, selfLevel(n), "added", own2(n), `**Added** ${name(n.id)} ${now}`);
   }
   for (const n of diff.nodes.removed) {
     const was = selfOf(n);
-    if (was) row(n.id, n.id, 4, `**Removed** ${name(n.id)} ${was}`);
+    if (was) row(n.id, n.id, RANK_REMOVED, "removed", own2(n), `**Removed** ${name(n.id)} ${was}`);
   }
   for (const { before, after } of diff.nodes.changed) {
     const was = selfOf(before);
     const now = selfOf(after);
     if (was === now) continue;
-    if (now && !was) row(after.id, after.id, selfLevel(after), `**Added** ${name(after.id)} ${now}`);
-    else if (was && !now) row(after.id, after.id, 4, `**Removed** ${name(after.id)} ${was}`);
+    if (now && !was) row(after.id, after.id, selfLevel(after), "added", own2(after), `**Added** ${name(after.id)} ${now}`);
+    else if (was && !now) row(after.id, after.id, RANK_REMOVED, "removed", own2(before), `**Removed** ${name(after.id)} ${was}`);
     else {
       const floor = (n) => n.selfConditional ? n.selfUnconditional === void 0 ? 0 : selfRank(n.selfUnconditional) : selfRank(n.selfAccess);
       const widened = selfRank(after.selfAccess) > selfRank(before.selfAccess) || floor(after) > floor(before);
-      row(after.id, after.id, widened ? selfLevel(after) : 3, `**${widened ? "Widened" : "Narrowed"}** ${name(after.id)}: ${was} to ${now}`);
+      row(after.id, after.id, widened ? selfLevel(after) : RANK_NARROWED, widened ? "widened" : "narrowed", own2(after), `**${widened ? "Widened" : "Narrowed"}** ${name(after.id)}: ${was} to ${now}`);
     }
   }
   rows.sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-  return rows.map((r) => r.text);
+  return rows;
+}
+function accessLines(diff) {
+  const rows = accessRows(diff);
+  const shown = rows.slice(0, MAX_LISTED).map((r) => `- ${r.text}`);
+  const cut = rows.slice(MAX_LISTED);
+  if (cut.length > 0) {
+    const kinds = ["added", "widened", "narrowed", "removed"].map((kind) => [kind, cut.filter((r) => r.kind === kind).length]).filter(([, count]) => count > 0).map(([kind, count]) => `${count} ${kind}`);
+    const widest = cut.map((r) => r.level).reduce((best, level) => strongerAccess(best, level), void 0);
+    shown.push(`- and ${cut.length} more not shown: ${kinds.join(", ")}${widest ? ` (widest: ${widest})` : ""}`);
+  }
+  return shown;
 }
 function selfOnlyLine(before, after) {
-  const id = `\`${before.id.replaceAll("`", "'")}\``;
+  const id = markdownText(before.id);
   const was = selfAccessLabel(before);
   const now = selfAccessLabel(after);
   const may = after.selfConditional || after.selfAccess === "unscoped" ? "may" : "can";
@@ -26408,19 +26478,20 @@ function modelSection(input3) {
     `| Edges | ${edges.added.length} | ${edges.removed.length} | ${edges.changed.length} |`,
     ""
   );
+  out.push(`Access is compared as recorded in the model file \`${input3.modelPath}\` on each side; it is not read back from the Terraform.`, "");
   if (nodes.changed.length > 0) {
     out.push(
       ...listed(nodes.changed, ({ before, after }) => {
         if (onlySelfAccessChanged(before, after)) return selfOnlyLine(before, after);
         const what = before.label !== after.label ? `"${markdownText(before.label)}" to "${markdownText(after.label)}"` : `${markdownText(before.kind)} to ${markdownText(after.kind)}`;
-        return `\`${before.id.replaceAll("`", "'")}\` changed: ${what}`;
+        return `${markdownText(before.id)} changed: ${what}`;
       }),
       ""
     );
   }
   const access = accessLines(diff);
   if (access.length > 0) {
-    out.push("#### Access changes", "", ...listed(access, (line) => line), "");
+    out.push("#### Access changes", "", ...access, "");
   }
   return out;
 }

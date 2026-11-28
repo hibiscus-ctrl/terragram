@@ -3,7 +3,7 @@
 
 import { MANAGED_WITHOUT_IAM_WRITE, MAX_MANAGED_EDGES, MAX_MANAGED_TARGETS, managedPolicyGrants, SERVICE_RESOURCE_TYPES } from "./aws-managed-policies.ts";
 import { attributeOf, extractReferences, type HclBlock, stringValue } from "./hcl.ts";
-import type { EdgeAccess } from "./model.ts";
+import { type EdgeAccess, MAX_MODEL_EDGES } from "./model.ts";
 
 /**
  * The access a Terraform file grants, read as text. A role's policy is read the way the
@@ -51,6 +51,9 @@ export type IamReading = {
 };
 
 const RANK: Record<EdgeAccess, number> = { "runs-as": 0, read: 1, write: 2, admin: 3, unscoped: 4 };
+
+/** How wide each access type is, widest highest: what is kept when edges have to be cut. */
+export const ACCESS_RANK: Readonly<Record<EdgeAccess, number>> = RANK;
 
 /** The stronger of two access types: a pair of nodes gets one edge, typed by the most it can do. */
 export function strongerAccess(a: EdgeAccess | undefined, b: EdgeAccess): EdgeAccess {
@@ -232,6 +235,23 @@ function readVal(text: string): Val | null {
   }
 }
 
+/** Whether a policy expression is a JSON object with nothing in it: `"{}"` or `jsonencode({})`. */
+function isEmptyDocument(expr: string | undefined): boolean {
+  const text = expr?.trim();
+  if (!text) return false;
+  const inner = text.startsWith("jsonencode(") ? callArgument(text, "jsonencode") : text;
+  if (inner === null) return false;
+  const value = readVal(inner.trim());
+  if (value?.t === "obj") return value.entries.length === 0;
+  if (value?.t !== "str") return false;
+  try {
+    const parsed: unknown = JSON.parse(value.text);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** The balanced text after `name(` in an expression, or null. */
 function callArgument(expr: string, name: string): string | null {
   const open = expr.indexOf(`${name}(`);
@@ -331,7 +351,12 @@ function heredocBody(expr: string): string | null {
 
 /* ---------------------------------------------------------------- policies -- */
 
+/** Who a resource-based policy statement names: the values by principal type (`AWS`, `Service`, `Federated`, `CanonicalUser`), and whether it is a `NotPrincipal`. */
+type PrincipalClause = { not: boolean; entries: Array<{ type: string; values: Val[] }> } | "unreadable";
+
 type Statement = {
+  /** The statement's Principal or NotPrincipal, absent for an identity policy. */
+  principal?: PrincipalClause;
   actions: Val[];
   notActions: boolean;
   resources: Val[];
@@ -403,14 +428,39 @@ function isCondition(v: Val): boolean {
   return narrows;
 }
 
-function statementOf(st: Val, conditionBlock = false): Statement {
+/** The Principal or NotPrincipal of a JSON statement: `"*"`, or an object of principal types. Anything else cannot be read. */
+function principalClauseOf(st: Val): PrincipalClause | undefined {
+  const named = valuesOf(st, "principal");
+  const not = valuesOf(st, "notprincipal");
+  if (named.length + not.length === 0) return undefined;
+  const entries: Array<{ type: string; values: Val[] }> = [];
+  for (const value of [...named, ...not]) {
+    if (value.t === "str" && value.text === "*") entries.push({ type: "AWS", values: [value] });
+    else if (value.t === "obj") for (const e of value.entries) entries.push({ type: e.key, values: listOf(e.value) });
+    else return "unreadable";
+  }
+  return { not: not.length > 0, entries };
+}
+
+/** The `principals` and `not_principals` blocks of a policy document statement. A generated one (`dynamic`) cannot be read. */
+function principalBlocksOf(statement: HclBlock): PrincipalClause | undefined {
+  const blocks = statement.blocks.filter((b) => b.type === "principals" || b.type === "not_principals");
+  if (statement.blocks.some((b) => b.type === "dynamic" && (b.labels[0] === "principals" || b.labels[0] === "not_principals"))) return "unreadable";
+  if (blocks.length === 0) return undefined;
+  const entries = blocks.map((b) => ({ type: stringValue(attributeOf(b, "type")) ?? "?", values: listOf(readVal(attributeOf(b, "identifiers") ?? "") ?? UNREADABLE) }));
+  return { not: blocks.some((b) => b.type === "not_principals"), entries };
+}
+
+function statementOf(st: Val, conditionBlock = false, principal?: PrincipalClause): Statement {
   const conditional = conditionBlock || valuesOf(st, "condition", "conditions").some(isCondition);
   const actions = valuesOf(st, "action", "actions");
   const notActions = valuesOf(st, "notaction", "notactions");
   const resources = valuesOf(st, "resource", "resources");
   const notResources = valuesOf(st, "notresource", "notresources");
   // A statement with no Action or no Resource key is not "grants nothing": it is unknown.
+  const clause = principal ?? principalClauseOf(st);
   return {
+    ...(clause ? { principal: clause } : {}),
     actions: actions.length + notActions.length > 0 ? [...actions, ...notActions].flatMap(listOf) : [UNREADABLE],
     notActions: notActions.length > 0,
     resources: resources.length + notResources.length > 0 ? [...resources, ...notResources].flatMap(listOf) : [UNREADABLE],
@@ -434,7 +484,7 @@ function statementsOfDataBlock(doc: HclBlock): Statement[] | null {
     // An attribute that cannot be read is kept as unreadable, not dropped: a dropped one reads as "grants nothing".
     const obj: Val = { t: "obj", entries: b.attributes.map((a) => ({ key: a.key, value: readVal(a.value) ?? UNREADABLE })) };
     if (isDeny(valuesOf(obj, "effect"))) continue;
-    out.push(statementOf(obj, b.blocks.some(isConditionBlock)));
+    out.push(statementOf(obj, b.blocks.some(isConditionBlock), principalBlocksOf(b)));
   }
   return out;
 }
@@ -449,7 +499,14 @@ function isConditionBlock(b: HclBlock): boolean {
 }
 
 const READ_VERBS = ["get", "list", "describe", "head", "batchget", "query", "scan", "select", "lookup", "view", "search", "read", "receive", "decrypt", "verify"];
-const PERMISSION_NAME = /(policy|acl|grant|permission|passrole|assumerole)/;
+/**
+ * Names that change who can use a resource. Most say so (policy, acl, grant, permission); the rest are the calls
+ * that do it without the word: queue and topic attributes hold the resource policy, a public access block, an
+ * ownership control, a snapshot or image attribute and a resource share decide who outside the account sees it, a
+ * function URL can make a function public, and authorising snapshot access hands one to another account.
+ */
+const PERMISSION_NAME =
+  /(policy|acl|grant|permission|passrole|assumerole|setqueueattributes|settopicattributes|publicaccessblock|ownershipcontrols|snapshotattribute|imageattribute|authorizesnapshotaccess|functionurlconfig|resourceshare)/;
 const ACTION_CHARS = /^[A-Za-z0-9*:-]+$/;
 
 const startsWithReadVerb = (name: string) => READ_VERBS.some((verb) => name.startsWith(verb));
@@ -511,7 +568,13 @@ const HOLE = "";
  * that contains `*` or `?`, an escape or a `%{` directive could name more than it shows.
  * Returns true when the string reaches beyond what can be drawn.
  */
-function stringReach(text: string, owner: (address: string) => string | undefined, add: (id: string) => void, identities: Identities): boolean {
+function stringReach(
+  text: string,
+  owner: (address: string) => string | undefined,
+  add: (id: string) => void,
+  identities: Identities,
+  undrawn: () => void,
+): boolean {
   if (/[\\]|%\{|\$\$/.test(text)) return true;
   const named = identityArn(text);
   if (named) return identityReach(named, identities, add);
@@ -535,14 +598,45 @@ function stringReach(text: string, owner: (address: string) => string | undefine
     i++;
   }
   const wildcard = masked.search(/[*?]/);
-  if (wildcard === -1) return false;
+  if (wildcard === -1) {
+    // A string with no reference and no wildcard names one resource, by its text: a drawn one if its name is there, else one the picture does not hold.
+    if (!text.includes("${")) literalReach(text, identities, add, undrawn);
+    return false;
+  }
   const path = masked.search(new RegExp(`${HOLE}[/:]`));
   return path === -1 || wildcard < path + 2;
 }
 
+/**
+ * How a literal ARN names a resource of a service whose resources the picture draws: the resource types and the
+ * attribute that holds each one's name, and the name in the ARN's resource part. Only these are matched by name;
+ * an ARN of any other service (a KMS key id, a log group) is a resource the picture does not hold.
+ */
+const ARN_NAMES = new Map<string, { types: Array<[string, string]>; nameOf: (resource: string) => string | undefined }>([
+  ["s3", { types: [["aws_s3_bucket", "bucket"]], nameOf: (r) => r.split("/")[0] }],
+  ["dynamodb", { types: [["aws_dynamodb_table", "name"]], nameOf: (r) => (r.startsWith("table/") ? r.slice(6).split("/")[0] : undefined) }],
+  ["sqs", { types: [["aws_sqs_queue", "name"]], nameOf: (r) => r }],
+  ["sns", { types: [["aws_sns_topic", "name"]], nameOf: (r) => r }],
+  ["lambda", { types: [["aws_lambda_function", "function_name"]], nameOf: (r) => (r.startsWith("function:") ? r.slice(9).split(":")[0] : undefined) }],
+  ["ecr", { types: [["aws_ecr_repository", "name"]], nameOf: (r) => (r.startsWith("repository/") ? r.slice(11) : undefined) }],
+  // A secret's ARN ends in a dash and six random characters after its name.
+  ["secretsmanager", { types: [["aws_secretsmanager_secret", "name"]], nameOf: (r) => (r.startsWith("secret:") ? r.slice(7).replace(/-[A-Za-z0-9]{6}$/, "") : undefined) }],
+]);
+
+/** The drawn resources a literal string names, or one the picture does not hold: that reaches "any resource" at the action's level. */
+function literalReach(text: string, identities: Identities, add: (id: string) => void, undrawn: () => void): void {
+  const parts = text.length > 1024 ? [] : text.split(":");
+  const service = parts[0] === "arn" ? parts[2] : undefined;
+  const entry = service === undefined ? undefined : ARN_NAMES.get(service);
+  const name = entry && parts.length >= 6 ? entry.nameOf(parts.slice(5).join(":")) : undefined;
+  const found = name === undefined ? [] : (identities.named.get(`${service}/${name.toLowerCase()}`) ?? []);
+  for (const id of found) add(id);
+  if (found.length === 0) undrawn();
+}
+
 /** The drawn roles and users a literal ARN may name, by the name the file gives them. */
 type Identities = {
-  /** Node ids by `role/<lowercase name>` or `user/<lowercase name>`. */
+  /** Node ids by `role/<lowercase name>` or `user/<lowercase name>`, and by `<service>/<lowercase name>` for the resources of `ARN_NAMES`. */
   named: Map<string, string[]>;
   /** The kinds (`role`, `user`) with a drawn member whose name is not a plain string: an ARN may name it. */
   unsure: Set<string>;
@@ -553,7 +647,7 @@ const NO_IDENTITIES: Identities = { named: new Map(), unsure: new Set() };
 const ARN_OPEN_PART = /^(?:[A-Za-z0-9-]*|\$\{[^{}:"]*\})$/;
 
 /** A `role/...` or `user/...` ARN with a literal name: the partition and account may be a reference (a wildcard one is not read, so it stays broad); the name is the last path segment. */
-function identityArn(text: string): { kind: "role" | "user"; name: string } | null {
+function identityArn(text: string): { kind: "role" | "user"; name: string; account: string } | null {
   if (text.length > 512) return null;
   const parts = text.split(":");
   const [head, partition, service, region, account, resource] = parts;
@@ -561,7 +655,7 @@ function identityArn(text: string): { kind: "role" | "user"; name: string } | nu
   if (!ARN_OPEN_PART.test(partition ?? "") || !ARN_OPEN_PART.test(account ?? "")) return null;
   const m = /^(role|user)\/([A-Za-z0-9+=,.@_/-]+)$/.exec(resource ?? "");
   const name = m?.[2]?.split("/").pop();
-  return m && name ? { kind: m[1] === "user" ? "user" : "role", name } : null;
+  return m && name ? { kind: m[1] === "user" ? "user" : "role", name, account: account ?? "" } : null;
 }
 
 /**
@@ -575,11 +669,15 @@ function identityReach(named: { kind: "role" | "user"; name: string }, identitie
   return found.length === 0 && identities.unsure.has(named.kind);
 }
 
-type Reach = { targets: string[]; broad: boolean };
+/** Whether an ARN's account is provably the one the file is applied in: the account of the caller. A literal id or a variable may be any other account. */
+const OWN_ACCOUNT = /^\$\{data\.aws_caller_identity\.[A-Za-z_][\w-]*\.account_id\}$/;
+
+/** `undrawn`: it also names something the picture does not hold, which is any resource at the grant's own level. */
+type Reach = { targets: string[]; broad: boolean; undrawn: boolean };
 
 /** Which drawn resources a Resource value points at, and whether it also reaches beyond them. */
 function reachOf(values: Val[], owner: (address: string) => string | undefined, identities: Identities = NO_IDENTITIES): Reach {
-  const reach: Reach = { targets: [], broad: false };
+  const reach: Reach = { targets: [], broad: false, undrawn: false };
   const add = (id: string | undefined) => {
     if (id && !reach.targets.includes(id)) reach.targets.push(id);
   };
@@ -588,10 +686,11 @@ function reachOf(values: Val[], owner: (address: string) => string | undefined, 
       const inner = reachOf(v.items, owner, identities);
       for (const t of inner.targets) add(t);
       reach.broad ||= inner.broad;
+      reach.undrawn ||= inner.undrawn;
     } else if (v.t === "obj") {
       reach.broad = true;
     } else if (v.t === "str") {
-      if (stringReach(v.text, owner, add, identities)) reach.broad = true;
+      if (stringReach(v.text, owner, add, identities, () => (reach.undrawn = true))) reach.broad = true;
     } else {
       const target = resolveReference(v.text, owner);
       if (target.kind === "node") add(target.id);
@@ -658,30 +757,116 @@ function selfLevelOfBroad(actions: Val[], notActions: boolean): "admin" | "unsco
   return level;
 }
 
-function edgesOfStatements(
-  source: string,
-  statements: Statement[] | null,
-  owner: (address: string) => string | undefined,
-  identities: Identities,
-): IamEdge[] {
-  if (statements === null) return [{ source, target: ANY_RESOURCE_ID, access: "unscoped" }];
-  const out: IamEdge[] = [];
+/**
+ * What an identity holds when its policy cannot be seen (a variable, a file, a managed policy that is not defined
+ * here or in the table): an unscoped grant over anything, and over the identity itself, since a policy that
+ * may say anything may rewrite the policy it is attached to. The second edge is kept apart as `self` by `readIam`.
+ */
+function opaqueGrant(source: string): IamEdge[] {
+  return [
+    { source, target: ANY_RESOURCE_ID, access: "unscoped" },
+    { source, target: source, access: "unscoped" },
+  ];
+}
+
+/** The target of a grant over the holder itself: a template is read once and given to every holder. */
+const SELF = "\u0000self";
+
+/**
+ * What a policy's statements grant, as edges with no holder yet, one per target and typed by the strongest grant
+ * (as `readIam` would merge them): a policy of thousands of statements is read once, and each identity it is attached
+ * to takes the few edges that are left.
+ */
+type Template = Array<{ target: string; access: EdgeAccess; conditional?: true; unconditional?: EdgeAccess }>;
+
+function templateOfStatements(statements: Statement[], owner: (address: string) => string | undefined, identities: Identities): Template {
+  const merged = new Map<string, Template[number]>();
+  const add = (target: string, access: EdgeAccess, conditional: boolean) => {
+    const existing = merged.get(target);
+    merged.set(target, { target, ...mergeAccess(existing, { access, conditional }) });
+  };
   for (const st of statements) {
     if (st.actions.length === 0 || st.resources.length === 0) continue;
-    const reach = st.notResources ? { targets: [], broad: true } : reachOf(st.resources, owner, identities);
+    const reach = st.notResources ? { targets: [], broad: true, undrawn: false } : reachOf(st.resources, owner, identities);
     const level = levelOf(st.actions, st.notActions);
-    const conditional = st.conditional ? ({ conditional: true } as const) : {};
-    for (const target of reach.targets) out.push({ source, target, access: level, ...conditional });
+    for (const target of reach.targets) add(target, level, st.conditional);
+    if (reach.undrawn && !reach.broad) add(ANY_RESOURCE_ID, level, st.conditional);
     if (reach.broad) {
-      out.push({ source, target: ANY_RESOURCE_ID, access: "unscoped", ...conditional });
+      add(ANY_RESOURCE_ID, "unscoped", st.conditional);
       const own = selfLevelOfBroad(st.actions, st.notActions);
-      if (own) out.push({ source, target: source, access: own, ...conditional });
+      if (own) add(SELF, own, st.conditional);
     }
   }
-  return out;
+  return [...merged.values()];
+}
+
+function edgesOfTemplate(source: string, template: Template): IamEdge[] {
+  return template.map(({ target, ...rest }) => ({ source, target: target === SELF ? source : target, ...rest }));
 }
 
 /* -------------------------------------------------------------------- AWS -- */
+
+const GCP_FEDERATED_LABEL = "A federated identity";
+const GCP_OTHER_LABEL = "Another principal";
+
+/** The most work (statements read, edges drawn) one file's AWS grants may cost. */
+const MAX_AWS_WORK = 100_000;
+
+/** The most edges the reader returns: the model schema's own limit. Past it the widest are kept and one explicit edge says the rest were cut. */
+const MAX_IAM_EDGES = MAX_MODEL_EDGES;
+
+/** What a policy attaches to: the kinds of identity AWS policies are given to, each with a fixed stand-in for one the picture does not draw. */
+type HolderKind = "role" | "user" | "group";
+type Holder = { id: string; standIn: boolean };
+const AWS_HOLDER_STAND_INS: Record<HolderKind, { id: string; label: string }> = {
+  role: { id: "principal-aws-role", label: "An IAM role (not drawn)" },
+  user: { id: "principal-aws-user", label: "An IAM user (not drawn)" },
+  group: { id: "principal-aws-group", label: "An IAM group (not drawn)" },
+};
+
+/**
+ * The principals a resource-based policy (a bucket policy, a trust policy, a queue policy, a Lambda permission) can
+ * name that the picture does not draw, one stand-in per kind, in fixed words: no account number, ARN or name from the
+ * file reaches the model. `principal-federated` and `principal-other` are the same nodes the Google Cloud reader uses.
+ */
+type PrincipalClass = "anyone" | "account" | "service" | "federated" | "other";
+const AWS_PRINCIPALS: Record<PrincipalClass, { id: string; label: string }> = {
+  anyone: { id: "principal-aws-anyone", label: "Anyone (*)" },
+  account: { id: "principal-aws-account", label: "An AWS account or principal (not drawn)" },
+  service: { id: "principal-aws-service", label: "An AWS service" },
+  federated: { id: "principal-federated", label: GCP_FEDERATED_LABEL },
+  other: { id: "principal-other", label: GCP_OTHER_LABEL },
+};
+
+/** The stand-ins that stand for anyone at all: a grant from one is public. Reports rank these first. */
+export const PUBLIC_PRINCIPAL_IDS: ReadonlySet<string> = new Set(["principal-aws-anyone", "principal-all-users", "principal-all-authenticated-users"]);
+
+/** A source of a resource-policy edge: a drawn node, or a stand-in. `uncertain`: the principal may be anyone. */
+type PolicySource = { id: string; drawn: boolean; cls: PrincipalClass | null; uncertain: boolean };
+
+/** The resource types that carry a policy of their own, the attribute naming what it is on, and the attribute holding it. */
+const AWS_RESOURCE_POLICIES = new Map<string, { target: string; policy: string }>([
+  ["aws_s3_bucket_policy", { target: "bucket", policy: "policy" }],
+  ["aws_sqs_queue_policy", { target: "queue_url", policy: "policy" }],
+  ["aws_sns_topic_policy", { target: "arn", policy: "policy" }],
+  ["aws_kms_key_policy", { target: "key_id", policy: "policy" }],
+  ["aws_secretsmanager_secret_policy", { target: "secret_arn", policy: "policy" }],
+  ["aws_ecr_repository_policy", { target: "repository", policy: "policy" }],
+  ["aws_efs_file_system_policy", { target: "file_system_id", policy: "policy" }],
+]);
+
+/** Resources whose own `policy` attribute is their resource policy: it names what the resource is on itself. */
+const AWS_INLINE_RESOURCE_POLICIES = new Set(["aws_s3_bucket", "aws_sqs_queue", "aws_sns_topic", "aws_kms_key", "aws_secretsmanager_secret"]);
+
+/** The resource types that give one identity a policy: the attribute naming the identity, and whether the policy is a managed one attached by ARN. */
+const AWS_POLICY_HOLDERS = new Map<string, { kind: HolderKind; attribute: string; attachment: boolean }>([
+  ["aws_iam_role_policy", { kind: "role", attribute: "role", attachment: false }],
+  ["aws_iam_role_policy_attachment", { kind: "role", attribute: "role", attachment: true }],
+  ["aws_iam_user_policy", { kind: "user", attribute: "user", attachment: false }],
+  ["aws_iam_user_policy_attachment", { kind: "user", attribute: "user", attachment: true }],
+  ["aws_iam_group_policy", { kind: "group", attribute: "group", attachment: false }],
+  ["aws_iam_group_policy_attachment", { kind: "group", attribute: "group", attachment: true }],
+]);
 
 function readAws(blocks: HclBlock[], owner: (address: string) => string | undefined, out: IamReading): void {
   const policies = new Map<string, HclBlock>();
@@ -702,20 +887,126 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     if (name === undefined || /[$%{}\\]/.test(name)) identities.unsure.add(kind);
     else identities.named.set(`${kind}/${name.toLowerCase()}`, [...(identities.named.get(`${kind}/${name.toLowerCase()}`) ?? []), id]);
   }
-
-  const principalsOf = (expr: string | undefined): string[] => {
-    const found: string[] = [];
-    for (const address of expr ? extractReferences(expr) : []) {
-      const id = owner(address);
-      if (id && !found.includes(id)) found.push(id);
+  // The drawn resources a literal ARN of a service may name, by the name the file gives them. One whose name is not a plain string is named by no ARN here: an ARN it may have is any resource.
+  for (const b of blocks) {
+    const [type, label] = b.labels;
+    if (b.type !== "resource" || !type || !label) continue;
+    for (const [service, entry] of ARN_NAMES) {
+      const attribute = entry.types.find(([t]) => t === type)?.[1];
+      const id = attribute ? owner(`${type}.${label}`) : undefined;
+      const name = attribute ? stringValue(attributeOf(b, attribute)) : undefined;
+      if (!attribute || !id || name === undefined || /[$%{}\\]/.test(name)) continue;
+      const key = `${service}/${name.toLowerCase()}`;
+      identities.named.set(key, [...(identities.named.get(key) ?? []), id]);
     }
+  }
+
+  /**
+   * Who holds a policy: the drawn identities the `role` (or `user`, `group`) expression names, and a stand-in for
+   * the holder when it cannot be pinned to one drawn node (a string no drawn identity has, a variable, a data source,
+   * a function). An expression that is more than one plain reference also gets the stand-in beside the drawn ones.
+   * A policy is never dropped for want of a holder: its grants are the holder's, whoever that is.
+   */
+  const holdersOf = (expr: string | undefined, kind: HolderKind): Holder[] => {
+    const found: Holder[] = [];
+    const add = (id: string, standIn: boolean) => {
+      if (!found.some((h) => h.id === id)) found.push({ id, standIn });
+    };
+    const unknown = () => add(AWS_HOLDER_STAND_INS[kind].id, true);
+    const named = (text: string) => {
+      const ids = identities.named.get(`${kind}/${text.toLowerCase()}`) ?? [];
+      for (const id of ids) add(id, false);
+      if (ids.length === 0 || identities.unsure.has(kind)) unknown();
+    };
+    const item = (value: Val): void => {
+      if (value.t === "list") {
+        for (const inner of value.items) item(inner);
+      } else if (value.t === "obj") {
+        unknown();
+      } else if (value.t === "str") {
+        const template = /^\$\{([^{}"]*)\}$/.exec(value.text);
+        if (value.interpolated && !template) {
+          for (const address of value.refs) {
+            const id = owner(address);
+            if (id) add(id, false);
+          }
+          unknown();
+        } else if (template) item({ t: "expr", text: template[1] ?? "", refs: extractReferences(template[1] ?? "") });
+        else named(value.text);
+      } else {
+        const target = resolveReference(value.text, owner);
+        if (target.kind === "node") add(target.id, false);
+        else {
+          for (const address of value.refs) {
+            const id = owner(address);
+            if (id) add(id, false);
+          }
+          unknown();
+        }
+      }
+    };
+    let read: Val | null = null;
+    try {
+      read = expr === undefined ? null : readVal(expr);
+    } catch {
+      read = null;
+    }
+    if (read === null) {
+      for (const address of expr ? extractReferences(expr) : []) {
+        const id = owner(address);
+        if (id) add(id, false);
+      }
+      unknown();
+    } else item(read);
     return found;
+  };
+
+  /** Runs one holder's reading; the edges it adds from a stand-in are unscoped, as an unresolved GCP member's are. */
+  const forHolder = (holder: Holder, run: (source: string) => void): void => {
+    const start = out.edges.length;
+    run(holder.id);
+    if (!holder.standIn) return;
+    const added = out.edges.splice(start);
+    if (added.length > 0) {
+      const stand = Object.values(AWS_HOLDER_STAND_INS).find((s) => s.id === holder.id);
+      if (stand) out.principals.set(stand.id, stand.label);
+    }
+    for (const e of added) {
+      if (e.target === e.source) continue;
+      out.edges.push({ source: e.source, target: e.target, access: "unscoped", ...(e.conditional ? ({ conditional: true } as const) : {}) });
+    }
+  };
+
+  const readDocuments = new Map<string, { statements: Statement[] | null; via: HclBlock[] }>();
+  const templates = new Map<Statement[], Template>();
+
+  /** The most work (statements read, edges drawn) one file's AWS grants may cost; past it the rest is one explicit edge, never dropped silently. */
+  let work = 0;
+  let overflowed = false;
+  const spend = (units: number): boolean => {
+    work += units;
+    if (work > MAX_AWS_WORK) overflowed = true;
+    return !overflowed;
   };
 
   /** The statements of a policy expression, and the document blocks they came from; null when it is not text this reader can see. */
   const statementsOf = (expr: string | undefined, via: HclBlock[]): Statement[] | null => {
     const text = expr?.trim();
     if (!text) return null;
+    // A policy attached to many identities is read once.
+    const known = readDocuments.get(text);
+    if (known) {
+      via.push(...known.via);
+      return known.statements;
+    }
+    const readVia: HclBlock[] = [];
+    const statements = readStatements(text, readVia);
+    readDocuments.set(text, { statements, via: readVia });
+    via.push(...readVia);
+    return statements;
+  };
+
+  const readStatements = (text: string, via: HclBlock[]): Statement[] | null => {
     const ref = /^data\.(aws_iam_policy_document)\.([A-Za-z_][\w-]*)\.json$/.exec(text);
     if (ref) {
       const doc = documents.get(`${ref[1]}.${ref[2]}`);
@@ -740,19 +1031,36 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     return json ? statementsOfDocument(json) : null;
   };
 
+  /** A policy the text does not show (generated, merged, a file): the holder has an unscoped grant. */
+  const opaque = (source: string): void => {
+    out.edges.push(...opaqueGrant(source));
+  };
+
   /** Fails closed: a policy that cannot be read, or that makes the reader throw, is an unscoped grant. */
   const guarded = (source: string, read: () => IamEdge[]): IamEdge[] => {
     try {
       return read();
     } catch {
-      return [{ source, target: ANY_RESOURCE_ID, access: "unscoped" }];
+      return opaqueGrant(source);
     }
   };
 
   /** The grant of one policy expression. `holders` are the blocks that are consumed once it has drawn an edge. */
   const grant = (source: string, expr: string | undefined, holders: HclBlock[]): number => {
+    if (!spend(1)) return 0;
     const via: HclBlock[] = [];
-    const edges = guarded(source, () => edgesOfStatements(source, statementsOf(expr, via), owner, identities));
+    const edges = guarded(source, () => {
+      const statements = statementsOf(expr, via);
+      if (statements === null) return opaqueGrant(source);
+      let template = templates.get(statements);
+      if (!template) {
+        if (!spend(statements.length)) return [];
+        template = templateOfStatements(statements, owner, identities);
+        templates.set(statements, template);
+      }
+      spend(template.length);
+      return edgesOfTemplate(source, template);
+    });
     out.edges.push(...edges);
     if (edges.length > 0) for (const b of [...holders, ...via]) out.consumed.add(b);
     return edges.length;
@@ -810,7 +1118,7 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
    */
   const attach = (source: string, expr: string | undefined, holder: HclBlock | null): void => {
     const unscoped = () => {
-      out.edges.push({ source, target: ANY_RESOURCE_ID, access: "unscoped" });
+      out.edges.push(...opaqueGrant(source));
       if (holder) out.consumed.add(holder);
     };
     if (expr === undefined) {
@@ -846,24 +1154,169 @@ function readAws(blocks: HclBlock[], owner: (address: string) => string | undefi
     }
   };
 
+  /** The stand-in node for a kind of principal, registered so the reader adds it once an edge starts there. */
+  const standIn = (cls: PrincipalClass): string => {
+    const stand = AWS_PRINCIPALS[cls];
+    out.principals.set(stand.id, stand.label);
+    return stand.id;
+  };
+
+  /** The nodes one principal value of one type names. A value that could be anyone at all is `uncertain`. */
+  const sourcesOfValue = (type: string, value: Val): PolicySource[] => {
+    const stand = (cls: PrincipalClass, uncertain = false): PolicySource => ({ id: standIn(cls), drawn: false, cls, uncertain });
+    const drawnSource = (id: string): PolicySource => ({ id, drawn: true, cls: null, uncertain: false });
+    const kind = type.toLowerCase();
+    if (value.t === "list") return value.items.flatMap((item) => sourcesOfValue(type, item));
+    if (value.t === "obj") return [stand("other", true)];
+    // A principal of type "*" is anyone; so is the one identifier a document may give it. Any other identifier under it is not read: it may be anyone.
+    if (type === "*") return [value.t === "str" && value.text === "*" ? stand("anyone") : stand("anyone", true)];
+    if (kind === "service") return [stand("service")];
+    if (kind === "federated") return [stand("federated")];
+    if (kind === "canonicaluser") return [stand("other")];
+    if (kind !== "aws") return [stand("other", true)];
+    if (value.t === "str") {
+      const template = /^\$\{([^{}"]*)\}$/.exec(value.text);
+      if (template) return sourcesOfValue(type, { t: "expr", text: template[1] ?? "", refs: extractReferences(template[1] ?? "") });
+      if (value.text === "*") return [stand("anyone")];
+      const named = identityArn(value.text);
+      if (named) {
+        // The file does not say which account a drawn role is in, so an ARN is that role only when its account is provably the file's own: otherwise it is some principal of another account.
+        if (!OWN_ACCOUNT.test(named.account)) return [stand("account")];
+        const found = identities.named.get(`${named.kind}/${named.name.toLowerCase()}`) ?? [];
+        return found.length > 0 && !identities.unsure.has(named.kind) ? found.map(drawnSource) : [...found.map(drawnSource), stand("account")];
+      }
+      // An account id or an `arn:...:root`, written out or built from the account: some principal of that account.
+      if (/^\d{12}$/.test(value.text) || value.text.endsWith(":root") || value.text.startsWith("arn:")) return [stand("account")];
+      return [stand("other", true)];
+    }
+    const target = resolveReference(value.text, owner);
+    if (target.kind === "node") return [drawnSource(target.id)];
+    return [target.kind === "outside" ? stand("account") : stand("other", true)];
+  };
+
+  /** Who a statement's Principal names. No Principal, one that cannot be read and a NotPrincipal (everyone but them) cannot be bounded: they may be anyone. */
+  const sourcesOfStatement = (st: Statement): PolicySource[] => {
+    const clause = st.principal;
+    const anyone = (): PolicySource[] => [{ id: standIn("anyone"), drawn: false, cls: "anyone", uncertain: true }];
+    if (clause === undefined || clause === "unreadable") return [{ id: standIn("other"), drawn: false, cls: "other", uncertain: true }];
+    if (clause.not) return anyone();
+    const found = clause.entries.flatMap((entry) => entry.values.flatMap((value) => sourcesOfValue(entry.type, value)));
+    if (found.length === 0) return [{ id: standIn("other"), drawn: false, cls: "other", uncertain: true }];
+    return [...new Map(found.map((source) => [`${source.id}|${source.uncertain}`, source])).values()];
+  };
+
+  /** What the policy is on: the drawn node its attribute is exactly one reference to, else any resource, and then nothing it draws is better than unscoped. */
+  const policyTarget = (expr: string | undefined): { id: string; exact: boolean } => {
+    let read: Val | null = null;
+    try {
+      read = expr === undefined ? null : readVal(expr);
+    } catch {
+      read = null;
+    }
+    const text = read?.t === "expr" ? read.text : read?.t === "str" ? (/^\$\{([^{}"]*)\}$/.exec(read.text)?.[1] ?? "") : "";
+    const target = text === "" ? undefined : resolveReference(text, owner);
+    return target?.kind === "node" ? { id: target.id, exact: true } : { id: ANY_RESOURCE_ID, exact: false };
+  };
+
+  /**
+   * The edges a resource-based policy draws into what it is on, from the principals it names. `trust` is a role's
+   * assume-role policy: an action that only assumes the role is acting as it (`runs-as` from a drawn workload or a
+   * service, `admin` from another account or identity, unscoped from anyone), as for a Google Cloud service account.
+   * A policy that cannot be read is an unscoped grant from a principal that cannot be named.
+   */
+  const resourcePolicy = (target: { id: string; exact: boolean }, expr: string | undefined, trust: boolean, holders: HclBlock[]): void => {
+    const via: HclBlock[] = [];
+    let edges: IamEdge[];
+    try {
+      // A document with nothing in it (`"{}"`) names no principal and grants nothing.
+      if (isEmptyDocument(expr)) return;
+      const statements = statementsOf(expr, via);
+      if (statements === null) edges = [{ source: standIn("other"), target: target.id, access: "unscoped" }];
+      else {
+        edges = [];
+        for (const st of statements) {
+          if (st.actions.length === 0) continue;
+          const level = levelOf(st.actions, st.notActions);
+          const assumes = trust && !st.notActions && st.actions.every((a) => a.t === "str" && a.text.toLowerCase().startsWith("sts:"));
+          for (const source of sourcesOfStatement(st)) {
+            let access: EdgeAccess = level;
+            if (source.uncertain || level === "unscoped" || !target.exact) access = "unscoped";
+            else if (assumes) access = source.drawn || source.cls === "service" ? "runs-as" : source.cls === "anyone" ? "unscoped" : "admin";
+            edges.push({ source: source.id, target: target.id, access, ...(st.conditional ? ({ conditional: true } as const) : {}) });
+          }
+        }
+      }
+    } catch {
+      edges = [{ source: standIn("other"), target: target.id, access: "unscoped" }];
+    }
+    out.edges.push(...edges);
+    if (edges.length > 0) for (const b of [...holders, ...via]) out.consumed.add(b);
+  };
+
+  /** A Lambda permission: its `principal` may take its `action` on the function, narrowed by a source ARN, account or organisation. */
+  const lambdaPermission = (b: HclBlock): void => {
+    const target = policyTarget(attributeOf(b, "function_name"));
+    const principal = readVal(attributeOf(b, "principal") ?? "") ?? UNREADABLE;
+    const type = principal.t === "str" && /\.amazonaws\.com(\.cn)?$/.test(principal.text) ? "Service" : "AWS";
+    const action = readVal(attributeOf(b, "action") ?? "");
+    const level = action === null ? "unscoped" : levelOf([action], false);
+    const conditional = ["source_arn", "source_account", "principal_org_id"].some((key) => attributeOf(b, key) !== undefined);
+    for (const source of sourcesOfValue(type, principal)) {
+      const access: EdgeAccess = source.uncertain || level === "unscoped" || !target.exact ? "unscoped" : level;
+      out.edges.push({ source: source.id, target: target.id, access, ...(conditional ? ({ conditional: true } as const) : {}) });
+    }
+    out.consumed.add(b);
+  };
+
   for (const b of blocks) {
+    if (overflowed) break;
     if (b.type !== "resource") continue;
     const [type, name] = b.labels;
-    if (type === "aws_iam_role_policy") {
-      for (const source of principalsOf(attributeOf(b, "role"))) grant(source, attributeOf(b, "policy"), [b]);
-    } else if (type === "aws_iam_role_policy_attachment" || type === "aws_iam_policy_attachment") {
-      for (const source of principalsOf(attributeOf(b, type === "aws_iam_policy_attachment" ? "roles" : "role"))) {
-        attach(source, attributeOf(b, "policy_arn"), b);
+    const holderAttribute = type ? AWS_POLICY_HOLDERS.get(type) : undefined;
+    if (holderAttribute && type) {
+      const { kind, attribute, attachment } = holderAttribute;
+      for (const holder of holdersOf(attributeOf(b, attribute), kind)) {
+        forHolder(holder, (source) => (attachment ? attach(source, attributeOf(b, "policy_arn"), b) : void grant(source, attributeOf(b, "policy"), [b])));
+      }
+    } else if (type === "aws_iam_policy_attachment") {
+      // One attachment may name roles, users and groups together.
+      for (const [attribute, kind] of [["roles", "role"], ["users", "user"], ["groups", "group"]] as const) {
+        if (attributeOf(b, attribute) === undefined) continue;
+        for (const holder of holdersOf(attributeOf(b, attribute), kind)) forHolder(holder, (source) => attach(source, attributeOf(b, "policy_arn"), b));
       }
     } else if (type === "aws_iam_role" && name) {
       const source = owner(`aws_iam_role.${name}`);
       if (!source) continue;
-      for (const inline of b.blocks) if (inline.type === "inline_policy") grant(source, attributeOf(inline, "policy"), []);
+      for (const inline of b.blocks) {
+        if (inline.type === "inline_policy") grant(source, attributeOf(inline, "policy"), []);
+        // Generated policies: whatever they say, the role holds them.
+        else if (inline.type === "dynamic" && inline.labels[0] === "inline_policy") opaque(source);
+      }
       attach(source, attributeOf(b, "managed_policy_arns"), null);
-    } else if (type === "aws_iam_instance_profile" && principalsOf(attributeOf(b, "role")).length > 0) {
+      // Who may assume the role: a policy on the role, from the principals it names.
+      if (attributeOf(b, "assume_role_policy") !== undefined) resourcePolicy({ id: source, exact: true }, attributeOf(b, "assume_role_policy"), true, []);
+    } else if (type === "aws_lambda_permission") {
+      lambdaPermission(b);
+    } else if (type && AWS_RESOURCE_POLICIES.has(type)) {
+      const spec = AWS_RESOURCE_POLICIES.get(type);
+      if (spec) resourcePolicy(policyTarget(attributeOf(b, spec.target)), attributeOf(b, spec.policy), false, [b]);
+    } else if (type === "aws_iam_instance_profile" && holdersOf(attributeOf(b, "role"), "role").some((h) => !h.standIn)) {
       out.consumed.add(b);
     }
+    // A resource whose own `policy` is its resource policy is the resource it is on.
+    const own = type && name && AWS_INLINE_RESOURCE_POLICIES.has(type) ? owner(`${type}.${name}`) : undefined;
+    if (own && attributeOf(b, "policy") !== undefined) resourcePolicy({ id: own, exact: true }, attributeOf(b, "policy"), false, []);
   }
+  // Past the budget, grants went unread: say so with the widest edge there is, never by drawing less.
+  if (overflowed) out.edges.push({ source: overflowPrincipal(out), target: ANY_RESOURCE_ID, access: "unscoped" });
+}
+
+/** The stand-in for grants a reader stopped reading or drawing past its limits: one unscoped edge from it says so. */
+export const OVERFLOW_PRINCIPAL_ID = "principal-overflow";
+export const OVERFLOW_PRINCIPAL_LABEL = "Grants cut at the limits (not drawn)";
+function overflowPrincipal(out: IamReading): string {
+  out.principals.set(OVERFLOW_PRINCIPAL_ID, OVERFLOW_PRINCIPAL_LABEL);
+  return OVERFLOW_PRINCIPAL_ID;
 }
 
 /**
@@ -936,30 +1389,42 @@ function azureScopeTarget(scope: string, owner: (address: string) => string | un
   return owner(`${type}.${m[2]}`);
 }
 
+/** The stand-in for the principal of a role assignment that the picture does not draw: its object id is a variable, a data source or text, and never reaches the model. */
+const AZURE_PRINCIPAL = { id: "principal-azure", label: "An Azure principal (not drawn)" };
+
+/** One reference to an attribute of an Azure resource: `azurerm_x.name.principal_id`, `azurerm_x.name.identity[0].principal_id`, with an index on the resource. */
+const AZURE_PRINCIPAL_REFERENCE = /^azurerm_[a-z0-9_]+\.[A-Za-z_][\w-]*(?:\[(?:\d+|each\.key|count\.index)\])?(?:\.[A-Za-z_][\w-]*(?:\[\d+\])?)+$/;
+
 function readAzure(blocks: HclBlock[], owner: (address: string) => string | undefined, out: IamReading): void {
   for (const b of blocks) {
     if (b.type !== "resource" || b.labels[0] !== "azurerm_role_assignment") continue;
-    let source: string | undefined;
-    for (const address of extractReferences(attributeOf(b, "principal_id") ?? "")) {
-      source = owner(address);
-      if (source) break;
+    const principal = attributeOf(b, "principal_id") ?? "";
+    let drawn: string | undefined;
+    for (const address of extractReferences(principal)) {
+      drawn = owner(address);
+      if (drawn) break;
     }
-    if (!source) continue;
+    // Only exactly one reference to a drawn identity is that identity: anything else (a variable, a data-sourced group, a conditional) may be someone who is not drawn, and is a stand-in's unscoped grant.
+    const exact = drawn !== undefined && AZURE_PRINCIPAL_REFERENCE.test(principal.trim());
+    const sources: Array<{ id: string; standIn: boolean }> = [];
+    if (drawn) sources.push({ id: drawn, standIn: false });
+    if (!exact) sources.push({ id: AZURE_PRINCIPAL.id, standIn: true });
 
-    const unscoped: IamEdge = { source, target: ANY_RESOURCE_ID, access: "unscoped" };
-    let edge: IamEdge | null;
-    try {
-      const roleName = stringValue(attributeOf(b, "role_definition_name"));
-      const level: EdgeAccess = (roleName === undefined ? null : azureRoleLevel(roleName)) ?? "unscoped";
-      const target = azureScopeTarget(attributeOf(b, "scope") ?? "", owner);
-      edge = target === undefined ? unscoped : { source, target, access: level };
-    } catch {
-      edge = unscoped;
-    }
-    if (edge) {
+    for (const { id: source, standIn } of sources) {
+      const unscoped: IamEdge = { source, target: ANY_RESOURCE_ID, access: "unscoped" };
+      let edge: IamEdge;
+      try {
+        const roleName = stringValue(attributeOf(b, "role_definition_name"));
+        const level: EdgeAccess = standIn ? "unscoped" : ((roleName === undefined ? null : azureRoleLevel(roleName)) ?? "unscoped");
+        const target = azureScopeTarget(attributeOf(b, "scope") ?? "", owner);
+        edge = target === undefined ? unscoped : { source, target, access: level };
+      } catch {
+        edge = unscoped;
+      }
       out.edges.push(edge);
-      out.consumed.add(b);
+      if (standIn) out.principals.set(AZURE_PRINCIPAL.id, AZURE_PRINCIPAL.label);
     }
+    out.consumed.add(b);
   }
 }
 
@@ -980,8 +1445,8 @@ const GCP_PRINCIPALS = {
   serviceAccount: "A service account (not drawn)",
   allUsers: "Anyone on the internet (allUsers)",
   allAuthenticatedUsers: "Any Google account (allAuthenticatedUsers)",
-  federated: "A federated identity",
-  other: "Another principal",
+  federated: GCP_FEDERATED_LABEL,
+  other: GCP_OTHER_LABEL,
 } as const;
 
 type GcpPrincipal = keyof typeof GCP_PRINCIPALS;
@@ -1066,6 +1531,12 @@ const GCP_NOT_A_TARGET = new Set([
   "folder",
   "org_id",
   "billing_account_id",
+  // Meta-arguments: they say how or when a resource is made, never which one a grant is on.
+  "depends_on",
+  "count",
+  "for_each",
+  "lifecycle",
+  "provider",
 ]);
 
 /** Basic and predefined roles that can mint a key for, or act as, a service account, so they reach everything it does: `admin`, whatever their name says. */
@@ -1163,6 +1634,12 @@ function isGcpCondition(b: HclBlock): boolean {
   return gcpExpressionNarrows(expression);
 }
 
+/** A string with nothing in it to resolve: a name written out in the file. */
+function isPlainName(expression: string): boolean {
+  const read = readVal(expression);
+  return read?.t === "str" && !read.interpolated && read.refs.length === 0 && read.text !== "";
+}
+
 type GcpGrant = {
   /** The block holding it, consumed once it has drawn an edge. */
   holder: HclBlock;
@@ -1228,9 +1705,10 @@ function readGcp(blocks: HclBlock[], owner: (address: string) => string | undefi
    */
   const reachOfTarget = (b: HclBlock, service: string): GcpReach => {
     const named = GCP_TARGET_ATTRIBUTES.get(service);
-    const expressions = named
-      ? named.flatMap((key) => attributeOf(b, key) ?? [])
-      : b.attributes.filter((a) => !GCP_NOT_A_TARGET.has(a.key)).map((a) => a.value);
+    const candidates = named ? [] : b.attributes.filter((a) => !GCP_NOT_A_TARGET.has(a.key));
+    // A type with no target attribute that names its resource in text (a repository, a database) is on one this reader cannot match to a drawn node: any resource, whatever else points at.
+    if (candidates.some((a) => isPlainName(a.value))) return { ids: [], broad: true, undrawn: false };
+    const expressions = named ? named.flatMap((key) => attributeOf(b, key) ?? []) : candidates.map((a) => a.value);
     const ids: string[] = [];
     let broad = expressions.length === 0;
     let undrawn = false;
@@ -1524,6 +2002,13 @@ export function readIam(blocks: HclBlock[], owner: (address: string) => string |
   // A grant on oneself is not an edge: it is kept apart, and only where it is an escalation path (`admin`, or `unscoped` when the reader cannot tell).
   const all = [...merged.values()];
   reading.edges = all.filter((e) => e.source !== e.target);
+  if (reading.edges.length > MAX_IAM_EDGES) {
+    // Keep the widest grants, in the order they were read, and replace the rest with one edge that says they were cut.
+    const keep = new Set([...reading.edges].sort((a, b) => RANK[b.access] - RANK[a.access]).slice(0, MAX_IAM_EDGES - 1));
+    const kept = reading.edges.filter((e) => keep.has(e));
+    kept.push({ source: overflowPrincipal(reading), target: ANY_RESOURCE_ID, access: "unscoped" });
+    reading.edges = kept;
+  }
   reading.self = all.filter((e) => e.source === e.target && (e.access === "admin" || e.access === "unscoped"));
   return reading;
 }

@@ -145,7 +145,8 @@ describe("module-based emission", () => {
     const parsed = parseTerraform(emitTerraform(added.model, "aws").files[0]?.content ?? "");
     assert.ok(parsed.ok);
     if (!parsed.ok) return;
-    assert.deepEqual(parsed.model.nodes.map((n) => n.kind).filter((k) => k !== "internet"), ["key-vault"]);
+    // The key's own policy names the account that owns it: that principal is a stand-in node, not a component.
+    assert.deepEqual(parsed.model.nodes.filter((n) => !n.id.startsWith("principal-")).map((n) => n.kind).filter((k) => k !== "internet"), ["key-vault"]);
   });
 
   it("names a FIFO queue the way SQS requires", () => {
