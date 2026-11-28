@@ -1,10 +1,12 @@
 {
-  "schema": "diagram.graph-layout/v1",
+  "schema": "diagram.graph-layout/v2",
   "cloud": "aws",
   "mode": "full",
+  "level": "detailed",
+  "focus": null,
   "compared": false,
-  "width": 924,
-  "height": 478,
+  "width": 1112,
+  "height": 428,
   "top": 0,
   "cut": null,
   "header": [],
@@ -25,8 +27,8 @@
       },
       "x": 24,
       "y": 24,
-      "width": 876,
-      "height": 430
+      "width": 1064,
+      "height": 380
     },
     {
       "id": "g1",
@@ -40,9 +42,9 @@
         "change": null,
         "findings": null
       },
-      "x": 256,
-      "y": 194,
-      "width": 412,
+      "x": 562,
+      "y": 60,
+      "width": 512,
       "height": 246
     }
   ],
@@ -50,6 +52,7 @@
     {
       "id": "n0",
       "kind": "module call",
+      "service": "terraform.module",
       "category": "other",
       "label": "terraform-aws-modules/vpc/aws",
       "title": "module call terraform-aws-modules/vpc/aws",
@@ -59,14 +62,15 @@
         "change": null,
         "findings": null
       },
-      "x": 270,
-      "y": 230,
-      "width": 172,
+      "x": 836,
+      "y": 96,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n1",
       "kind": "aws_iam_policy",
+      "service": "aws.iam",
       "category": "identity",
       "label": "ReadOnlyAccess",
       "title": "aws_iam_policy ReadOnlyAccess",
@@ -76,14 +80,15 @@
         "change": null,
         "findings": null
       },
-      "x": 714,
-      "y": 364,
-      "width": 172,
+      "x": 38,
+      "y": 328,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n2",
       "kind": "aws_iam_role",
+      "service": "aws.iam",
       "category": "identity",
       "label": "web-role",
       "title": "aws_iam_role web-role",
@@ -93,14 +98,15 @@
         "change": null,
         "findings": null
       },
-      "x": 714,
-      "y": 230,
-      "width": 172,
+      "x": 38,
+      "y": 194,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n3",
       "kind": "aws_instance",
+      "service": "aws.ec2",
       "category": "compute",
       "label": "i-0abc123def456",
       "title": "aws_instance i-0abc123def456, region eu-west-1",
@@ -111,14 +117,15 @@
         "change": null,
         "findings": null
       },
-      "x": 376,
+      "x": 170,
       "y": 60,
-      "width": 172,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n4",
       "kind": "aws_security_group",
+      "service": "aws.securitygroup",
       "category": "network",
       "label": "sg-0123abcd",
       "title": "aws_security_group sg-0123abcd, region eu-west-1",
@@ -129,14 +136,15 @@
         "change": null,
         "findings": null
       },
-      "x": 38,
-      "y": 230,
-      "width": 172,
+      "x": 302,
+      "y": 194,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n5",
       "kind": "aws_subnet",
+      "service": "aws.vpc",
       "category": "network",
       "label": "subnet-0f1e2d3c",
       "title": "aws_subnet subnet-0f1e2d3c, region eu-west-1",
@@ -147,14 +155,15 @@
         "change": null,
         "findings": null
       },
-      "x": 482,
-      "y": 230,
-      "width": 172,
+      "x": 576,
+      "y": 96,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n6",
       "kind": "aws_vpc",
+      "service": "aws.vpc",
       "category": "network",
       "label": "vpc-0a1b2c3d",
       "title": "aws_vpc vpc-0a1b2c3d, region eu-west-1",
@@ -165,9 +174,9 @@
         "change": null,
         "findings": null
       },
-      "x": 472,
-      "y": 364,
-      "width": 172,
+      "x": 576,
+      "y": 230,
+      "width": 224,
       "height": 62
     }
   ],
@@ -178,18 +187,19 @@
       "target": "n1",
       "kind": "reference",
       "status": "unchanged",
+      "count": 1,
       "points": [
         {
-          "x": 800,
+          "x": 150,
+          "y": 256
+        },
+        {
+          "x": 150,
           "y": 292
         },
         {
-          "x": 800,
+          "x": 150,
           "y": 328
-        },
-        {
-          "x": 800,
-          "y": 364
         }
       ]
     },
@@ -199,22 +209,23 @@
       "target": "n0",
       "kind": "reference",
       "status": "unchanged",
+      "count": 1,
       "points": [
         {
-          "x": 413,
-          "y": 122
+          "x": 282,
+          "y": 60
         },
         {
-          "x": 356,
-          "y": 158
+          "x": 282,
+          "y": 48
         },
         {
-          "x": 356,
-          "y": 194
+          "x": 948,
+          "y": 48
         },
         {
-          "x": 356,
-          "y": 230
+          "x": 948,
+          "y": 96
         }
       ]
     },
@@ -224,22 +235,19 @@
       "target": "n2",
       "kind": "reference",
       "status": "unchanged",
+      "count": 1,
       "points": [
         {
-          "x": 548,
-          "y": 108
+          "x": 221,
+          "y": 122
         },
         {
-          "x": 800,
+          "x": 150,
           "y": 158
         },
         {
-          "x": 800,
+          "x": 150,
           "y": 194
-        },
-        {
-          "x": 800,
-          "y": 230
         }
       ]
     },
@@ -249,22 +257,19 @@
       "target": "n4",
       "kind": "reference",
       "status": "unchanged",
+      "count": 1,
       "points": [
         {
-          "x": 376,
-          "y": 108
+          "x": 343,
+          "y": 122
         },
         {
-          "x": 124,
+          "x": 414,
           "y": 158
         },
         {
-          "x": 124,
+          "x": 414,
           "y": 194
-        },
-        {
-          "x": 124,
-          "y": 230
         }
       ]
     },
@@ -274,22 +279,23 @@
       "target": "n5",
       "kind": "reference",
       "status": "unchanged",
+      "count": 1,
       "points": [
         {
-          "x": 511,
-          "y": 122
+          "x": 394,
+          "y": 91
         },
         {
-          "x": 568,
-          "y": 158
+          "x": 485,
+          "y": 91
         },
         {
-          "x": 568,
-          "y": 194
+          "x": 485,
+          "y": 127
         },
         {
-          "x": 568,
-          "y": 230
+          "x": 576,
+          "y": 127
         }
       ]
     },
@@ -299,18 +305,23 @@
       "target": "n6",
       "kind": "reference",
       "status": "unchanged",
+      "count": 1,
       "points": [
         {
-          "x": 210,
-          "y": 282
+          "x": 526,
+          "y": 225
         },
         {
-          "x": 404,
-          "y": 328
+          "x": 551,
+          "y": 225
         },
         {
-          "x": 487,
-          "y": 364
+          "x": 551,
+          "y": 261
+        },
+        {
+          "x": 576,
+          "y": 261
         }
       ]
     },
@@ -320,18 +331,19 @@
       "target": "n6",
       "kind": "reference",
       "status": "unchanged",
+      "count": 1,
       "points": [
         {
-          "x": 568,
-          "y": 292
+          "x": 688,
+          "y": 158
         },
         {
-          "x": 568,
-          "y": 328
+          "x": 688,
+          "y": 194
         },
         {
-          "x": 563,
-          "y": 364
+          "x": 688,
+          "y": 230
         }
       ]
     }

@@ -4,7 +4,7 @@
 import dagre from "dagre";
 
 import { NODE_HEIGHT } from "../layout.ts";
-import type { GraphView } from "./project.ts";
+import type { GraphView } from "./view.ts";
 
 /**
  * Where everything of a {@link GraphView} sits. The picture is built from the inside out. The resources of a box
@@ -47,6 +47,8 @@ export const MAX_ASPECT = 4;
 /** The width and height of a resource's card: room for 36 characters of its type and 24 of its name. */
 const CARD_WIDTH = 224;
 const CARD_HEIGHT = NODE_HEIGHT;
+/** A summary card of the Overview level has a row of counts under its name. */
+const SUMMARY_CARD_HEIGHT = 84;
 
 const MARGIN = 24;
 /** Room above the first thing in a box, for its label. */
@@ -93,19 +95,24 @@ function absorb(into: Placed, from: Placed, dx: number, dy: number): void {
   for (const [i, line] of from.edges) into.edges.set(i, line.map((p) => ({ x: p.x + dx, y: p.y + dy })));
 }
 
+/** The height of each card, by node id. */
+type Heights = ReadonlyMap<string, number>;
+const heightIn = (heights: Heights, id: string) => heights.get(id) ?? CARD_HEIGHT;
+
 /** One card on its own. */
-function cardBlock(id: string): Block {
-  const block: Block = { ...emptyPlaced(), width: CARD_WIDTH, height: CARD_HEIGHT };
-  block.nodes.set(id, { x: 0, y: 0, width: CARD_WIDTH, height: CARD_HEIGHT });
+function cardBlock(id: string, heights: Heights): Block {
+  const height = heightIn(heights, id);
+  const block: Block = { ...emptyPlaced(), width: CARD_WIDTH, height };
+  block.nodes.set(id, { x: 0, y: 0, width: CARD_WIDTH, height });
   return block;
 }
 
 /** Cards that refer to each other, as dagre lays them out in layers, moved so that the top-left of what is drawn is the origin. */
-function clusterBlock(ids: readonly string[], edges: readonly { index: number; from: string; to: string }[]): Block {
+function clusterBlock(ids: readonly string[], edges: readonly { index: number; from: string; to: string }[], heights: Heights): Block {
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: "TB", nodesep: NODE_GAP, ranksep: RANK_GAP, edgesep: 20, marginx: 0, marginy: 0 });
   g.setDefaultEdgeLabel(() => ({}));
-  for (const id of ids) g.setNode(id, { width: CARD_WIDTH, height: CARD_HEIGHT });
+  for (const id of ids) g.setNode(id, { width: CARD_WIDTH, height: heightIn(heights, id) });
   for (const edge of edges) g.setEdge(edge.from, edge.to);
   dagre.layout(g);
 
@@ -113,14 +120,15 @@ function clusterBlock(ids: readonly string[], edges: readonly { index: number; f
   const centres = ids.map((id) => g.node(id));
   const points = lines.flatMap((l) => l.points);
   const minX = Math.min(...centres.map((c) => c.x - CARD_WIDTH / 2), ...points.map((p) => p.x));
-  const minY = Math.min(...centres.map((c) => c.y - CARD_HEIGHT / 2), ...points.map((p) => p.y));
+  const minY = Math.min(...centres.map((c, i) => c.y - heightIn(heights, ids[i] as string) / 2), ...points.map((p) => p.y));
   const maxX = Math.max(...centres.map((c) => c.x + CARD_WIDTH / 2), ...points.map((p) => p.x));
-  const maxY = Math.max(...centres.map((c) => c.y + CARD_HEIGHT / 2), ...points.map((p) => p.y));
+  const maxY = Math.max(...centres.map((c, i) => c.y + heightIn(heights, ids[i] as string) / 2), ...points.map((p) => p.y));
 
   const block: Block = { ...emptyPlaced(), width: round(maxX - minX), height: round(maxY - minY) };
   ids.forEach((id, i) => {
     const c = centres[i] as { x: number; y: number };
-    block.nodes.set(id, { x: round(c.x - CARD_WIDTH / 2 - minX), y: round(c.y - CARD_HEIGHT / 2 - minY), width: CARD_WIDTH, height: CARD_HEIGHT });
+    const height = heightIn(heights, id);
+    block.nodes.set(id, { x: round(c.x - CARD_WIDTH / 2 - minX), y: round(c.y - height / 2 - minY), width: CARD_WIDTH, height });
   });
   for (const line of lines) block.edges.set(line.index, line.points.map((p) => ({ x: p.x - minX, y: p.y - minY })));
   return block;
@@ -237,6 +245,7 @@ function route(a: Box, b: Box, cards: readonly Box[]): Point[] {
 export function layoutGraph(view: GraphView, top = 0, options: LayoutOptions = {}): GraphLayout {
   const aspect = checkAspect(options.aspect);
 
+  const heights: Heights = new Map(view.nodes.flatMap((n) => (n.aggregate?.level === "overview" ? [[n.id, SUMMARY_CARD_HEIGHT] as const] : [])));
   const groupOf = new Map(view.nodes.map((n) => [n.id, n.group] as const));
   const nodesIn = new Map<string, string[]>();
   for (const node of view.nodes) nodesIn.set(node.group, [...(nodesIn.get(node.group) ?? []), node.id]);
@@ -270,7 +279,7 @@ export function layoutGraph(view: GraphView, top = 0, options: LayoutOptions = {
     const blocks = [...clusters.values()].map((members) => {
       const inCluster = new Set(members);
       const lines = edges.filter((e) => inCluster.has(e.from));
-      return members.length === 1 && lines.length === 0 ? cardBlock(members[0] as string) : clusterBlock(members, lines);
+      return members.length === 1 && lines.length === 0 ? cardBlock(members[0] as string, heights) : clusterBlock(members, lines, heights);
     });
     own.set(id, blocks);
     return blocks;

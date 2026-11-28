@@ -1,10 +1,13 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { drawioIconStyle } from "./drawio-shapes.ts";
 import { type Box, layoutGraph, type LayoutOptions } from "./layout.ts";
+import { kindOf } from "./layout-view.ts";
+import { GRAPH_CATEGORIES } from "./services.ts";
 import { CATEGORY_COLOUR, EDGE_STYLE, GROUP_STYLE, INK, MUTED, STATUS_STYLE } from "./svg.ts";
 import { CARD_KIND_CHARS, CARD_LABEL_CHARS, clipMiddle, footerLines, headerLines } from "./text.ts";
-import type { GraphView, ViewGroup, ViewNode } from "./project.ts";
+import type { GraphView, ViewGroup, ViewNode } from "./view.ts";
 
 /**
  * A {@link GraphView} as a draw.io (diagrams.net) file: uncompressed `mxfile` XML, with the
@@ -13,6 +16,9 @@ import type { GraphView, ViewGroup, ViewNode } from "./project.ts";
  * uses (`layoutGraph`), so the two pictures match; a card sits relative to its container
  * as draw.io expects, and a connector keeps the waypoints dagre routed it by. The bytes
  * depend only on the view.
+ *
+ * A card whose service draw.io has a shape for (see `drawio-shapes.ts`) carries that shape as a small cell inside it, which
+ * draw.io draws from its own AWS, Azure or Google Cloud library: the file holds the shape's name and no art.
  *
  * Every label is plain text (no `html=1`, so draw.io never reads it as markup) and goes
  * through {@link attr}. Only what the picture already says is written: a card has its type,
@@ -53,8 +59,14 @@ function groupHeading(group: ViewGroup): string {
 function cardLabel(node: ViewNode): string {
   const mark = STATUS_STYLE[node.status].mark;
   const findings = node.findings ? ` [${node.findings.count} ${node.findings.worst}]` : "";
-  return `${mark ? `${mark} ` : ""}${clipMiddle(node.type, CARD_KIND_CHARS)}\n${clipMiddle(node.label, CARD_LABEL_CHARS)}${findings}`;
+  const counts = node.aggregate?.level === "overview" ? GRAPH_CATEGORIES.flatMap((c) => (node.aggregate?.byCategory[c] ? [`${c} ${node.aggregate.byCategory[c]}`] : [])).join(", ") : "";
+  return `${mark ? `${mark} ` : ""}${clipMiddle(kindOf(node), CARD_KIND_CHARS)}\n${clipMiddle(node.label, CARD_LABEL_CHARS)}${findings}${counts ? `\n${counts}` : ""}`;
 }
+
+/** The draw.io style of the shape a card carries, if its service has one and it is a card of resources (a summary card stands for no service). */
+const iconStyleOf = (node: ViewNode) => (node.aggregate?.level === "overview" ? undefined : drawioIconStyle(node.service));
+
+const ICON_SIZE = 32;
 
 const geometry = (box: Box, parent?: Box): string =>
   `<mxGeometry x="${box.x - (parent?.x ?? 0)}" y="${box.y - (parent?.y ?? 0)}" width="${box.width}" height="${box.height}" as="geometry"/>`;
@@ -87,14 +99,15 @@ function groupCell(group: ViewGroup, box: Box, parent: Box | undefined): string 
 
 function nodeCell(node: ViewNode, box: Box, parent: Box): string {
   const status = STATUS_STYLE[node.status];
+  const icon = iconStyleOf(node);
   const css = style({
     rounded: 1,
     arcSize: 12,
     whiteSpace: "wrap",
     align: "left",
     verticalAlign: "middle",
-    spacingLeft: 12,
-    fontSize: 11,
+    spacingLeft: icon === undefined ? 12 : ICON_SIZE + 20,
+    fontSize: icon === undefined ? 11 : 10,
     fontStyle: node.status === "removed" ? 9 : 1,
     fontColor: node.status === "removed" ? MUTED : INK,
     fillColor: status.fill,
@@ -104,7 +117,10 @@ function nodeCell(node: ViewNode, box: Box, parent: Box): string {
     dashPattern: status.dash,
     opacity: node.status === "context" ? 55 : undefined,
   });
-  return `<mxCell id="${attr(node.id)}" value="${attr(cardLabel(node))}" style="${css}" vertex="1" parent="${attr(node.group)}">${geometry(box, parent)}</mxCell>`;
+  const card = `<mxCell id="${attr(node.id)}" value="${attr(cardLabel(node))}" style="${css}" vertex="1" parent="${attr(node.group)}">${geometry(box, parent)}</mxCell>`;
+  if (icon === undefined) return card;
+  const shape = `<mxCell id="${attr(node.id)}-icon" value="" style="${icon}" vertex="1" parent="${attr(node.id)}"><mxGeometry x="10" y="${Math.round((box.height - ICON_SIZE) / 2)}" width="${ICON_SIZE}" height="${ICON_SIZE}" as="geometry"/></mxCell>`;
+  return `${card}\n        ${shape}`;
 }
 
 function textCell(id: string, text: string, x: number, y: number, width: number, emphasis: boolean): string {
@@ -156,10 +172,11 @@ export function renderGraphDrawio(view: GraphView, options: LayoutOptions = {}):
         strokeWidth: line.width,
         dashed: line.dash ? 1 : undefined,
         dashPattern: line.dash,
+        ...(edge.count > 1 && { fontSize: 10, fontStyle: 1, fontColor: INK, labelBackgroundColor: "#faf8f4" }),
       });
       const waypoints = (layout.edges[i] ?? []).slice(1, -1);
       const points = waypoints.length === 0 ? "" : `<Array as="points">${waypoints.map((p) => `<mxPoint x="${p.x}" y="${p.y}"/>`).join("")}</Array>`;
-      cells.push(`<mxCell id="e${i}" value="" style="${css}" edge="1" source="${attr(edge.from)}" target="${attr(edge.to)}" parent="1"><mxGeometry relative="1" as="geometry">${points}</mxGeometry></mxCell>`);
+      cells.push(`<mxCell id="e${i}" value="${edge.count > 1 ? attr(`×${edge.count}`) : ""}" style="${css}" edge="1" source="${attr(edge.from)}" target="${attr(edge.to)}" parent="1"><mxGeometry relative="1" as="geometry">${points}</mxGeometry></mxCell>`);
     });
   } else {
     cells.push(textCell("empty", view.mode === "delta" ? "No changes." : "No resources to draw.", 24, top + 24, width, false));

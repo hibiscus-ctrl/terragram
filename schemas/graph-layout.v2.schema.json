@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/hibiscus-ctrl/terragram/schemas/graph-layout.v1.schema.json",
-  "title": "Estate graph layout (diagram.graph-layout/v1)",
+  "$id": "https://github.com/hibiscus-ctrl/terragram/schemas/graph-layout.v2.schema.json",
+  "title": "Estate graph layout (diagram.graph-layout/v2)",
   "description": "An infraharvest graph/v1 estate laid out as plain data: nodes and boxes with their rectangles, edges with their routes, and the badges (change, findings) each carries. These are the coordinates the engine's SVG is drawn from, so a viewer that places them draws the same picture. Every string is plain text, never markup. At most 1000 nodes; `cut` says when an estate was cut.",
   "type": "object",
   "properties": {
     "schema": {
       "type": "string",
-      "const": "diagram.graph-layout/v1"
+      "const": "diagram.graph-layout/v2"
     },
     "cloud": {
       "type": "string",
@@ -26,6 +26,57 @@
         "full",
         "delta"
       ]
+    },
+    "level": {
+      "type": "string",
+      "enum": [
+        "overview",
+        "services",
+        "detailed"
+      ],
+      "description": "How much is drawn: `detailed` a node per resource, `services` a node per service in a box (`Lambda ×12`), `overview` a node per group, with its resources counted by category."
+    },
+    "focus": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "string",
+              "description": "The id of the node the picture is centred on."
+            },
+            "label": {
+              "type": "string"
+            },
+            "hops": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            },
+            "shown": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "How many nodes the picture keeps."
+            },
+            "of": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "How many nodes the picture had without the focus."
+            }
+          },
+          "required": [
+            "node",
+            "label",
+            "hops",
+            "shown",
+            "of"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Null when the whole picture is here; otherwise the node it was cut to and how far from it."
     },
     "compared": {
       "type": "boolean",
@@ -53,7 +104,7 @@
             "maxNodes": {
               "type": "integer",
               "minimum": 0,
-              "description": "The most nodes a layout holds."
+              "description": "The most nodes a layout holds. At the `overview` and `services` levels a node stands for several resources, so far more resources fit."
             },
             "nodes": {
               "type": "integer",
@@ -255,6 +306,10 @@
             "type": "string",
             "description": "The resource type, or `module call`."
           },
+          "service": {
+            "type": "string",
+            "description": "The cloud service of the resource type, for choosing an icon: `aws.rds`, `azure.sql`, `gcp.gke`; `<cloud>.<category>` for a type the engine's table does not know; `terraform.module` for a module call and `terraform.group` for a group's summary node."
+          },
           "category": {
             "type": "string",
             "enum": [
@@ -264,6 +319,128 @@
               "identity",
               "data",
               "other"
+            ]
+          },
+          "icon": {
+            "description": "Where the icon the caller's resolver chose for this node is: a URL, a data URI or path (`href`), or the id of an SVG symbol in the page (`symbol`). Absent: draw the glyph of the `category`.",
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "href": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "href"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "symbol": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "symbol"
+                ]
+              }
+            ]
+          },
+          "aggregate": {
+            "description": "Present on a node that stands for several resources (the `overview` and `services` levels).",
+            "type": "object",
+            "properties": {
+              "level": {
+                "type": "string",
+                "enum": [
+                  "overview",
+                  "services"
+                ]
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "How many nodes of the detailed picture this one stands for."
+              },
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Their ids in the detailed picture of the same document and options (`level: detailed`, no focus), so that a viewer can expand this node."
+              },
+              "byCategory": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "enum": [
+                    "network",
+                    "compute",
+                    "storage",
+                    "identity",
+                    "data",
+                    "other"
+                  ]
+                },
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "byStatus": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "enum": [
+                    "unchanged",
+                    "context",
+                    "added",
+                    "removed",
+                    "changed"
+                  ]
+                },
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "How many of its resources were added, removed, changed or unchanged."
+              },
+              "types": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "count"
+                  ]
+                },
+                "description": "The resource types among them, the most numerous first."
+              },
+              "internal": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "References between two of its members: not drawn, since both ends are this node."
+              }
+            },
+            "required": [
+              "level",
+              "count",
+              "ids",
+              "byCategory",
+              "byStatus",
+              "types",
+              "internal"
             ]
           },
           "label": {
@@ -388,6 +565,7 @@
         "required": [
           "id",
           "kind",
+          "service",
           "category",
           "label",
           "title",
@@ -425,8 +603,15 @@
             "enum": [
               "unchanged",
               "added",
-              "removed"
-            ]
+              "removed",
+              "changed"
+            ],
+            "description": "`changed`: it stands for several references that did not all change the same way."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "How many references of the detailed picture it stands for: 1 at the `detailed` level."
           },
           "points": {
             "type": "array",
@@ -454,6 +639,7 @@
           "target",
           "kind",
           "status",
+          "count",
           "points"
         ]
       }
@@ -563,6 +749,8 @@
     "schema",
     "cloud",
     "mode",
+    "level",
+    "focus",
     "compared",
     "width",
     "height",

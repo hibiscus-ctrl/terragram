@@ -1,0 +1,494 @@
+{
+  "schema": "diagram.graph-layout/v2",
+  "cloud": "aws",
+  "mode": "full",
+  "level": "overview",
+  "focus": null,
+  "compared": false,
+  "width": 852,
+  "height": 338,
+  "top": 0,
+  "cut": null,
+  "header": [],
+  "footer": [
+    "Overview: one card per group, with its resources counted by category; a line carries the number of references between two groups.",
+    "11 glue resources hidden: aws_route_table_association x4, aws_iam_role_policy_attachment x2, aws_lb_target_group_attachment x2, aws_lambda_permission x1, and 2 more types.",
+    "Findings: 2 placed (1 high, 1 low)."
+  ],
+  "groups": [
+    {
+      "id": "g0",
+      "kind": "scope",
+      "label": "AWS account 123456789012",
+      "heading": "AWS account 123456789012",
+      "parent": null,
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": {
+          "count": 1,
+          "worst": "low",
+          "bySeverity": {
+            "low": 1
+          }
+        }
+      },
+      "x": 24,
+      "y": 24,
+      "width": 516,
+      "height": 290
+    },
+    {
+      "id": "g1",
+      "kind": "scope",
+      "label": "AWS account 210987654321",
+      "heading": "AWS account 210987654321",
+      "parent": null,
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 576,
+      "y": 24,
+      "width": 252,
+      "height": 290
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a0",
+      "kind": "12 resources",
+      "service": "terraform.group",
+      "category": "other",
+      "aggregate": {
+        "level": "overview",
+        "count": 12,
+        "ids": [
+          "n2",
+          "n3",
+          "n5",
+          "n6",
+          "n7",
+          "n8",
+          "n9",
+          "n11",
+          "n12",
+          "n13",
+          "n19",
+          "n20"
+        ],
+        "byCategory": {
+          "data": 2,
+          "identity": 3,
+          "compute": 2,
+          "network": 5
+        },
+        "byStatus": {
+          "unchanged": 12
+        },
+        "types": [
+          {
+            "type": "aws_instance",
+            "count": 2
+          },
+          {
+            "type": "aws_security_group",
+            "count": 2
+          },
+          {
+            "type": "aws_db_instance",
+            "count": 1
+          },
+          {
+            "type": "aws_db_subnet_group",
+            "count": 1
+          },
+          {
+            "type": "aws_iam_instance_profile",
+            "count": 1
+          },
+          {
+            "type": "aws_iam_policy",
+            "count": 1
+          },
+          {
+            "type": "aws_iam_role",
+            "count": 1
+          },
+          {
+            "type": "aws_lb",
+            "count": 1
+          },
+          {
+            "type": "aws_lb_listener",
+            "count": 1
+          },
+          {
+            "type": "aws_lb_target_group",
+            "count": 1
+          }
+        ],
+        "internal": 11
+      },
+      "label": "not in a module",
+      "title": "not in a module: 12 resources; network 5, compute 2, identity 3, data 2",
+      "group": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 170,
+      "y": 60,
+      "width": 224,
+      "height": 84
+    },
+    {
+      "id": "a1",
+      "kind": "7 resources",
+      "service": "terraform.group",
+      "category": "other",
+      "aggregate": {
+        "level": "overview",
+        "count": 7,
+        "ids": [
+          "n27",
+          "n28",
+          "n29",
+          "n30",
+          "n31",
+          "n32",
+          "n33"
+        ],
+        "byCategory": {
+          "other": 2,
+          "data": 1,
+          "identity": 2,
+          "compute": 2
+        },
+        "byStatus": {
+          "unchanged": 7
+        },
+        "types": [
+          {
+            "type": "aws_cloudwatch_log_group",
+            "count": 2
+          },
+          {
+            "type": "aws_lambda_function",
+            "count": 2
+          },
+          {
+            "type": "aws_dynamodb_table",
+            "count": 1
+          },
+          {
+            "type": "aws_iam_policy",
+            "count": 1
+          },
+          {
+            "type": "aws_iam_role",
+            "count": 1
+          }
+        ],
+        "internal": 6
+      },
+      "label": "not in a module",
+      "title": "not in a module: 7 resources; compute 2, identity 2, data 1, other 2",
+      "group": "g1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 590,
+      "y": 60,
+      "width": 224,
+      "height": 84
+    },
+    {
+      "id": "a2",
+      "kind": "module · 3 resources",
+      "service": "terraform.group",
+      "category": "other",
+      "aggregate": {
+        "level": "overview",
+        "count": 3,
+        "ids": [
+          "n0",
+          "n17",
+          "n18"
+        ],
+        "byCategory": {
+          "other": 1,
+          "storage": 2
+        },
+        "byStatus": {
+          "unchanged": 3
+        },
+        "types": [
+          {
+            "type": "aws_s3_bucket",
+            "count": 1
+          },
+          {
+            "type": "aws_s3_bucket_policy",
+            "count": 1
+          },
+          {
+            "type": "module call",
+            "count": 1
+          }
+        ],
+        "internal": 1
+      },
+      "label": "s3-bucket/aws 4.1.0",
+      "title": "s3-bucket/aws 4.1.0: 3 resources; storage 2, other 1",
+      "group": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 38,
+      "y": 216,
+      "width": 224,
+      "height": 84
+    },
+    {
+      "id": "a3",
+      "kind": "module · 11 resources",
+      "service": "terraform.group",
+      "category": "other",
+      "aggregate": {
+        "level": "overview",
+        "count": 11,
+        "ids": [
+          "n1",
+          "n4",
+          "n10",
+          "n14",
+          "n15",
+          "n16",
+          "n21",
+          "n22",
+          "n23",
+          "n24",
+          "n25"
+        ],
+        "byCategory": {
+          "other": 1,
+          "network": 10
+        },
+        "byStatus": {
+          "unchanged": 11
+        },
+        "types": [
+          {
+            "type": "aws_subnet",
+            "count": 4
+          },
+          {
+            "type": "aws_route_table",
+            "count": 2
+          },
+          {
+            "type": "aws_eip",
+            "count": 1
+          },
+          {
+            "type": "aws_internet_gateway",
+            "count": 1
+          },
+          {
+            "type": "aws_nat_gateway",
+            "count": 1
+          },
+          {
+            "type": "aws_vpc",
+            "count": 1
+          },
+          {
+            "type": "module call",
+            "count": 1
+          }
+        ],
+        "internal": 11
+      },
+      "label": "vpc/aws 5.13.0",
+      "title": "vpc/aws 5.13.0: 11 resources; network 10, other 1",
+      "group": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": {
+          "count": 1,
+          "worst": "high",
+          "bySeverity": {
+            "high": 1
+          }
+        }
+      },
+      "x": 302,
+      "y": 216,
+      "width": 224,
+      "height": 84
+    },
+    {
+      "id": "a4",
+      "kind": "module · 4 resources",
+      "service": "terraform.group",
+      "category": "other",
+      "aggregate": {
+        "level": "overview",
+        "count": 4,
+        "ids": [
+          "n26",
+          "n34",
+          "n35",
+          "n36"
+        ],
+        "byCategory": {
+          "other": 1,
+          "network": 3
+        },
+        "byStatus": {
+          "unchanged": 4
+        },
+        "types": [
+          {
+            "type": "aws_subnet",
+            "count": 2
+          },
+          {
+            "type": "aws_vpc",
+            "count": 1
+          },
+          {
+            "type": "module call",
+            "count": 1
+          }
+        ],
+        "internal": 2
+      },
+      "label": "vpc/aws 5.13.0",
+      "title": "vpc/aws 5.13.0: 4 resources; network 3, other 1",
+      "group": "g1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 590,
+      "y": 216,
+      "width": 224,
+      "height": 84
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "source": "a0",
+      "target": "a2",
+      "kind": "reference",
+      "status": "unchanged",
+      "count": 4,
+      "points": [
+        {
+          "x": 211,
+          "y": 144
+        },
+        {
+          "x": 150,
+          "y": 180
+        },
+        {
+          "x": 150,
+          "y": 216
+        }
+      ]
+    },
+    {
+      "id": "e1",
+      "source": "a0",
+      "target": "a3",
+      "kind": "reference",
+      "status": "unchanged",
+      "count": 10,
+      "points": [
+        {
+          "x": 353,
+          "y": 144
+        },
+        {
+          "x": 414,
+          "y": 180
+        },
+        {
+          "x": 414,
+          "y": 216
+        }
+      ]
+    },
+    {
+      "id": "e2",
+      "source": "a1",
+      "target": "a4",
+      "kind": "reference",
+      "status": "unchanged",
+      "count": 3,
+      "points": [
+        {
+          "x": 702,
+          "y": 144
+        },
+        {
+          "x": 702,
+          "y": 180
+        },
+        {
+          "x": 702,
+          "y": 216
+        }
+      ]
+    }
+  ],
+  "hidden": {
+    "count": 11,
+    "types": [
+      {
+        "type": "aws_route_table_association",
+        "count": 4
+      },
+      {
+        "type": "aws_iam_role_policy_attachment",
+        "count": 2
+      },
+      {
+        "type": "aws_lb_target_group_attachment",
+        "count": 2
+      },
+      {
+        "type": "aws_lambda_permission",
+        "count": 1
+      },
+      {
+        "type": "null_resource",
+        "count": 1
+      },
+      {
+        "type": "random_id",
+        "count": 1
+      }
+    ]
+  },
+  "findings": {
+    "total": 2,
+    "unplaced": 0,
+    "bySeverity": {
+      "high": 1,
+      "low": 1
+    }
+  }
+}

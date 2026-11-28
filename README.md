@@ -140,6 +140,9 @@ terragram graph graph.json -f drawio -o estate.drawio          # a file diagrams
 terragram graph graph.json --base main/graph.json              # mark what was added, removed, changed
 terragram graph graph.json --base main/graph.json --delta      # only the changes and one reference of context
 terragram graph graph.json --findings ocsf-findings.json       # lay findings over it
+terragram graph graph.json --level services                     # "Lambda x12" instead of twelve cards
+terragram graph graph.json --level overview                     # one card per group, counted by category
+terragram graph graph.json --focus n28 --hops 2                 # one node and what is within 2 references of it
 ```
 
 An account (or subscription, or project) is a box, an environment is a box inside it when the graph
@@ -194,16 +197,44 @@ their roots as they are (`redaction.addresses` `plain`). A root move is not show
 dropped, or when either side predates roots: two hash keys cannot be compared, and a graph without roots
 has nothing to compare.
 
+**Levels.** `--level` (`level` in code) chooses how much is drawn, and every format and the layout follow it.
+`detailed` (the default) is a card per resource. `services` merges, inside each box, the resources of one
+cloud service into one card, "Lambda ×12" (a service of one resource keeps its own card). `overview` turns each box that has no box inside it into one
+summary card, with its resources counted by category and its findings; the scopes stay boxes around their cards, and the resources that sit directly in a
+box that has boxes inside it are a card too ("not in a module"). At both levels a line between two cards carries the number of references it stands for (×N),
+and references inside a card are counted on it (`aggregate.internal`). A card that stands for several resources says which: `aggregate` holds their ids in the
+detailed picture of the same options, their count, and counts by category, status and type, so a viewer can expand it. The estate is cut at
+`MAX_GRAPH_NODES` only after the level is applied, so a large estate is whole at the Overview level. A comparison comes through every level: a card of
+resources that changed in different ways says `changed` (`aggregate.byStatus` has the counts), and a line that stands for references that changed in different ways is amber.
+`--delta` works at every level.
+
+**Focus.** `--focus <node> [--hops 1..3]` (`focus: { node, hops }`) keeps one node, the nodes within that many references of it (a reference followed in
+either direction), the references between them and the boxes around them; the footer says how many of the picture's cards are shown. The node is
+an id of the picture with the same level, comparison and delta (`n12`; `a0` for a card of several resources: see `--format json`), or a label only one node has.
+Ids do not change with the focus, so a viewer that draws a picture can ask for a focus on a node it drew. A focus on a node the picture does not have is a
+`GraphViewError` (exit 2 in the CLI). The focus is applied after the level and the delta, so it works with both.
+
+**Services and icons.** Each node has a `service` id from the engine's own table of Terraform resource types (`aws_db_instance` and `aws_rds_cluster` are `aws.rds`,
+`azurerm_mssql_server` is `azure.sql`, `google_container_cluster` is `gcp.gke`; 217 services: 110 AWS, 62 Azure, 45 Google Cloud, every type
+infraharvest can import included, which `tests/graph-services.test.ts` checks). `serviceOf(type)` returns the id, a name and a category; a type the table does not know
+falls back to `<cloud>.<category>` (`aws.data`). `listServices()` lists the table, so an app can map each id to the icon it draws. The engine ships **no vendor art**:
+a card shows the engine's own glyph of its category (`CATEGORY_GLYPHS`), unless the caller passes `icon: (node) => ({ href } | { symbol } | undefined)` to `layoutGraphDocument`,
+`layoutGraphView` or `renderGraphSvg`; the answer is carried on the layout node (`icon`) and drawn as an `<image>` or a `<use href="#symbol">` (a symbol must be defined in the page that
+inlines the SVG). An `href` is an `https:` URL, a `data:image/` URI or a path; anything else is a `TypeError`. The Overview level's cards are not asked.
+
 **draw.io.** `--format drawio` writes an uncompressed `.drawio` file (`mxfile` XML) that opens in diagrams.net and
 the desktop app. A scope, environment or module call is a container, a resource is a card inside it, and a
 reference is a connector that keeps the route the SVG draws; positions are the SVG's, so the two pictures match.
 Status marks (`+`, `-`, `~`) and finding counts are in the card text, and the footer notes are text boxes.
 Every label is plain text, never HTML, and the file carries only what the picture shows. Ids are `g<n>`, `n<n>`
 and `e<n>` in the order of the picture, so the same estate gives the same bytes. The SVG's legend and
-finding markers become words in the text; a removed card is struck through and dashed.
+finding markers become words in the text; a removed card is struck through and dashed. A card whose service draw.io has a shape for carries that
+shape's name (draw.io's own AWS 19, Azure 2 and Google Cloud 3 libraries; `drawioIconStyle(service)`) in a small cell inside it, and draw.io draws it from its own library:
+the file holds no art. A service draw.io has no shape for keeps the plain card.
 
-In code, import `terragram-engine/graph`: `parseGraphDocument`, `projectGraph(doc, options)` (a view
-model), `renderGraphSvg(view)`, `renderGraphDrawio(view)`, `renderGraphMermaid(view)` and `diffGraphs(base, head)`.
+In code, import `terragram-engine/graph`: `parseGraphDocument`, `projectGraph(doc, { level, focus, base, delta, findings, ... })` (a view
+model), `renderGraphSvg(view, { aspect, icon })`, `renderGraphDrawio(view)`, `renderGraphMermaid(view)`, `layoutGraphDocument(doc, options)` (the picture as
+`diagram.graph-layout/v2` data), `serviceOf(type)` and `diffGraphs(base, head)`.
 
 ## Schemas
 

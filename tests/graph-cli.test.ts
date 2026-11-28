@@ -151,3 +151,64 @@ describe("terragram graph", () => {
     assert.match((await cli("--help")).stdout, /graph {5}an infraharvest graph\/v1 document/);
   });
 });
+
+describe("terragram graph --level and --focus", () => {
+  it("draws the level asked for, the one the renderer draws", async () => {
+    for (const level of ["services", "overview", "detailed"] as const) {
+      const svg = await cli("graph", medium, "--level", level);
+      assert.equal(svg.code, 0, svg.stderr);
+      assert.equal(svg.stdout, `${renderGraphSvg(projectGraph(doc(medium), { level }))}\n`);
+      const mermaid = await cli("graph", medium, "--level", level, "-f", "mermaid");
+      assert.equal(mermaid.stdout, renderGraphMermaid(projectGraph(doc(medium), { level })));
+    }
+    const json = JSON.parse((await cli("graph", medium, "--level", "services", "-f", "json")).stdout);
+    assert.equal(json.level, "services");
+    assert.equal(json.schema, "diagram.graph-view/v2");
+    assert.ok(json.nodes.some((n: { aggregate?: unknown }) => n.aggregate !== undefined));
+    assert.equal(json.edges.some((e: { count: number }) => e.count > 1), true);
+  });
+
+  it("draws a node and what is near it, with --focus and --hops, at any level and with a comparison", async () => {
+    const one = await cli("graph", medium, "--focus", "n25", "-f", "json");
+    assert.equal(JSON.parse(one.stdout).focus.hops, 1);
+    const two = await cli("graph", medium, "--focus", "n25", "--hops", "2", "-f", "json");
+    assert.equal(JSON.parse(two.stdout).focus.hops, 2);
+    assert.ok(JSON.parse(two.stdout).nodes.length > JSON.parse(one.stdout).nodes.length);
+    const svg = await cli("graph", medium, "--focus", "n25", "--hops", "2");
+    assert.equal(svg.stdout, `${renderGraphSvg(projectGraph(doc(medium), { focus: { node: "n25", hops: 2 } }))}\n`);
+    const services = await cli("graph", medium, "--level", "services", "--focus", "a3", "-f", "drawio");
+    assert.equal(services.stdout, renderGraphDrawio(projectGraph(doc(medium), { level: "services", focus: { node: "a3" } })));
+    const delta = await cli("graph", small, "--base", base, "--delta", "--level", "overview", "--focus", "a0", "-f", "json");
+    assert.equal(delta.code, 0, delta.stderr);
+    assert.equal(JSON.parse(delta.stdout).mode, "delta");
+    const byLabel = await cli("graph", medium, "--focus", "vpc-0a1b2c3d", "-f", "json");
+    assert.equal(JSON.parse(byLabel.stdout).focus.node, "n25");
+  });
+
+  it("exits 2 on a level, a focus or a hop count it cannot use", async () => {
+    for (const args of [
+      ["--level", "all"],
+      ["--level", ""],
+      ["--hops", "2"],
+      ["--focus", ""],
+      ["--focus", "n25", "--hops", "0"],
+      ["--focus", "n25", "--hops", "4"],
+      ["--focus", "n25", "--hops", "1.5"],
+      ["--focus", "n25", "--hops", "two"],
+      ["--focus", "n9999"],
+      ["--level", "overview", "--focus", "n25"],
+    ]) {
+      const result = await cli("graph", medium, ...args);
+      assert.equal(result.code, 2, args.join(" "));
+      assert.match(result.stderr, /^terragram: /);
+    }
+    assert.match((await cli("graph", medium, "--focus", "n9999")).stderr, /there is no node "n9999"/);
+  });
+
+  it("describes them in its help", async () => {
+    const help = (await cli("graph", "--help")).stdout;
+    assert.match(help, /--level <level>/);
+    assert.match(help, /--focus <node>/);
+    assert.match(help, /--hops <n>.*1 to 3/);
+  });
+});

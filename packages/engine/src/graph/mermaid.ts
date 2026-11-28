@@ -1,7 +1,8 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import type { EdgeStatus, GraphStatus, GraphView, ViewGroup, ViewNode } from "./project.ts";
+import { kindOf } from "./layout-view.ts";
+import type { EdgeStatus, GraphStatus, GraphView, ViewGroup, ViewNode } from "./view.ts";
 
 /**
  * A {@link GraphView} as a Mermaid flowchart, for places that draw Mermaid themselves,
@@ -34,12 +35,13 @@ const LINK: Record<EdgeStatus, { arrow: string; style?: string }> = {
   unchanged: { arrow: "-->" },
   added: { arrow: "==>", style: "stroke:#15803d,stroke-width:2px" },
   removed: { arrow: "-.->", style: "stroke:#b91c1c,stroke-width:2px" },
+  changed: { arrow: "==>", style: "stroke:#b45309,stroke-width:2px" },
 };
 
 function nodeLine(node: ViewNode, indent: string): string {
   const mark = MARK[node.status] ?? "";
   const findings = node.findings ? ` [${node.findings.count} ${node.findings.worst}]` : "";
-  return `${indent}${node.id}["${text(`${mark}${node.type}`)}<br/>${text(node.label)}${text(findings)}"]`;
+  return `${indent}${node.id}["${text(`${mark}${kindOf(node)}`)}<br/>${text(node.label)}${text(findings)}"]`;
 }
 
 function groupTitle(group: ViewGroup): string {
@@ -73,7 +75,7 @@ export function renderGraphMermaid(view: GraphView): string {
   const linkStyles: string[] = [];
   view.edges.forEach((edge, i) => {
     const link = LINK[edge.status];
-    lines.push(`  ${edge.from} ${link.arrow} ${edge.to}`);
+    lines.push(`  ${edge.from} ${link.arrow}${edge.count > 1 ? `|"×${edge.count}"|` : ""} ${edge.to}`);
     if (link.style) linkStyles.push(`  linkStyle ${i} ${link.style}`);
   });
   lines.push(...linkStyles);

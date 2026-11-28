@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { SEVERITIES } from "./findings.ts";
-import type { GraphView } from "./project.ts";
+import type { GraphView } from "./view.ts";
 
 /** The text every picture of a {@link GraphView} shares, so that the SVG, the draw.io file and the layout say the same words. */
 
@@ -39,9 +39,19 @@ export const CARD_LABEL_CHARS = 24;
 export function footerLines(view: GraphView): string[] {
   const lines: string[] = [];
   if (view.mode === "delta") lines.push("Delta view: what changed, and the resources one reference away from it.");
+  if (view.level === "overview") {
+    lines.push("Overview: one card per group, with its resources counted by category; a line carries the number of references between two groups.");
+  } else if (view.level === "services") {
+    lines.push("Services: one card per service in a box, with its number of resources; a line carries the number of references between two cards.");
+  }
+  if (view.focus) {
+    const { label, hops, shown, of } = view.focus;
+    lines.push(`Focus: ${label} and what is within ${hops} reference${hops === 1 ? "" : "s"} of it, ${shown} of ${of} cards.`);
+  }
   if (view.cut) {
     const { maxNodes, nodes, edges } = view.cut;
-    lines.push(`Cut to the first ${maxNodes} resources: ${nodes} more and ${edges} reference${edges === 1 ? "" : "s"} are not drawn.`);
+    const what = view.level === "detailed" ? "resources" : "cards";
+    lines.push(`Cut to the first ${maxNodes} ${what}: ${nodes} more and ${edges} reference${edges === 1 ? "" : "s"} are not drawn.`);
   }
   if (view.hidden.count > 0) {
     const shown = view.hidden.types.slice(0, 4).map((t) => `${t.type} x${t.count}`);
