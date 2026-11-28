@@ -313,7 +313,7 @@ async function resolveRoutes(): Promise<void> {
       "run", "--rm",
       "-v", `${t.dir}:${MOUNT}:ro`,
       "-v", `${t.trivyIgnore}:${IGNORE_MOUNT}:ro`,
-      ...(tool.id === "tflint" ? ["-v", `${tflintPlugins}:${PLUGINS_MOUNT}`, "-e", `TFLINT_PLUGIN_DIR=${PLUGINS_MOUNT}`] : []),
+      ...(tool.id === "tflint" ? ["-v", `${tflintPlugins}:${PLUGINS_MOUNT}`, "-e", `TFLINT_PLUGIN_DIR=${PLUGINS_MOUNT}`, ...(process.env.GITHUB_TOKEN ? ["-e", "GITHUB_TOKEN"] : [])] : []),
       "-w", MOUNT,
       tool.image,
       ...inner,
