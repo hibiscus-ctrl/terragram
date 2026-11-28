@@ -34,6 +34,8 @@ export type GcpPlan = {
   api: (...services: string[]) => void;
   /** Private service access on this network, once however many ask. Returns the address of the connection to depend on. */
   privateServices: (networkId: string) => string;
+  /** How many nodes of this node's kind the plan emitted before it: what makes a block it has to keep apart from its siblings' unique. */
+  position: number;
 };
 
 const NAME_PREFIX: VariableSpec = {
@@ -133,12 +135,22 @@ function expressionsIn(b: HclBlock): string[] {
 }
 
 /**
+ * A wait the plan adds itself: for the APIs it enables, and for the grant that lets a service agent use the key store's
+ * key. Nothing else a block waits for is the plan's own.
+ */
+function isPlanWait(a: { key: string; value: string }): boolean {
+  if (a.key !== "depends_on") return false;
+  const items = a.value.replace(/^\s*\[|\]\s*$/g, "").split(",").map((i) => i.trim()).filter(Boolean);
+  return items.length > 0 && items.every((i) => i === "google_project_service.enabled" || /^google_kms_crypto_key_iam_member\.[a-z0-9_]+$/.test(i));
+}
+
+/**
  * Whether a block carries these attributes and no others, each once, and no nested blocks unless `blocks` allows them
  * (a bucket's versioning and logging). The one thing it may carry besides is the
  * plan's own wait for the APIs it enables, which `terraform.ts` adds to a resource that stands on nothing else.
  */
 function hasExactly(b: HclBlock, keys: readonly string[], blocks = false): boolean {
-  const own = b.attributes.filter((a) => !(a.key === "depends_on" && a.value.replace(/\s+/g, "") === "[google_project_service.enabled]"));
+  const own = b.attributes.filter((a) => !isPlanWait(a));
   return (blocks || b.blocks.length === 0) && own.length === keys.length && keys.every((k) => own.filter((a) => a.key === k).length === 1);
 }
 
@@ -160,8 +172,13 @@ function isScaffoldBucket(all: readonly HclBlock[], name: string): boolean {
   if (v("public_access_prevention") !== '"enforced"' || !/^(true|false)$/.test(v("force_destroy") ?? "")) return false;
   const purpose = (Object.keys(SCAFFOLD_BUCKETS) as Array<keyof typeof SCAFFOLD_BUCKETS>).find((p) => compact(v("labels")) === `{purpose="${p}"}`);
   if (!purpose || !SCAFFOLD_BUCKETS[purpose].test(v("name") ?? "")) return false;
-  // Nothing but versions, a logging target and a lifecycle: no website, no CORS, no encryption of its own.
-  if (!b.blocks.every((c) => ["versioning", "logging", "lifecycle_rule"].includes(c.type))) return false;
+  // Nothing but versions, a logging target, a lifecycle and, in a plan with a key store, that store's key: no website, no CORS.
+  if (!b.blocks.every((c) => ["versioning", "logging", "lifecycle_rule", "encryption"].includes(c.type))) return false;
+  const encryption = b.blocks.filter((c) => c.type === "encryption");
+  if (encryption.length > 1) return false;
+  const keyName = encryption[0] ? /^google_kms_crypto_key\.([a-z0-9_]+)\.id$/.exec(attributeOf(encryption[0], "default_kms_key_name") ?? "")?.[1] : undefined;
+  if (encryption[0] && (!hasExactly(encryption[0], ["default_kms_key_name"]) || keyName === undefined)) return false;
+  if (keyName !== undefined && !all.some((o) => o.type === "resource" && o.labels[0] === "google_kms_crypto_key" && o.labels[1] === keyName)) return false;
   const ref = `google_storage_bucket.${name}.name`;
   if (purpose === "access-logs") {
     return all.some(
@@ -221,6 +238,23 @@ export function isGcpScaffold(b: HclBlock, all: readonly HclBlock[]): boolean {
   const type = b.labels[0];
   const name = b.labels[1];
   if (b.type === "data") {
+    // The service agent a key's grant names: a lookup of nothing but the project's own agent, read by that one grant.
+    const agentEmail = type === "google_storage_project_service_account" ? "email_address" : type === "google_bigquery_default_service_account" ? "email" : undefined;
+    if (agentEmail !== undefined) {
+      const member = `"serviceAccount:\${data.${type}.${name}.${agentEmail}}"`;
+      return (
+        b.labels.length === 2 &&
+        hasExactly(b, []) &&
+        all.some(
+          (o) =>
+            o.type === "resource" &&
+            o.labels[0] === "google_kms_crypto_key_iam_member" &&
+            hasExactly(o, ["crypto_key_id", "role", "member"]) &&
+            attributeOf(o, "role") === '"roles/cloudkms.cryptoKeyEncrypterDecrypter"' &&
+            attributeOf(o, "member") === member,
+        )
+      );
+    }
     return (
       type === "archive_file" &&
       b.labels.length === 2 &&
@@ -475,14 +509,13 @@ function sqlInstance(c: GcpContext, engine: SqlEngine, prefix: string): GcpEmit 
 
 /** Cloud SQL's names for the majors the model offers. */
 const PG_DATABASE_VERSION: Record<string, string> = {
+  "PostgreSQL 18": "POSTGRES_18",
+  "PostgreSQL 17": "POSTGRES_17",
   "PostgreSQL 16": "POSTGRES_16",
   "PostgreSQL 15": "POSTGRES_15",
-  "PostgreSQL 14": "POSTGRES_14",
 };
 const MYSQL_DATABASE_VERSION: Record<string, string> = {
   "MySQL 8.4": "MYSQL_8_4",
-  "MySQL 8.0": "MYSQL_8_0",
-  "MySQL 5.7": "MYSQL_5_7",
 };
 
 /** A Redis tier the model's Cache SKU labels choose between. */
@@ -739,6 +772,8 @@ export const GCP = {
       const prod = production(c);
       const location = prod ? "var.region" : `"\${var.region}-a"`;
       const nodes = `${c.name}_nodes`;
+      // Each cluster's control plane takes a /28 of its own, so two clusters in one plan never ask for the same range.
+      const master = `${c.name}_master_cidr`;
       return {
         blocks: [
           block("resource", ["google_container_cluster", c.name], [
@@ -747,8 +782,9 @@ export const GCP = {
             { key: "network", value: vpc },
             { key: "subnetwork", value: subnet },
             { key: "networking_mode", value: quote("VPC_NATIVE") },
-            // The node pool below is the only one; the cluster starts with none of its own.
-            { key: "initial_node_count", value: "0" },
+            // The node pool below is the only one: the pool a cluster is created with is removed, as the provider documents.
+            { key: "remove_default_node_pool", value: "true" },
+            { key: "initial_node_count", value: "1" },
             { key: "enable_shielded_nodes", value: "true" },
             { key: "enable_intranode_visibility", value: "true" },
             { key: "enable_legacy_abac", value: "false" },
@@ -759,9 +795,12 @@ export const GCP = {
             block("private_cluster_config", [], [
               { key: "enable_private_nodes", value: "true" },
               { key: "enable_private_endpoint", value: "false" },
-              { key: "master_ipv4_cidr_block", value: quote("172.16.0.0/28") },
+              { key: "master_ipv4_cidr_block", value: `var.${master}` },
             ]),
-            block("master_authorized_networks_config", [], [], [
+            block("master_authorized_networks_config", [], [
+              // Google's own public ranges are not administrators: the control plane admits the one range below.
+              { key: "gcp_public_cidrs_access_enabled", value: "false" },
+            ], [
               block("cidr_blocks", [], [
                 { key: "cidr_block", value: "var.gke_authorized_cidr" },
                 { key: "display_name", value: quote("administrators") },
@@ -818,6 +857,21 @@ export const GCP = {
             name: "gke_authorized_cidr",
             type: "string",
             description: "CIDR block allowed to reach the cluster's control plane: your office or VPN range.",
+            validation: {
+              condition:
+                'can(cidrhost(var.gke_authorized_cidr, 0)) && try(tonumber(split("/", var.gke_authorized_cidr)[1]) >= 24, false) && !startswith(var.gke_authorized_cidr, "0.")',
+              message: "Give a CIDR block of a /24 or narrower that is not 0.0.0.0/x: the control plane is reachable from nowhere else.",
+            },
+          },
+          {
+            name: master,
+            type: "string",
+            description: `The /28 of private address space the ${c.slug} control plane takes. It must not overlap the network or another cluster's range.`,
+            default: quote(`172.16.${Math.floor(c.gcp.position / 16)}.${(c.gcp.position % 16) * 16}/28`),
+            validation: {
+              condition: `can(cidrhost(var.${master}, 0)) && endswith(var.${master}, "/28") && can(regex("^(10|172\\\\.(1[6-9]|2[0-9]|3[01])|192\\\\.168)\\\\.", var.${master}))`,
+              message: "Give a /28 inside 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16.",
+            },
           },
         ],
         outputs: [{ name: `${c.name}_endpoint`, value: `google_container_cluster.${c.name}.endpoint` }],

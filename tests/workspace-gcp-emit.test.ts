@@ -12,9 +12,10 @@ import { assessFeasibility } from "terragram-engine/feasibility";
 import { addNode, connectNodes as addEdge, setNodeAttribute } from "terragram-engine/inspector";
 import { EMPTY_MODEL, type InfraModel } from "terragram-engine/model";
 import { parseHcl } from "terragram-engine/hcl";
-import { isScaffoldResource } from "terragram-engine/kinds";
+import { fieldsForKind, isScaffoldResource } from "terragram-engine/kinds";
 import { parseTerraform } from "terragram-engine/parse";
 import { emitTerraform } from "terragram-engine/terraform";
+import { skipsFor } from "../scripts/scanner-skips.ts";
 
 /**
  * Google Cloud is generated like the other two: the plan around the resources (provider, labels, the
@@ -178,9 +179,40 @@ describe("what each kind asks the reviewer for", () => {
     }
   });
 
-  it("a cluster asks for the range that may reach its control plane, with no default", () => {
+  it("a cluster asks for the range that may reach its control plane, with no default, and refuses a wide one", () => {
     const { variables } = plan(modelOf("kubernetes").model);
-    assert.match(variables, /variable "gke_authorized_cidr" \{\n\s+type\s+= string\n\s+description = "[^"]+"\n\}/);
+    assert.match(variables, /variable "gke_authorized_cidr" \{\n\s+type\s+= string\n\s+description = "[^"]+"\n\n\s+validation \{/);
+    assert.doesNotMatch(variables, /variable "gke_authorized_cidr" \{[^}]*default/);
+    // A /24 or narrower, and never a block that starts at 0.
+    assert.match(variables, /condition\s+= can\(cidrhost\(var\.gke_authorized_cidr, 0\)\) && try\(tonumber\(split\("\/", var\.gke_authorized_cidr\)\[1\]\) >= 24, false\) && !startswith\(var\.gke_authorized_cidr, "0\."\)/);
+  });
+
+  it("a cluster's control plane admits the one range it was given, not Google's public ranges", () => {
+    const { main } = plan(modelOf("kubernetes").model);
+    const cluster = /resource "google_container_cluster" "kubernetes" \{[\s\S]*?\n\}/.exec(main)?.[0] ?? "";
+    assert.match(cluster, /master_authorized_networks_config \{\n\s+gcp_public_cidrs_access_enabled = false\n\s+cidr_blocks \{\n\s+cidr_block\s+= var\.gke_authorized_cidr/);
+    assert.match(cluster, /enable_private_nodes\s+= true/);
+  });
+
+  it("a cluster removes the node pool it is created with, as the provider documents, and runs its own", () => {
+    const { main } = plan(modelOf("kubernetes").model);
+    const cluster = /resource "google_container_cluster" "kubernetes" \{[\s\S]*?\n\}/.exec(main)?.[0] ?? "";
+    assert.match(cluster, /remove_default_node_pool\s+= true/);
+    assert.match(cluster, /initial_node_count\s+= 1\n/);
+    assert.match(main, /resource "google_container_node_pool" "kubernetes_nodes"/);
+  });
+
+  it("each cluster takes a control-plane range of its own, which the reviewer can change within private space", () => {
+    const { main, variables } = plan(modelOf("kubernetes", "kubernetes", "kubernetes").model);
+    const ranges = [...main.matchAll(/master_ipv4_cidr_block\s+= var\.([a-z0-9_]+)/g)].map((m) => m[1] ?? "");
+    assert.deepEqual(ranges, ["kubernetes_master_cidr", "kubernetes_2_master_cidr", "kubernetes_3_master_cidr"]);
+    const defaults = ranges.map((name) => new RegExp(`variable "${name}" \\{[^}]*default\\s+= "([^"]+)"`).exec(variables)?.[1]);
+    assert.deepEqual(defaults, ["172.16.0.0/28", "172.16.0.16/28", "172.16.0.32/28"]);
+    for (const name of ranges) {
+      assert.match(variables, new RegExp(`variable "${name}" \\{[\\s\\S]*?validation \\{\\n\\s+condition\\s+= can\\(cidrhost\\(var\\.${name}, 0\\)\\) && endswith\\(var\\.${name}, "/28"\\)`));
+    }
+    // One authorised range is shared; the control-plane ranges are not.
+    assert.equal(variables.match(/variable "gke_authorized_cidr"/g)?.length, 1);
   });
 
   it("a project asks for its billing account and its organisation, never a password or a key", () => {
@@ -211,11 +243,21 @@ describe("choices the reviewer makes in the inspector reach the plan", () => {
   };
 
   it("the PostgreSQL and MySQL versions", () => {
-    assert.match(choose("postgres", "PostgreSQL version", "PostgreSQL 14"), /database_version\s+= "POSTGRES_14"/);
-    assert.match(choose("postgres", "PostgreSQL version", "PostgreSQL 15"), /database_version\s+= "POSTGRES_15"/);
-    assert.match(choose("mysql", "MySQL version", "MySQL 8.0"), /database_version\s+= "MYSQL_8_0"/);
-    assert.match(choose("mysql", "MySQL version", "MySQL 5.7"), /database_version\s+= "MYSQL_5_7"/);
+    for (const major of ["15", "17", "18"]) {
+      assert.match(choose("postgres", "PostgreSQL version", `PostgreSQL ${major}`), new RegExp(`database_version\\s+= "POSTGRES_${major}"`));
+    }
+    assert.match(plan(modelOf("postgres").model).main, /database_version\s+= "POSTGRES_16"/);
     assert.match(plan(modelOf("mysql").model).main, /database_version\s+= "MYSQL_8_4"/);
+  });
+
+  it("offers no database version that has reached end of life", () => {
+    const offered = (kind: string) => fieldsForKind(kind).find((f) => f.options && /version/.test(f.key))?.options ?? [];
+    assert.deepEqual(offered("postgres"), ["PostgreSQL 18", "PostgreSQL 17", "PostgreSQL 16", "PostgreSQL 15"]);
+    assert.deepEqual(offered("mysql"), ["MySQL 8.4"]);
+    // A value an older model carries is not written: the plan falls back to the default instead of a version Google no longer supports.
+    assert.match(choose("postgres", "PostgreSQL version", "PostgreSQL 14"), /database_version\s+= "POSTGRES_16"/);
+    assert.match(choose("mysql", "MySQL version", "MySQL 5.7"), /database_version\s+= "MYSQL_8_4"/);
+    assert.doesNotMatch(choose("mysql", "MySQL version", "MySQL 8.0"), /MYSQL_8_0/);
   });
 
   it("the cache's size", () => {
@@ -263,18 +305,37 @@ describe("choices the reviewer makes in the inspector reach the plan", () => {
     assert.match(main, /source_ranges\s+= \["35\.235\.240\.0\/20"\]/);
   });
 
-  it("refuses an address space that is not private, before any rule is written from it", () => {
-    for (const space of ["0.0.0.0/0", "8.8.8.0/24", "11.0.0.0/16", "10.0.0.0/7", "172.32.0.0/16", "172.15.0.0/16", "172.16.0.0/11", "192.168.0.0/15", "192.169.0.0/16", "100.64.0.0/10"]) {
+  it("refuses an address space on Google Cloud that is not private, before any rule is written from it", () => {
+    for (const space of ["0.0.0.0/0", "8.8.8.0/24", "11.0.0.0/16", "10.0.0.0/7", "172.32.0.0/16", "172.15.0.0/16", "172.16.0.0/11", "192.168.0.0/15", "192.169.0.0/16", "100.64.0.0/9", "100.128.0.0/16"]) {
       const { model, ids } = modelOf("vnet");
       const chosen = setNodeAttribute(model, ids[0] ?? "", "Address space", space);
-      for (const cloud of ["gcp", "aws", "azure"] as const) {
-        assert.throws(() => emitTerraform(chosen, cloud), /is not a private address range/, `${cloud} ${space}`);
-      }
+      assert.throws(() => emitTerraform(chosen, "gcp"), /is not a private address range/, space);
     }
-    for (const space of ["10.0.0.0/8", "10.20.0.0/16", "172.16.0.0/12", "172.31.0.0/16", "192.168.0.0/16", "192.168.4.0/24"]) {
+    for (const space of ["10.0.0.0/8", "10.20.0.0/16", "172.16.0.0/12", "172.31.0.0/16", "192.168.0.0/16", "192.168.4.0/24", "100.64.0.0/10", "100.64.0.0/16", "100.127.255.0/24"]) {
       const { model, ids } = modelOf("vnet");
       const main = plan(setNodeAttribute(model, ids[0] ?? "", "Address space", space)).main;
       assert.match(main, new RegExp(`cidrsubnet\\("${space.replace(/[./]/g, "\\$&")}", 8, 1\\)`), space);
+    }
+  });
+
+  it("takes carrier-grade NAT space on AWS and Azure too, and any block there short of the internet", () => {
+    for (const space of ["100.64.0.0/16", "100.64.0.0/10"]) {
+      const { model, ids } = modelOf("vnet");
+      const chosen = setNodeAttribute(model, ids[0] ?? "", "Address space", space);
+      assert.match(emitTerraform(chosen, "aws").files[0]?.content ?? "", new RegExp(`cidr\\s+= "${space.replace(/[./]/g, "\\$&")}"`), `aws ${space}`);
+      assert.match(emitTerraform(chosen, "azure").files[0]?.content ?? "", new RegExp(`address_space\\s+= \\["${space.replace(/[./]/g, "\\$&")}"\\]`), `azure ${space}`);
+    }
+    // What was accepted before on those two stays accepted: a block that is not RFC 1918, down to a /8.
+    for (const space of ["8.8.8.0/24", "11.0.0.0/16", "172.32.0.0/16", "9.0.0.0/8"]) {
+      const { model, ids } = modelOf("vnet");
+      const chosen = setNodeAttribute(model, ids[0] ?? "", "Address space", space);
+      for (const cloud of ["aws", "azure"] as const) assert.doesNotThrow(() => emitTerraform(chosen, cloud), `${cloud} ${space}`);
+    }
+    // The internet, and anything wider than a /8, never is.
+    for (const space of ["0.0.0.0/0", "0.0.0.0/7", "10.0.0.0/7", "100.64.0.0/2"]) {
+      const { model, ids } = modelOf("vnet");
+      const chosen = setNodeAttribute(model, ids[0] ?? "", "Address space", space);
+      for (const cloud of ["aws", "azure"] as const) assert.throws(() => emitTerraform(chosen, cloud), /is wider than a \/8/, `${cloud} ${space}`);
     }
   });
 
@@ -327,6 +388,78 @@ describe("a bucket wired to the plan, and a service wired to its dependencies", 
     assert.match(main, /depends_on\s+= \[[^\]]*google_kms_crypto_key_iam_member\.object_storage_to_key_vault/);
     // Not every bucket: the one with nothing wired to it stays on Google's own key.
     assert.doesNotMatch(plan(modelOf("object-storage").model).main, /default_kms_key_name/);
+  });
+
+  it("a plan with a key store encrypts every bucket, topic and dataset under its key, with one grant per service agent", () => {
+    const { main } = plan(modelOf("key-vault", "object-storage", "functions", "queue", "data-warehouse").model);
+    const buckets = main.match(/resource "google_storage_bucket" "[a-z_]+" \{[\s\S]*?\n\}/g) ?? [];
+    // The bucket the model drew, its access-log bucket and the function's source bucket and its log bucket.
+    assert.equal(buckets.length, 4);
+    for (const bucket of buckets) {
+      assert.match(bucket, /encryption \{\n\s+default_kms_key_name = google_kms_crypto_key\.key_vault\.id\n\s+\}/);
+      assert.match(bucket, /depends_on\s+= \[[^\]]*google_kms_crypto_key_iam_member\.key_vault_storage/);
+    }
+    const topics = main.match(/resource "google_pubsub_topic" "[a-z_]+" \{[\s\S]*?\n\}/g) ?? [];
+    assert.equal(topics.length, 2, "the queue and its dead-letter topic");
+    for (const topic of topics) {
+      assert.match(topic, /kms_key_name\s+= google_kms_crypto_key\.key_vault\.id/);
+      assert.match(topic, /depends_on\s+= \[[^\]]*google_kms_crypto_key_iam_member\.key_vault_pubsub/);
+    }
+    const dataset = /resource "google_bigquery_dataset" "data_warehouse" \{[\s\S]*?\n\}/.exec(main)?.[0] ?? "";
+    assert.match(dataset, /default_encryption_configuration \{\n\s+kms_key_name = google_kms_crypto_key\.key_vault\.id/);
+    assert.match(dataset, /depends_on\s+= \[[^\]]*google_kms_crypto_key_iam_member\.key_vault_bigquery/);
+    // Each service's own agent, and no other, may use the key.
+    for (const [service, agent] of [
+      ["storage", "data.google_storage_project_service_account.key_vault_storage.email_address"],
+      ["pubsub", "google_project_service_identity.key_vault_pubsub.email"],
+      ["bigquery", "data.google_bigquery_default_service_account.key_vault_bigquery.email"],
+    ] as const) {
+      const grant = new RegExp(`resource "google_kms_crypto_key_iam_member" "key_vault_${service}" \\{\\n\\s+crypto_key_id = google_kms_crypto_key\\.key_vault\\.id\\n\\s+role\\s+= "roles/cloudkms\\.cryptoKeyEncrypterDecrypter"\\n\\s+member\\s+= "serviceAccount:\\$\\{${agent.replace(/\./g, "\\.")}\\}"`);
+      assert.match(main, grant, service);
+    }
+    // The agents are looked up (or made) after the APIs are on, and the Pub/Sub identity needs the beta provider.
+    assert.match(main, /resource "google_project_service_identity" "key_vault_pubsub" \{\n\s+provider\s+= google-beta\n\s+service\s+= "pubsub\.googleapis\.com"\n\s+depends_on\s+= \[google_project_service\.enabled\]/);
+    assert.match(main, /data "google_storage_project_service_account" "key_vault_storage" \{\n\s+depends_on\s+= \[google_project_service\.enabled\]/);
+    assert.match(main, /data "google_bigquery_default_service_account" "key_vault_bigquery" \{\n\s+depends_on\s+= \[google_project_service\.enabled\]/);
+  });
+
+  it("writes only the grants the plan needs, and none at all without a key store", () => {
+    const { main } = plan(modelOf("key-vault", "queue").model);
+    assert.match(main, /google_kms_crypto_key_iam_member" "key_vault_pubsub"/);
+    assert.doesNotMatch(main, /key_vault_storage|key_vault_bigquery/);
+    const bare = plan(modelOf("object-storage", "queue", "data-warehouse").model).main;
+    assert.doesNotMatch(bare, /kms_key_name|default_encryption_configuration|default_kms_key_name|google_kms/);
+  });
+
+  it("one grant per agent when an edge already wired a bucket to the key, not two over the same binding", () => {
+    const { model, ids } = modelOf("object-storage", "key-vault");
+    const { main } = plan(addEdge(model, ids[0] ?? "", ids[1] ?? ""));
+    const storageGrants = main.match(/resource "google_kms_crypto_key_iam_member" "[a-z_]+" \{[^}]*google_storage_project_service_account[^}]*\}/g) ?? [];
+    assert.equal(storageGrants.length, 1);
+    // Its log bucket is under the key as well, waiting for that one grant.
+    assert.match(main, /resource "google_storage_bucket" "object_storage_logs" \{[\s\S]*?depends_on\s+= \[[^\]]*google_kms_crypto_key_iam_member\.object_storage_to_key_vault/);
+  });
+
+  it("reads back with no more components than were drawn, the plan's buckets and agent lookups hidden", () => {
+    const back = parseTerraform(plan(modelOf("key-vault", "object-storage", "functions", "queue", "data-warehouse").model).main);
+    assert.ok(back.ok);
+    assert.deepEqual(
+      [...new Set(back.model.nodes.filter((n) => n.kind !== "external" && n.kind !== "internet").map((n) => n.kind))].sort(),
+      ["data-warehouse", "entra-id", "functions", "key-vault", "object-storage", "queue"],
+    );
+    assert.equal(back.model.nodes.filter((n) => n.kind === "object-storage").length, 1, "the log and source buckets are not drawn, encrypted or not");
+    assert.deepEqual(back.untranslated.filter((t) => t.startsWith("data.")), []);
+  });
+
+  it("holds a plan with a key store to the encryption rules, and a plan without one to the reviewed exceptions", () => {
+    const rules = [["checkov", "CKV_GCP_83"], ["checkov", "CKV_GCP_81"], ["trivy", "GCP-0066"]] as const;
+    const without = new Set(["queue", "object-storage"]);
+    const withStore = new Set(["queue", "object-storage", "key-vault"]);
+    for (const [tool, id] of rules) {
+      const named = (kinds: ReadonlySet<string>) => skipsFor(tool, kinds).some((skip) => skip[tool] === id);
+      assert.equal(named(without), true, `${id} is skipped without a key store`);
+      assert.equal(named(withStore), false, `${id} is enforced with one`);
+    }
   });
 
   it("a DNS zone publishes a record for the tier behind it", () => {

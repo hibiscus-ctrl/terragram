@@ -20769,14 +20769,13 @@ function sqlInstance(c, engine, prefix) {
   };
 }
 var PG_DATABASE_VERSION = {
+  "PostgreSQL 18": "POSTGRES_18",
+  "PostgreSQL 17": "POSTGRES_17",
   "PostgreSQL 16": "POSTGRES_16",
-  "PostgreSQL 15": "POSTGRES_15",
-  "PostgreSQL 14": "POSTGRES_14"
+  "PostgreSQL 15": "POSTGRES_15"
 };
 var MYSQL_DATABASE_VERSION = {
-  "MySQL 8.4": "MYSQL_8_4",
-  "MySQL 8.0": "MYSQL_8_0",
-  "MySQL 5.7": "MYSQL_5_7"
+  "MySQL 8.4": "MYSQL_8_4"
 };
 var REDIS_TIER = {
   "Basic (C0)": { tier: "BASIC", size: "1" },
@@ -21019,6 +21018,7 @@ var GCP = {
       const prod = production(c);
       const location = prod ? "var.region" : `"\${var.region}-a"`;
       const nodes = `${c.name}_nodes`;
+      const master = `${c.name}_master_cidr`;
       return {
         blocks: [
           block("resource", ["google_container_cluster", c.name], [
@@ -21027,8 +21027,9 @@ var GCP = {
             { key: "network", value: vpc },
             { key: "subnetwork", value: subnet },
             { key: "networking_mode", value: quote("VPC_NATIVE") },
-            // The node pool below is the only one; the cluster starts with none of its own.
-            { key: "initial_node_count", value: "0" },
+            // The node pool below is the only one: the pool a cluster is created with is removed, as the provider documents.
+            { key: "remove_default_node_pool", value: "true" },
+            { key: "initial_node_count", value: "1" },
             { key: "enable_shielded_nodes", value: "true" },
             { key: "enable_intranode_visibility", value: "true" },
             { key: "enable_legacy_abac", value: "false" },
@@ -21039,9 +21040,12 @@ var GCP = {
             block("private_cluster_config", [], [
               { key: "enable_private_nodes", value: "true" },
               { key: "enable_private_endpoint", value: "false" },
-              { key: "master_ipv4_cidr_block", value: quote("172.16.0.0/28") }
+              { key: "master_ipv4_cidr_block", value: `var.${master}` }
             ]),
-            block("master_authorized_networks_config", [], [], [
+            block("master_authorized_networks_config", [], [
+              // Google's own public ranges are not administrators: the control plane admits the one range below.
+              { key: "gcp_public_cidrs_access_enabled", value: "false" }
+            ], [
               block("cidr_blocks", [], [
                 { key: "cidr_block", value: "var.gke_authorized_cidr" },
                 { key: "display_name", value: quote("administrators") }
@@ -21097,7 +21101,21 @@ var GCP = {
           {
             name: "gke_authorized_cidr",
             type: "string",
-            description: "CIDR block allowed to reach the cluster's control plane: your office or VPN range."
+            description: "CIDR block allowed to reach the cluster's control plane: your office or VPN range.",
+            validation: {
+              condition: 'can(cidrhost(var.gke_authorized_cidr, 0)) && try(tonumber(split("/", var.gke_authorized_cidr)[1]) >= 24, false) && !startswith(var.gke_authorized_cidr, "0.")',
+              message: "Give a CIDR block of a /24 or narrower that is not 0.0.0.0/x: the control plane is reachable from nowhere else."
+            }
+          },
+          {
+            name: master,
+            type: "string",
+            description: `The /28 of private address space the ${c.slug} control plane takes. It must not overlap the network or another cluster's range.`,
+            default: quote(`172.16.${Math.floor(c.gcp.position / 16)}.${c.gcp.position % 16 * 16}/28`),
+            validation: {
+              condition: `can(cidrhost(var.${master}, 0)) && endswith(var.${master}, "/28") && can(regex("^(10|172\\\\.(1[6-9]|2[0-9]|3[01])|192\\\\.168)\\\\.", var.${master}))`,
+              message: "Give a /28 inside 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16."
+            }
           }
         ],
         outputs: [{ name: `${c.name}_endpoint`, value: `google_container_cluster.${c.name}.endpoint` }]
@@ -21554,29 +21572,29 @@ function modelIsProduction(nodes) {
   return nodes.some((n) => n.attributes?.[ENVIRONMENT_FIELD.key] === "Production");
 }
 var PG_VERSION = options({
+  "PostgreSQL 18": "18",
+  "PostgreSQL 17": "17",
   "PostgreSQL 16": "16",
-  "PostgreSQL 15": "15",
-  "PostgreSQL 14": "14"
+  "PostgreSQL 15": "15"
 });
 var PG_FIELD = {
   key: "PostgreSQL version",
   options: PG_VERSION.labels,
   fallback: "PostgreSQL 16",
   prompt: [
-    { option: "PostgreSQL 14", pattern: /\bpostgres(?:ql)?\s*14\b/i },
     { option: "PostgreSQL 15", pattern: /\bpostgres(?:ql)?\s*15\b/i },
-    { option: "PostgreSQL 16", pattern: /\bpostgres(?:ql)?\s*16\b/i }
+    { option: "PostgreSQL 16", pattern: /\bpostgres(?:ql)?\s*16\b/i },
+    { option: "PostgreSQL 17", pattern: /\bpostgres(?:ql)?\s*17\b/i },
+    { option: "PostgreSQL 18", pattern: /\bpostgres(?:ql)?\s*18\b/i }
   ]
 };
-var MYSQL_VERSION_AWS = options({ "MySQL 8.4": "8.4", "MySQL 8.0": "8.0", "MySQL 5.7": "5.7" });
-var MYSQL_VERSION_AZURE = options({ "MySQL 8.4": "8.4", "MySQL 8.0": "8.0.21", "MySQL 5.7": "5.7" });
+var MYSQL_VERSION_AWS = options({ "MySQL 8.4": "8.4" });
+var MYSQL_VERSION_AZURE = options({ "MySQL 8.4": "8.4" });
 var MYSQL_FIELD = {
   key: "MySQL version",
   options: MYSQL_VERSION_AWS.labels,
   fallback: "MySQL 8.4",
   prompt: [
-    { option: "MySQL 5.7", pattern: /\bmysql\s*5\.7\b/i },
-    { option: "MySQL 8.0", pattern: /\bmysql\s*8\.0\b/i },
     { option: "MySQL 8.4", pattern: /\bmysql\s*8\.4\b/i }
   ]
 };
@@ -21693,7 +21711,7 @@ var DELIVERY_FIELD = {
   options: DELIVERY.labels,
   fallback: "At least once"
 };
-function cidrProblem(value) {
+function cidrProblem(value, cloud) {
   const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(value);
   const [, a, b, c, d, prefix] = match ?? [];
   const valid = match !== null && [a, b, c, d].every((octet) => Number(octet) <= 255) && Number(prefix) <= 32;
@@ -21702,7 +21720,12 @@ function cidrProblem(value) {
   const second = Number(b);
   const length = Number(prefix);
   const private1918 = first === 10 && length >= 8 || first === 172 && second >= 16 && second <= 31 && length >= 12 || first === 192 && second === 168 && length >= 16;
-  return private1918 ? null : `${JSON.stringify(value)} is not a private address range: use a block inside 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16, such as 10.0.0.0/16`;
+  const sharedSpace = first === 100 && second >= 64 && second <= 127 && length >= 10;
+  if (private1918 || sharedSpace) return null;
+  if (cloud === "aws" || cloud === "azure") {
+    return length >= 8 ? null : `${JSON.stringify(value)} is wider than a /8, which no network is: use a block such as 10.0.0.0/16`;
+  }
+  return `${JSON.stringify(value)} is not a private address range: use a block inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or 100.64.0.0/10, such as 10.0.0.0/16`;
 }
 function withoutTrailingDot(value) {
   return value.endsWith(".") ? value.slice(0, -1) : value;
@@ -22099,7 +22122,7 @@ function hasWebsite(b) {
   return b.blocks.some((x) => x.type === "website") || attr(b, "website") !== void 0;
 }
 function gcpPlan(c) {
-  return c.gcp ?? { api: () => void 0, privateServices: () => "" };
+  return c.gcp ?? { api: () => void 0, privateServices: () => "", position: 0 };
 }
 function childBlock(b, ...path) {
   let at = b;
@@ -24040,12 +24063,12 @@ function cloudSpec(kind, cloud) {
 function fieldsForKind(kind) {
   return KIND_BY_ID.get(kind)?.fields ?? [];
 }
-function attributeProblems(nodes) {
+function attributeProblems(nodes, cloud) {
   const problems = [];
   for (const node2 of nodes) {
     for (const field of fieldsForKind(node2.kind)) {
       const value = node2.attributes?.[field.key];
-      const problem = value === void 0 ? null : field.validate?.(value);
+      const problem = value === void 0 ? null : field.validate?.(value, cloud);
       if (problem) problems.push(`${node2.label || node2.id}: ${field.key} ${problem}`);
     }
   }
@@ -24629,6 +24652,66 @@ function customDomainNote(domain2, cloud, zoneAddress, nameServersOutput) {
     waits
   ].join("\n");
 }
+var KEY_AGENTS = {
+  storage: "data.google_storage_project_service_account",
+  pubsub: "google_project_service_identity",
+  bigquery: "data.google_bigquery_default_service_account"
+};
+function encryptUnderKeyStore(emitted, wired, usedNames, apis) {
+  const store = emitted.find((e) => e.node.kind === "key-vault");
+  if (!store) return [];
+  const key = `google_kms_crypto_key.${store.name}.id`;
+  const added = [];
+  const grants = /* @__PURE__ */ new Map();
+  const grantFor = (service) => {
+    const existing = grants.get(service);
+    if (existing) return existing;
+    const wiredAlready = wired.find(
+      (w) => w.type === "resource" && w.labels[0] === "google_kms_crypto_key_iam_member" && attributeOf(w, "crypto_key_id") === key && (attributeOf(w, "member") ?? "").startsWith(`"serviceAccount:\${${KEY_AGENTS[service]}.`)
+    );
+    if (wiredAlready) {
+      const address2 = `google_kms_crypto_key_iam_member.${wiredAlready.labels[1] ?? ""}`;
+      grants.set(service, address2);
+      return address2;
+    }
+    let name = `${store.name}_${service}`;
+    for (let n = 2; usedNames.has(name); n++) name = `${store.name}_${service}_${n}`;
+    usedNames.add(name);
+    const [data, type] = KEY_AGENTS[service].startsWith("data.") ? [true, KEY_AGENTS[service].slice(5)] : [false, KEY_AGENTS[service]];
+    const agent = block(data ? "data" : "resource", [type, name], service === "pubsub" ? [
+      { key: "provider", value: GCP_BETA_REF },
+      { key: "service", value: quote("pubsub.googleapis.com") }
+    ] : []);
+    if (apis) addDependsOn(agent, "google_project_service.enabled");
+    const email3 = service === "storage" ? `${KEY_AGENTS[service]}.${name}.email_address` : `${KEY_AGENTS[service]}.${name}.email`;
+    const grant = block("resource", ["google_kms_crypto_key_iam_member", name], [
+      { key: "crypto_key_id", value: key },
+      { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+      { key: "member", value: `"serviceAccount:\${${email3}}"` }
+    ]);
+    added.push(agent, grant);
+    const address = `google_kms_crypto_key_iam_member.${name}`;
+    grants.set(service, address);
+    return address;
+  };
+  for (const { blocks } of emitted) {
+    for (const b of blocks) {
+      if (b.type !== "resource") continue;
+      const has = (type) => b.blocks.some((x) => x.type === type);
+      if (b.labels[0] === "google_storage_bucket" && !has("encryption")) {
+        b.blocks.push(block("encryption", [], [{ key: "default_kms_key_name", value: key }]));
+        addDependsOn(b, grantFor("storage"));
+      } else if (b.labels[0] === "google_pubsub_topic" && !b.attributes.some((a) => a.key === "kms_key_name")) {
+        b.attributes.push({ key: "kms_key_name", value: key });
+        addDependsOn(b, grantFor("pubsub"));
+      } else if (b.labels[0] === "google_bigquery_dataset" && !has("default_encryption_configuration")) {
+        b.blocks.push(block("default_encryption_configuration", [], [{ key: "kms_key_name", value: key }]));
+        addDependsOn(b, grantFor("bigquery"));
+      }
+    }
+  }
+  return added;
+}
 function addressOf(b) {
   return b.type === "resource" && b.labels.length === 2 ? `${b.labels[0]}.${b.labels[1]}` : null;
 }
@@ -24655,7 +24738,7 @@ ${problems.map((p) => `  ${p}`).join("\n")}`);
   }
 };
 function emitTerraform(model, cloud, tool = "terraform") {
-  const problems = attributeProblems(resourceNodes(model));
+  const problems = attributeProblems(resourceNodes(model), cloud);
   if (problems.length > 0) throw new ModelAttributeError(problems);
   const config2 = CLOUD_CONFIG[cloud];
   const provider = providerFor(cloud);
@@ -24689,10 +24772,13 @@ function emitTerraform(model, cloud, tool = "terraform") {
       return "google_service_networking_connection.private_services";
     }
   } : null;
+  const emittedOfKind = /* @__PURE__ */ new Map();
   for (const node2 of resourceNodes(model)) {
     const spec = cloudSpec(node2.kind, cloud);
     if (!spec) continue;
     const name = names.get(node2.id) ?? tfName(node2.id);
+    const position = emittedOfKind.get(node2.kind) ?? 0;
+    emittedOfKind.set(node2.kind, position + 1);
     const fields = fieldsForKind(node2.kind);
     const context = {
       node: node2,
@@ -24705,7 +24791,7 @@ function emitTerraform(model, cloud, tool = "terraform") {
       },
       net,
       private: privateNet?.api ?? null,
-      gcp
+      gcp: gcp ? { ...gcp, position } : null
     };
     const result = spec.emit(context);
     for (const variable of result.variables ?? []) variables.set(variable.name, variable);
@@ -24735,6 +24821,7 @@ function emitTerraform(model, cloud, tool = "terraform") {
     if (!source || !target || source === target) continue;
     wireBlocks.push(...wireEdge(source, target, cloud, plan));
   }
+  if (cloud === "gcp") wireBlocks.push(...encryptUnderKeyStore(emitted, wireBlocks, usedNames, gcpApis.size > 0));
   for (const item of emitted) {
     for (const variable of item.spec.finalize?.(item.consumer, item.context) ?? []) {
       variables.set(variable.name, variable);
@@ -24944,7 +25031,12 @@ ${renderDocument([...scaffold, ...resourceBlocks, ...wireBlocks])}`;
       { key: "description", value: variable.description ? quote(variable.description) : void 0 },
       { key: "sensitive", value: variable.sensitive ? "true" : void 0 },
       { key: "default", value: variable.default }
-    ])
+    ], variable.validation ? [
+      block("validation", [], [
+        { key: "condition", value: variable.validation.condition },
+        { key: "error_message", value: quote(variable.validation.message) }
+      ])
+    ] : [])
   );
   const seenOutputs = /* @__PURE__ */ new Set();
   const outputBlocks = outputs.filter((o) => {
@@ -25554,7 +25646,7 @@ function parseModelDocument(text) {
 ${issues}` };
   }
   const { nodes, edges, topology, cloud } = parsed.data;
-  const problems = attributeProblems(resourceNodes({ nodes, edges, topology }));
+  const problems = attributeProblems(resourceNodes({ nodes, edges, topology }), cloud ?? DEFAULT_CLOUD);
   if (problems.length > 0) return { ok: false, problem: `it has values that cannot be used:
 ${problems.map((p) => `  ${p}`).join("\n")}` };
   return { ok: true, document: { model: { nodes, edges, topology }, cloud: cloud ?? DEFAULT_CLOUD } };

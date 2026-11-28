@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Cloud Function, GKE node pool or Compute instance that names a service account in `service_account`, `service_account_email` or its
   `service_account` block `runs-as` it. The AWS, Azure and Google Cloud grants of a file are all read, whichever cloud it goes to. The Action's
   "Access changes" list shows them like any other.
-- A virtual network's address space has to be private: a block inside `10.0.0.0/8`, `172.16.0.0/12` or `192.168.0.0/16`, on AWS and Azure as on Google Cloud. `0.0.0.0/0`, a public range and a block wider than those three are refused with the reason, where before any IPv4 block was written into the plan.
+- A virtual network's address space is checked before it is written into a plan. On Google Cloud, where the network's own firewall rule is sourced from its range, it has to be private: a block inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or the shared space `100.64.0.0/10`. On AWS and Azure those four are accepted and so is any other block as before, but `0.0.0.0/0` and a block wider than a `/8` are refused with the reason.
 - `terragram generate`, the Action and `emitTerraform` write Terraform for Google Cloud, as they do for AWS and Azure. `--cloud gcp` is accepted, a brief that names
   Google Cloud or one of its services (GKE, Cloud Run, Cloud SQL, BigQuery, Pub/Sub, Firestore, Memorystore) picks it, a managed model and a picture can
   choose it, and a `gcp` model has a receipt whose plan is hashed like any other. The plan is on `hashicorp/google` `~> 8.12` (and `hashicorp/archive`
@@ -79,6 +79,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app service and the static site. The emit gate (`npm run validate:emit`, and the Generated Terraform job) now runs every brief and template for Google Cloud too,
   through `terraform fmt`, `init` and `validate`, `tflint` with the google ruleset (`--cloud=gcp` runs that cloud alone), `trivy` and `checkov`, with the exceptions
   in `scripts/scanner-skips.ts`, each with its reason.
+  A plan with a `key-vault` puts every bucket (the log and source buckets the plan adds too), Pub/Sub topic and BigQuery dataset under that key, with one grant of
+  `roles/cloudkms.cryptoKeyEncrypterDecrypter` to each service's own agent that is needed, and what is encrypted waits for it; the scanner exceptions for those three
+  (`CKV_GCP_83`, `CKV_GCP_81`, `GCP-0066`) hold only in a plan with no key store. A GKE cluster removes the pool it is created with (`remove_default_node_pool`, `initial_node_count = 1`),
+  admits only `gke_authorized_cidr` to its control plane (`gcp_public_cidrs_access_enabled = false`; the variable takes a `/24` or narrower, never a block that starts at `0`), and takes a
+  `/28` control-plane range of its own, a validated variable per cluster, so two clusters in one plan never collide.
+- The database versions the model offers are the ones still in support: PostgreSQL 15, 16, 17 and 18 and MySQL 8.4 (PostgreSQL 14, MySQL 8.0 and MySQL 5.7 are past end of life), on all three clouds.
+  A model that still names an older one is emitted on the default version, and a file on one reads back without a version.
 - `terragram parse` reads Google Cloud. A file of `google_*` resources parses to a model whose cloud is `gcp`, where it used to be
   refused as "none of the resources can be mapped". The new `project`, `kubernetes`, `virtual-machine` and `data-warehouse`
   kinds and a Google Cloud spec on the existing ones (`dns`, `load-balancer`, `containers`, `functions`, `queue`, `vnet`,

@@ -184,8 +184,12 @@ resource "google_sql_database_instance" "o" { database_version = var.version }
   });
 
   it("reads the version out of the database_version Google spells", () => {
-    const pg = read('resource "google_sql_database_instance" "p" {\n  database_version = "POSTGRES_14"\n}');
-    assert.deepEqual(pg.model.nodes.find((n) => n.kind === "postgres")?.attributes, { "PostgreSQL version": "PostgreSQL 14" });
+    const pg = read('resource "google_sql_database_instance" "p" {\n  database_version = "POSTGRES_17"\n}');
+    assert.deepEqual(pg.model.nodes.find((n) => n.kind === "postgres")?.attributes, { "PostgreSQL version": "PostgreSQL 17" });
+    // A major past end of life is still a PostgreSQL instance, but not one the model can name a version for.
+    const old = read('resource "google_sql_database_instance" "p" {\n  database_version = "POSTGRES_14"\n}');
+    assert.equal(old.model.nodes.some((n) => n.kind === "postgres"), true);
+    assert.equal(old.model.nodes.find((n) => n.kind === "postgres")?.attributes?.["PostgreSQL version"], undefined);
     const my = read('resource "google_sql_database_instance" "m" {\n  database_version = "MYSQL_8_4"\n}');
     assert.deepEqual(my.model.nodes.find((n) => n.kind === "mysql")?.attributes, { "MySQL version": "MySQL 8.4" });
   });

@@ -521,6 +521,81 @@ function customDomainNote(domain: CustomDomain, cloud: Cloud, zoneAddress: strin
   ].join("\n");
 }
 
+/** The Google service agents that read a customer-managed key on behalf of what the plan encrypts. */
+const KEY_AGENTS = {
+  storage: "data.google_storage_project_service_account",
+  pubsub: "google_project_service_identity",
+  bigquery: "data.google_bigquery_default_service_account",
+} as const;
+
+/**
+ * Google Cloud: a plan with a key store puts what it stores at rest under that store's key. Every bucket, Pub/Sub
+ * topic and BigQuery dataset that no edge already wired to a key is encrypted under it, and the key lets the service
+ * agent of each service use it, once per service; what is encrypted waits for that grant. A plan with no key store
+ * leaves them on Google's own encryption, which is why the scanner exceptions for them hold only there.
+ */
+function encryptUnderKeyStore(emitted: readonly Emitted[], wired: readonly HclBlock[], usedNames: Set<string>, apis: boolean): HclBlock[] {
+  const store = emitted.find((e) => e.node.kind === "key-vault");
+  if (!store) return [];
+  const key = `google_kms_crypto_key.${store.name}.id`;
+  const added: HclBlock[] = [];
+  const grants = new Map<keyof typeof KEY_AGENTS, string>();
+  /** The grant that lets one service's agent use the key, written the first time something needs it. */
+  const grantFor = (service: keyof typeof KEY_AGENTS): string => {
+    const existing = grants.get(service);
+    if (existing) return existing;
+    // A bucket an edge already wired to this key has its grant: a second one for the same agent would fight it over the binding.
+    const wiredAlready = wired.find(
+      (w) =>
+        w.type === "resource" &&
+        w.labels[0] === "google_kms_crypto_key_iam_member" &&
+        attributeOf(w, "crypto_key_id") === key &&
+        (attributeOf(w, "member") ?? "").startsWith(`"serviceAccount:\${${KEY_AGENTS[service]}.`),
+    );
+    if (wiredAlready) {
+      const address = `google_kms_crypto_key_iam_member.${wiredAlready.labels[1] ?? ""}`;
+      grants.set(service, address);
+      return address;
+    }
+    let name = `${store.name}_${service}`;
+    for (let n = 2; usedNames.has(name); n++) name = `${store.name}_${service}_${n}`;
+    usedNames.add(name);
+    const [data, type] = KEY_AGENTS[service].startsWith("data.") ? [true, KEY_AGENTS[service].slice(5)] : [false, KEY_AGENTS[service]];
+    const agent = block(data ? "data" : "resource", [type, name], service === "pubsub" ? [
+      { key: "provider", value: GCP_BETA_REF },
+      { key: "service", value: quote("pubsub.googleapis.com") },
+    ] : []);
+    if (apis) addDependsOn(agent, "google_project_service.enabled");
+    const email = service === "storage" ? `${KEY_AGENTS[service]}.${name}.email_address` : `${KEY_AGENTS[service]}.${name}.email`;
+    const grant = block("resource", ["google_kms_crypto_key_iam_member", name], [
+      { key: "crypto_key_id", value: key },
+      { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+      { key: "member", value: `"serviceAccount:\${${email}}"` },
+    ]);
+    added.push(agent, grant);
+    const address = `google_kms_crypto_key_iam_member.${name}`;
+    grants.set(service, address);
+    return address;
+  };
+  for (const { blocks } of emitted) {
+    for (const b of blocks) {
+      if (b.type !== "resource") continue;
+      const has = (type: string) => b.blocks.some((x) => x.type === type);
+      if (b.labels[0] === "google_storage_bucket" && !has("encryption")) {
+        b.blocks.push(block("encryption", [], [{ key: "default_kms_key_name", value: key }]));
+        addDependsOn(b, grantFor("storage"));
+      } else if (b.labels[0] === "google_pubsub_topic" && !b.attributes.some((a) => a.key === "kms_key_name")) {
+        b.attributes.push({ key: "kms_key_name", value: key });
+        addDependsOn(b, grantFor("pubsub"));
+      } else if (b.labels[0] === "google_bigquery_dataset" && !has("default_encryption_configuration")) {
+        b.blocks.push(block("default_encryption_configuration", [], [{ key: "kms_key_name", value: key }]));
+        addDependsOn(b, grantFor("bigquery"));
+      }
+    }
+  }
+  return added;
+}
+
 /** The address a block is referred to by, `type.name`. */
 function addressOf(b: HclBlock): string | null {
   return b.type === "resource" && b.labels.length === 2 ? `${b.labels[0]}.${b.labels[1]}` : null;
@@ -565,7 +640,7 @@ export function emitTerraform(
   cloud: Cloud,
   tool: TerraformTool = "terraform",
 ): TerraformOutput {
-  const problems = attributeProblems(resourceNodes(model));
+  const problems = attributeProblems(resourceNodes(model), cloud);
   if (problems.length > 0) throw new ModelAttributeError(problems);
   const config = CLOUD_CONFIG[cloud];
   const provider = providerFor(cloud);
@@ -605,7 +680,7 @@ export function emitTerraform(
   // What Google Cloud kinds ask of the plan: the APIs to switch on, and private service access per network.
   const gcpApis = new Set<string>();
   const gcpPrivateServices = new Map<string, string>();
-  const gcp: GcpPlan | null =
+  const gcp: Omit<GcpPlan, "position"> | null =
     cloud === "gcp"
       ? {
           api: (...services) => {
@@ -618,10 +693,13 @@ export function emitTerraform(
         }
       : null;
 
+  const emittedOfKind = new Map<string, number>();
   for (const node of resourceNodes(model)) {
     const spec = cloudSpec(node.kind, cloud);
     if (!spec) continue;
     const name = names.get(node.id) ?? tfName(node.id);
+    const position = emittedOfKind.get(node.kind) ?? 0;
+    emittedOfKind.set(node.kind, position + 1);
 
     const fields = fieldsForKind(node.kind);
     const context: EmitContext = {
@@ -635,7 +713,7 @@ export function emitTerraform(
       },
       net,
       private: privateNet?.api ?? null,
-      gcp,
+      gcp: gcp ? { ...gcp, position } : null,
     };
 
     const result = spec.emit(context);
@@ -671,6 +749,8 @@ export function emitTerraform(
     if (!source || !target || source === target) continue;
     wireBlocks.push(...wireEdge(source, target, cloud, plan));
   }
+
+  if (cloud === "gcp") wireBlocks.push(...encryptUnderKeyStore(emitted, wireBlocks, usedNames, gcpApis.size > 0));
 
   // Shapes that are only valid once their edges are known complete themselves
   // last, after every wire has landed.
@@ -917,7 +997,14 @@ export function emitTerraform(
         { key: "description", value: variable.description ? quote(variable.description) : undefined },
         { key: "sensitive", value: variable.sensitive ? "true" : undefined },
         { key: "default", value: variable.default },
-      ]),
+      ], variable.validation
+        ? [
+            block("validation", [], [
+              { key: "condition", value: variable.validation.condition },
+              { key: "error_message", value: quote(variable.validation.message) },
+            ]),
+          ]
+        : []),
     );
 
   const seenOutputs = new Set<string>();

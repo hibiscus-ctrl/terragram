@@ -1,6 +1,6 @@
 # Generated from the diagram model
 # Target: Google Cloud · London (europe-west2) · Terraform
-# 0 module calls and 60 resources from 17 components
+# 0 module calls and 64 resources from 17 components
 
 terraform {
   required_version = ">= 1.6, < 2.0"
@@ -305,6 +305,7 @@ resource "google_storage_bucket" "functions_source" {
   labels = {
     purpose = "function-source"
   }
+  depends_on = [google_kms_crypto_key_iam_member.key_vault_storage]
 
   versioning {
     enabled = true
@@ -313,6 +314,10 @@ resource "google_storage_bucket" "functions_source" {
   logging {
     log_bucket        = google_storage_bucket.functions_source_logs.name
     log_object_prefix = "access/"
+  }
+
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.key_vault.id
   }
 }
 
@@ -326,7 +331,7 @@ resource "google_storage_bucket" "functions_source_logs" {
   labels = {
     purpose = "access-logs"
   }
-  depends_on = [google_project_service.enabled]
+  depends_on = [google_kms_crypto_key_iam_member.key_vault_storage, google_project_service.enabled]
 
   versioning {
     enabled = true
@@ -340,6 +345,10 @@ resource "google_storage_bucket" "functions_source_logs" {
     action {
       type = "Delete"
     }
+  }
+
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.key_vault.id
   }
 }
 
@@ -361,7 +370,8 @@ resource "google_container_cluster" "kubernetes" {
   network                     = google_compute_network.vnet.id
   subnetwork                  = google_compute_subnetwork.vnet.id
   networking_mode             = "VPC_NATIVE"
-  initial_node_count          = 0
+  remove_default_node_pool    = true
+  initial_node_count          = 1
   enable_shielded_nodes       = true
   enable_intranode_visibility = true
   enable_legacy_abac          = false
@@ -375,10 +385,12 @@ resource "google_container_cluster" "kubernetes" {
   private_cluster_config {
     enable_private_nodes    = true
     enable_private_endpoint = false
-    master_ipv4_cidr_block  = "172.16.0.0/28"
+    master_ipv4_cidr_block  = var.kubernetes_master_cidr
   }
 
   master_authorized_networks_config {
+    gcp_public_cidrs_access_enabled = false
+
     cidr_blocks {
       cidr_block   = var.gke_authorized_cidr
       display_name = "administrators"
@@ -691,6 +703,7 @@ resource "google_storage_bucket" "object_storage" {
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
   force_destroy               = true
+  depends_on                  = [google_kms_crypto_key_iam_member.key_vault_storage]
 
   versioning {
     enabled = true
@@ -699,6 +712,10 @@ resource "google_storage_bucket" "object_storage" {
   logging {
     log_bucket        = google_storage_bucket.object_storage_logs.name
     log_object_prefix = "access/"
+  }
+
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.key_vault.id
   }
 }
 
@@ -712,7 +729,7 @@ resource "google_storage_bucket" "object_storage_logs" {
   labels = {
     purpose = "access-logs"
   }
-  depends_on = [google_project_service.enabled]
+  depends_on = [google_kms_crypto_key_iam_member.key_vault_storage, google_project_service.enabled]
 
   versioning {
     enabled = true
@@ -726,6 +743,10 @@ resource "google_storage_bucket" "object_storage_logs" {
     action {
       type = "Delete"
     }
+  }
+
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.key_vault.id
   }
 }
 
@@ -742,6 +763,7 @@ resource "google_storage_bucket" "object_storage_2" {
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
   force_destroy               = true
+  depends_on                  = [google_kms_crypto_key_iam_member.key_vault_storage]
 
   versioning {
     enabled = true
@@ -750,6 +772,10 @@ resource "google_storage_bucket" "object_storage_2" {
   logging {
     log_bucket        = google_storage_bucket.object_storage_2_logs.name
     log_object_prefix = "access/"
+  }
+
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.key_vault.id
   }
 }
 
@@ -763,7 +789,7 @@ resource "google_storage_bucket" "object_storage_2_logs" {
   labels = {
     purpose = "access-logs"
   }
-  depends_on = [google_project_service.enabled]
+  depends_on = [google_kms_crypto_key_iam_member.key_vault_storage, google_project_service.enabled]
 
   versioning {
     enabled = true
@@ -778,6 +804,10 @@ resource "google_storage_bucket" "object_storage_2_logs" {
       type = "Delete"
     }
   }
+
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.key_vault.id
+  }
 }
 
 resource "google_storage_bucket_iam_member" "object_storage_2_logs_delivery" {
@@ -789,13 +819,15 @@ resource "google_storage_bucket_iam_member" "object_storage_2_logs_delivery" {
 resource "google_pubsub_topic" "queue" {
   name                       = "topic-${var.name_prefix}-queue"
   message_retention_duration = "604800s"
-  depends_on                 = [google_project_service.enabled]
+  kms_key_name               = google_kms_crypto_key.key_vault.id
+  depends_on                 = [google_kms_crypto_key_iam_member.key_vault_pubsub, google_project_service.enabled]
 }
 
 resource "google_pubsub_topic" "queue_dead_letter" {
   name                       = "dlq-${var.name_prefix}-queue"
   message_retention_duration = "604800s"
-  depends_on                 = [google_project_service.enabled]
+  kms_key_name               = google_kms_crypto_key.key_vault.id
+  depends_on                 = [google_kms_crypto_key_iam_member.key_vault_pubsub, google_project_service.enabled]
 }
 
 resource "google_pubsub_subscription" "queue" {
@@ -866,7 +898,11 @@ resource "google_bigquery_dataset" "data_warehouse" {
   dataset_id                 = replace("dw-${var.name_prefix}-data-warehouse", "-", "_")
   location                   = var.region
   delete_contents_on_destroy = true
-  depends_on                 = [google_project_service.enabled]
+  depends_on                 = [google_kms_crypto_key_iam_member.key_vault_bigquery, google_project_service.enabled]
+
+  default_encryption_configuration {
+    kms_key_name = google_kms_crypto_key.key_vault.id
+  }
 }
 
 resource "google_monitoring_notification_channel" "monitoring" {
@@ -927,4 +963,36 @@ resource "google_service_networking_connection" "private_services" {
   service                 = "servicenetworking.googleapis.com"
   reserved_peering_ranges = [google_compute_global_address.private_services.name]
   deletion_policy         = "ABANDON"
+}
+
+data "google_storage_project_service_account" "key_vault_storage" {
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_kms_crypto_key_iam_member" "key_vault_storage" {
+  crypto_key_id = google_kms_crypto_key.key_vault.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:${data.google_storage_project_service_account.key_vault_storage.email_address}"
+}
+
+resource "google_project_service_identity" "key_vault_pubsub" {
+  provider   = google-beta
+  service    = "pubsub.googleapis.com"
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_kms_crypto_key_iam_member" "key_vault_pubsub" {
+  crypto_key_id = google_kms_crypto_key.key_vault.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:${google_project_service_identity.key_vault_pubsub.email}"
+}
+
+data "google_bigquery_default_service_account" "key_vault_bigquery" {
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_kms_crypto_key_iam_member" "key_vault_bigquery" {
+  crypto_key_id = google_kms_crypto_key.key_vault.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:${data.google_bigquery_default_service_account.key_vault_bigquery.email}"
 }

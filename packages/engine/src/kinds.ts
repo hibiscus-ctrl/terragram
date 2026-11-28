@@ -49,7 +49,7 @@ export type KindField = {
   fallback: string;
   /** For free text: why a value cannot be used, or null when it can. Such a value is
    *  written into the plan, so it is checked before anything is emitted. */
-  validate?: (value: string) => string | null;
+  validate?: (value: string, cloud?: Cloud) => string | null;
   /** For free text: the form of an accepted value that is emitted, when it differs from
    *  how the reviewer wrote it (a DNS name's trailing dot). Applied before `attr` returns. */
   normalize?: (value: string) => string;
@@ -165,6 +165,8 @@ export type VariableSpec = {
   description?: string;
   default?: string;
   sensitive?: boolean;
+  /** A rule the value has to satisfy, checked by Terraform before anything is planned. */
+  validation?: { condition: string; message: string };
 };
 
 /**
@@ -349,32 +351,34 @@ export function modelIsProduction(nodes: readonly ModelNode[]): boolean {
   return nodes.some((n) => n.attributes?.[ENVIRONMENT_FIELD.key] === "Production");
 }
 
+// Only majors the community still supports (14 reached end of life on 12 November 2026).
 const PG_VERSION = options({
+  "PostgreSQL 18": "18",
+  "PostgreSQL 17": "17",
   "PostgreSQL 16": "16",
   "PostgreSQL 15": "15",
-  "PostgreSQL 14": "14",
 });
 const PG_FIELD: KindField = {
   key: "PostgreSQL version",
   options: PG_VERSION.labels,
   fallback: "PostgreSQL 16",
   prompt: [
-    { option: "PostgreSQL 14", pattern: /\bpostgres(?:ql)?\s*14\b/i },
     { option: "PostgreSQL 15", pattern: /\bpostgres(?:ql)?\s*15\b/i },
     { option: "PostgreSQL 16", pattern: /\bpostgres(?:ql)?\s*16\b/i },
+    { option: "PostgreSQL 17", pattern: /\bpostgres(?:ql)?\s*17\b/i },
+    { option: "PostgreSQL 18", pattern: /\bpostgres(?:ql)?\s*18\b/i },
   ],
 };
 // The two providers spell the same major differently: RDS takes a major ("8.0"),
 // Azure Flexible Server wants the exact minor it supports ("8.0.21").
-const MYSQL_VERSION_AWS = options({ "MySQL 8.4": "8.4", "MySQL 8.0": "8.0", "MySQL 5.7": "5.7" });
-const MYSQL_VERSION_AZURE = options({ "MySQL 8.4": "8.4", "MySQL 8.0": "8.0.21", "MySQL 5.7": "5.7" });
+// 5.7 and 8.0 are past end of life (October 2023, April 2026); 8.4 is the long-term release.
+const MYSQL_VERSION_AWS = options({ "MySQL 8.4": "8.4" });
+const MYSQL_VERSION_AZURE = options({ "MySQL 8.4": "8.4" });
 const MYSQL_FIELD: KindField = {
   key: "MySQL version",
   options: MYSQL_VERSION_AWS.labels,
   fallback: "MySQL 8.4",
   prompt: [
-    { option: "MySQL 5.7", pattern: /\bmysql\s*5\.7\b/i },
-    { option: "MySQL 8.0", pattern: /\bmysql\s*8\.0\b/i },
     { option: "MySQL 8.4", pattern: /\bmysql\s*8\.4\b/i },
   ],
 };
@@ -506,13 +510,17 @@ const DELIVERY_FIELD: KindField = {
   fallback: "At least once",
 };
 
-/** An IPv4 CIDR block such as `10.0.0.0/16`: four octets and a prefix length, inside private address space. */
-function cidrProblem(value: string): string | null {
+/**
+ * An IPv4 CIDR block such as `10.0.0.0/16`: four octets and a prefix length. RFC 1918 space, whole, and the shared
+ * address space 100.64.0.0/10 (RFC 6598, carrier-grade NAT, which AWS and Azure networks use) are accepted on every
+ * cloud. On AWS and Azure any other block a network can be built from is accepted too, but never one wider than a /8
+ * (0.0.0.0/0 is the internet); on Google Cloud, where a firewall rule is written from the network's own range, nothing else is.
+ */
+function cidrProblem(value: string, cloud?: Cloud): string | null {
   const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(value);
   const [, a, b, c, d, prefix] = match ?? [];
   const valid = match !== null && [a, b, c, d].every((octet) => Number(octet) <= 255) && Number(prefix) <= 32;
   if (!valid) return `${JSON.stringify(value)} is not an IPv4 CIDR block such as 10.0.0.0/16`;
-  // The network is private: a block of RFC 1918 space, whole. Anything wider or public is the internet, or part of it.
   const first = Number(a);
   const second = Number(b);
   const length = Number(prefix);
@@ -520,9 +528,12 @@ function cidrProblem(value: string): string | null {
     (first === 10 && length >= 8) ||
     (first === 172 && second >= 16 && second <= 31 && length >= 12) ||
     (first === 192 && second === 168 && length >= 16);
-  return private1918
-    ? null
-    : `${JSON.stringify(value)} is not a private address range: use a block inside 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16, such as 10.0.0.0/16`;
+  const sharedSpace = first === 100 && second >= 64 && second <= 127 && length >= 10;
+  if (private1918 || sharedSpace) return null;
+  if (cloud === "aws" || cloud === "azure") {
+    return length >= 8 ? null : `${JSON.stringify(value)} is wider than a /8, which no network is: use a block such as 10.0.0.0/16`;
+  }
+  return `${JSON.stringify(value)} is not a private address range: use a block inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or 100.64.0.0/10, such as 10.0.0.0/16`;
 }
 
 /** A DNS name without the root label's dot: `example.com.` is `example.com`. */
@@ -1115,7 +1126,7 @@ function hasWebsite(b: HclBlock): boolean {
 
 /** The plan a Google Cloud kind asks things of; `terraform.ts` supplies it, and a context built without one asks nothing. */
 function gcpPlan(c: EmitContext): GcpPlan {
-  return c.gcp ?? { api: () => undefined, privateServices: () => "" };
+  return c.gcp ?? { api: () => undefined, privateServices: () => "", position: 0 };
 }
 
 /** A block nested under `b` by the labels in `path`, the first of each. */
@@ -3130,12 +3141,12 @@ export function fieldsForKind(kind: string): readonly KindField[] {
 }
 
 /** Why a node's free-text attributes cannot be used, one message per bad value. */
-export function attributeProblems(nodes: readonly ModelNode[]): string[] {
+export function attributeProblems(nodes: readonly ModelNode[], cloud?: Cloud): string[] {
   const problems: string[] = [];
   for (const node of nodes) {
     for (const field of fieldsForKind(node.kind)) {
       const value = node.attributes?.[field.key];
-      const problem = value === undefined ? null : field.validate?.(value);
+      const problem = value === undefined ? null : field.validate?.(value, cloud);
       if (problem) problems.push(`${node.label || node.id}: ${field.key} ${problem}`);
     }
   }

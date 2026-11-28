@@ -37,8 +37,8 @@ describe("explainModel", () => {
 
   it("mentions a reviewer's chosen attribute", () => {
     const { model } = composeFromPrompt(WEB_PROMPT);
-    const chosen = setNodeAttribute(model, "postgres", "PostgreSQL version", "PostgreSQL 14");
-    assert.match(explainModel(chosen, "azure", "UK South"), /PostgreSQL 14/);
+    const chosen = setNodeAttribute(model, "postgres", "PostgreSQL version", "PostgreSQL 17");
+    assert.match(explainModel(chosen, "azure", "UK South"), /PostgreSQL 17/);
   });
 
   it("is deterministic and needs no key or network", () => {
