@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -12,7 +12,7 @@ import { assembleModel } from "terragram-engine/engine";
 import { emitTerraform } from "terragram-engine/terraform";
 import { GCP_PLANS } from "../scripts/emit-plans.ts";
 import { adaptForSandbox } from "../scripts/lib/sandbox-gcp.ts";
-import { ALLOWED_PROVIDERS, PINNED_SOURCES, PLAN_IDS, PlanRejected, validatePlans, validateSource } from "../scripts/sandbox-gcp-validate.mjs";
+import { ALLOWED_DATA, ALLOWED_PROVIDERS, ALLOWED_RESOURCES, DENIED_DATA, PINNED_SOURCES, PLAN_IDS, PlanRejected, validatePlans, validateSource } from "../scripts/sandbox-gcp-validate.mjs";
 
 /**
  * The gate between the sandbox workflow's two jobs: the plans the first job wrote are checked, by the job that
@@ -111,7 +111,7 @@ describe("the sandbox's check of the plans", () => {
   });
 
   it("refuses code that runs on the runner", () => {
-    refusesAppended('data "external" "x" {\n  program = ["sh", "-c", "id"]\n}', /external is not of an allowed provider/);
+    refusesAppended('data "external" "x" {\n  program = ["sh", "-c", "id"]\n}', /data external is not a data source the generator writes/);
     refusesAppended('resource "null_resource" "x" {\n}', /null_resource/);
     refusesAppended('resource "terraform_data" "x" {\n  provisioner "local-exec" {\n    command = "id"\n  }\n}', /provisioner/);
     refusesAppended('resource "google_storage_bucket" "x" {\n  name = "x"\n  provisioner "remote-exec" {\n  }\n}', /provisioner/);
@@ -130,6 +130,127 @@ describe("the sandbox's check of the plans", () => {
     refusesAppended('locals {\n  x = "a ${ { b = filebase64("c") } } d"\n}', /function filebase64/);
     refusesAppended("locals {\n  x = provider::external::run()\n}", /function of a provider/);
     refusesAppended('locals {\n  x = fileset(path.module, "*")\n}', /function fileset/);
+  });
+
+  it("allows exactly the resource and data source types the four plans and the network root contain", () => {
+    const root = plans();
+    const texts = PLAN_IDS.flatMap((id) => readdirSync(join(root, id)).filter((n) => n.endsWith(".tf")).map((n) => read(root, `${id}/${n}`)));
+    texts.push(readFileSync(new URL("../scripts/sandbox-gcp-network/main.tf", import.meta.url), "utf8"));
+    const types = (kind: string) => [...new Set(texts.flatMap((t) => [...t.matchAll(new RegExp(`^${kind} "([^"]+)" "`, "gm"))].map((m) => m[1] as string)))].sort();
+    assert.deepEqual([...ALLOWED_RESOURCES].sort(), types("resource"), "ALLOWED_RESOURCES is what the generator writes: add a new type to it, and remove one it no longer writes");
+    assert.deepEqual([...ALLOWED_DATA].sort(), types("data"), "ALLOWED_DATA is what the generator writes");
+    for (const type of ALLOWED_RESOURCES) assert.match(type, /^google_[a-z0-9_]+$/);
+  });
+
+  it("refuses a type the generator does not write, though it is of an allowed provider", () => {
+    refusesAppended('resource "google_compute_vpn_gateway" "x" {\n}', /resource google_compute_vpn_gateway is not a resource type the generator writes/);
+    refusesAppended('resource "google_service_account_key" "x" {\n}', /google_service_account_key is not a resource type/);
+    refusesAppended('data "google_compute_instance" "x" {\n}', /data google_compute_instance is not a data source the generator writes/);
+    // A type the generator starts to write fails the plans until it is listed.
+    refusesWhole((r) => write(r, "gcp-site/main.tf", read(r, "gcp-site/main.tf").replace('resource "google_compute_url_map"', 'resource "google_compute_region_url_map"')), /google_compute_region_url_map is not a resource type/);
+    // An escape in a label does not spell a listed type.
+    refusesAppended('resource "google_storage_\\u0062ucket" "x" {\n}', /is not a resource type/);
+  });
+
+  it("refuses the data sources that hand out a token, as blocks and as references, even if they are listed", () => {
+    const tokens = [...DENIED_DATA];
+    assert.equal(tokens.length, 5);
+    const exposing = ["google_client_config", "google_service_account_access_token", "google_service_account_id_token", "google_service_account_jwt", "google_client_openid_userinfo"];
+    assert.deepEqual([...tokens].sort(), [...exposing].sort());
+    for (const type of exposing) {
+      refusesAppended(`data "${type}" "x" {\n}`, /hands out a token/);
+      refusesAppended(`locals {\n  t = data.${type}.x.access_token\n}`, /hands out a token/);
+      refusesAppended(`resource "google_storage_bucket_object" "x" {\n  name    = "x"\n  bucket  = "b"\n  content = data.${type}.x.access_token\n}`, /bucket object may set only/);
+      ALLOWED_DATA.add(type);
+      try {
+        refusesAppended(`data "${type}" "x" {\n}`, /hands out a token/);
+        refusesAppended(`locals {\n  t = data.${type}.x.access_token\n}`, /hands out a token/);
+      } finally {
+        ALLOWED_DATA.delete(type);
+      }
+    }
+    refusesAppended('locals {\n  t = data["google_client_config"]\n}', /not written plainly/);
+    refusesAppended('locals {\n  t = "${data.google_client_config.x.access_token}"\n}', /hands out a token/);
+    refusesAppended('locals {\n  t = data.google_secret_manager_secret_version.x.secret_data\n}', /hands out a token/);
+  });
+
+  it("refuses an attribute that reads a local path, and a bucket object that is not its archive", () => {
+    const object = (attrs: string) => `resource "google_storage_bucket_object" "x" {\n  name   = "x"\n  bucket = "b"\n${attrs}\n}`;
+    refusesAppended(object('  source = "/etc/passwd"'), /source may only be the output_path/);
+    refusesAppended(object('  source = "${path.module}/src/x"'), /source may only be the output_path/);
+    refusesAppended(object("  source = data.archive_file.not_declared.output_path"), /source may only be the output_path/);
+    refusesAppended(object("  source = data.archive_file.functions.output_base64sha256"), /source may only be the output_path/);
+    refusesAppended(object("  source = data.google_project.x.number"), /source may only be the output_path|data google_project/);
+    refusesAppended(object('  source_file = "/etc/passwd"'), /bucket object may set only/);
+    refusesAppended(object('  content = "inline"'), /bucket object may set only/);
+    refusesAppended(object("  content = data.google_project.x.number"), /bucket object may set only/);
+    refusesAppended(object("  content = jsonencode(data.google_storage_project_service_account.x)"), /bucket object may set only/);
+    refusesAppended(object("  retention {\n  }"), /bucket object may set only/);
+    refusesAppended('resource "google_storage_bucket" "x" {\n  name   = "x"\n  source = "/etc/passwd"\n}', /the attribute source/);
+    refusesAppended('resource "google_storage_bucket" "x" {\n  name = "x"\n  inner {\n    source_dir = "/"\n  }\n}', /the attribute source_dir/);
+    refusesAppended('resource "google_compute_instance" "x" {\n  credentials = "x"\n}', /the attribute credentials/);
+    refusesAppended('resource "google_storage_bucket" "x" {\n  name = path.module\n}', /reference to path/);
+    refusesAppended('output "x" {\n  value = path["cwd"]\n}', /reference to path/);
+    refusesAppended('output "x" {\n  value = "${path.root}"\n}', /reference to path/);
+    // What the generator writes is its archive, and its own placeholder.
+    validateSource(object("  source = data.archive_file.functions.output_path").replace('resource', 'data "archive_file" "functions" {\n  type        = "zip"\n  source_dir  = "${path.module}/src/functions"\n  output_path = "${path.module}/.terraform/functions.zip"\n}\n\nresource'), "x.tf");
+  });
+
+  it("refuses a function that reads the disk wherever the name is, whatever follows it", () => {
+    const names = ["file", "fileset", "filebase64", "filebase64sha256", "filebase64sha512", "filesha1", "filesha256", "filesha512", "filemd5", "fileexists", "templatefile", "templatestring", "abspath", "pathexpand"];
+    for (const name of names) {
+      const why = new RegExp(`the function ${name}`);
+      for (const call of [`${name}("/etc/passwd")`, `${name}\n("/etc/passwd")`, `${name} /* c */ ("/etc/passwd")`, `${name} # c\n("/etc/passwd")`, `${name} // c\n("/etc/passwd")`, `${name}\n\n  ("/etc/passwd")`, `${name}`, `${name.toUpperCase()}("x")`, `x.${name}`]) {
+        // Where the parser may see a newline between the name and its parenthesis: in brackets, where HCL skips them.
+        refusesSource(`locals {\n  x = [\n    ${call}\n  ]\n}\n`, new RegExp(`the function ${name}`, "i"));
+        refusesSource(`locals {\n  x = (${call})\n}\n`, new RegExp(`the function ${name}`, "i"));
+        refusesSource(`locals {\n  x = "a ${"$"}{ ${call} } b"\n}\n`, new RegExp(`the function ${name}`, "i"));
+      }
+      refusesSource(`locals {\n  x = ${name}("/etc/passwd")\n}\n`, why);
+    }
+    refusesSource('locals {\n  x = "${ "${ file("/etc/passwd") }" }"\n}\n', /the function file/);
+    // A run of three `$` or `%` before a brace is one HCL and this tokenizer might read differently: refused.
+    refusesSource('locals {\n  x = "$$${file(y)}"\n}\n', /run of three or more \$ before a brace/);
+    refusesSource('locals {\n  x = "$$$${file(y)}"\n}\n', /run of three or more \$ before a brace/);
+    refusesSource('locals {\n  x = "%%%{ if true }"\n}\n', /run of three or more % before a brace/);
+    validateSource('locals {\n  x = "a $${file(y)} $${b} %%{c}"\n}\n', "x.tf");
+    refusesSource('locals {\n  x = "%{ if true }${file(y)}%{ endif }"\n}\n', /the function file/);
+    refusesSource('locals {\n  x = "${~ file(y) ~}"\n}\n', /the function file/);
+    refusesSource('locals {\n  x = provider\n  ::external::run()\n}\n', /function of a provider/);
+    refusesSource("locals {\n  x = [provider\n  /* c */ ::external::run()]\n}\n", /function of a provider/);
+    refusesSource("locals {\n  x = provider::external::run()\n}\n", /function of a provider/);
+    refusesSource("locals {\n  x = core::file(y)\n}\n", /function of a provider|the function file/);
+  });
+
+  it("refuses what HCL would read differently from the tokenizer", () => {
+    // A character HCL does not use outside a string, among them the letters of a Unicode identifier.
+    refusesSource('locals {\n  x = \uFB01le("/etc/passwd")\n}\n', /character HCL does not use/);
+    refusesSource('locals {\n  x = fil\u0435("/etc/passwd")\n}\n', /character HCL does not use/);
+    refusesSource("locals {\n  x\u00a0= 1\n}\n", /character HCL does not use/);
+    // An escape HCL does not read, a unicode escape that is cut short, and a line ending of a lone carriage return.
+    refusesSource('locals {\n  x = "\\q${file(y)}"\n}\n', /escape in a string/);
+    refusesSource('locals {\n  x = "\\$"\n}\n', /escape in a string/);
+    refusesSource('locals {\n  x = "\\u12"\n}\n', /escape in a string/);
+    refusesSource('locals {\n  x = "\\U0000004"\n}\n', /escape in a string/);
+    refusesSource('locals {\n  x = "a\\\nb"\n}\n', /escape in a string/);
+    refusesSource('locals {\n  x = 1 # a comment\rprovisioner "x" {}\n}\n', /carriage return/);
+    refusesSource('locals {\n  x = "a\rb"\n}\n', /carriage return/);
+    refusesSource("locals {\n  x = 1\u0085\n}\n", /control or direction-changing/);
+    refusesSource("locals {\n  x = 1\u2028\n}\n", /control or direction-changing/);
+    // The escapes it reads are read, and a quote it escapes does not end the string.
+    validateSource('locals {\n  a = "q\\" \\u0041 \\U00000041 \\n \\t \\r \\\\ ${var.x}"\n  b = "x" # \\\n}\n', "x.tf");
+    refusesSource('locals {\n  a = "\\" ${file(y)} \\""\n}\n', /the function file/);
+    // A comment of either kind, a string, and a template directive hide nothing from the checks that follow them.
+    refusesSource('locals {\n  a = "x" // "\n  b = file(y)\n}\n', /the function file/);
+    refusesSource('locals {\n  a = "x" # "\n  b = file(y)\n}\n', /the function file/);
+    refusesSource('locals {\n  a = 1 /* " */ + file(y)\n}\n', /the function file/);
+    refusesSource('locals {\n  a = "/* "\n  b = file(y) /* */\n}\n', /the function file/);
+    refusesSource('locals {\n  a = "// ${file(y)}"\n}\n', /the function file/);
+    refusesSource('locals {\n  a = "# ${file(y)}"\n}\n', /the function file/);
+    refusesSource('locals {\n  a = "%{ for x in y }${file(x)}%{ endfor }"\n}\n', /the function file/);
+    // A block's type or label spelt with an escape is not the type it spells.
+    refusesSource('resource "google_storage_bucket" "x" {\n  provisioner\n  "local-exec" {\n  }\n}\n', /provisioner|neither a block/);
+    refusesSource('locals {\n  a = "local\\u002dexec"\n  b = "LOCAL-EXEC"\n}\n', /local-exec or remote-exec/);
   });
 
   it("refuses a backend, a cloud block, and anything else in the terraform block", () => {
@@ -240,7 +361,7 @@ describe("the sandbox's check of the plans", () => {
     // Braces, comment markers and quotes inside strings and comments do not move the blocks.
     const decoys = 'locals {\n  a = "} # {"\n  b = "// }"\n  c = "\\" } \\""\n}\n';
     validateSource(`${decoys}resource "google_storage_bucket" "x" {\n  name = "${"${var.name_prefix}"}-x" # } provisioner\n  /* provisioner "local-exec" { */\n}\n`, "x.tf");
-    refusesSource(`${decoys}resource "terraform_data" "x" {\n}\n`, /not of an allowed provider/);
+    refusesSource(`${decoys}resource "terraform_data" "x" {\n}\n`, /not a resource type the generator writes/);
     refusesSource(`${decoys}module "x" {\n}\n`, /module block/);
     refusesSource('locals {\n  a = "}"\n}\nterraform {\n  backend "s3" {\n  }\n}\n', /not backend/);
     // `$${` is text, so what follows it is not an interpolation; an interpolation's own braces nest.

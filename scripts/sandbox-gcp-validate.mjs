@@ -20,9 +20,11 @@
  * - in a `*.tf` file, anything but `terraform`, `provider`, `variable`, `locals`, `resource`, `data` and
  *   `output` blocks: no `module`, `moved`, `import`, `removed` or `check`; in `terraform`, nothing but
  *   `required_version` and `required_providers` (so no `backend`, no `cloud`); providers only as exact
- *   source and version strings of `ALLOWED_PROVIDERS`; resources and data sources only of the Google
- *   providers and `archive_file`, reading only the placeholder sources; no provisioner, no `local-exec`,
- *   no `remote-exec`, no heredoc, no function that reads a file or runs a provider's own function.
+ *   source and version strings of `ALLOWED_PROVIDERS`; resources and data sources only of the exact types the
+ *   generator writes (`ALLOWED_RESOURCES`, `ALLOWED_DATA`) and `archive_file` reading only the placeholder
+ *   sources; no data source that hands out a token, no attribute that reads a local path; no provisioner, no
+ *   `local-exec`, no `remote-exec`, no heredoc, no reference to `path`, and no use at all of a function that
+ *   reads a file or runs a provider's own function (the name alone is refused, whatever follows it).
  *
  * It is plain JavaScript on Node's built-ins, so it runs where nothing is installed. Its parser is a strict
  * subset of HCL's: anything it cannot read is refused, never skipped, and Terraform's own checks (a lock file
@@ -56,10 +58,87 @@ export const PINNED_SOURCES = {
   "gcp-serverless/src/functions/package.json": "86a04dc0b7fdf82198a32594cf4201c3e760020f13669d3b1c7896e6ecda27f5",
 };
 
+/**
+ * The resource types the four plans and the network root contain, and no others: a type the generator starts to
+ * write is refused until it is listed here, and the tests fail on the pull request that adds it.
+ */
+export const ALLOWED_RESOURCES = new Set([
+  "google_bigquery_dataset",
+  "google_cloud_run_service_iam_member",
+  "google_cloud_run_v2_service",
+  "google_cloud_run_v2_service_iam_member",
+  "google_cloudfunctions2_function",
+  "google_compute_backend_bucket",
+  "google_compute_backend_service",
+  "google_compute_firewall",
+  "google_compute_global_address",
+  "google_compute_global_forwarding_rule",
+  "google_compute_instance",
+  "google_compute_managed_ssl_certificate",
+  "google_compute_network",
+  "google_compute_region_network_endpoint_group",
+  "google_compute_router",
+  "google_compute_router_nat",
+  "google_compute_security_policy",
+  "google_compute_ssl_policy",
+  "google_compute_subnetwork",
+  "google_compute_target_http_proxy",
+  "google_compute_target_https_proxy",
+  "google_compute_url_map",
+  "google_container_cluster",
+  "google_container_node_pool",
+  "google_dns_managed_zone",
+  "google_dns_record_set",
+  "google_firestore_database",
+  "google_kms_crypto_key",
+  "google_kms_crypto_key_iam_member",
+  "google_kms_key_ring",
+  "google_logging_project_bucket_config",
+  "google_monitoring_alert_policy",
+  "google_monitoring_notification_channel",
+  "google_project_iam_member",
+  "google_project_service",
+  "google_project_service_identity",
+  "google_pubsub_subscription",
+  "google_pubsub_topic",
+  "google_redis_instance",
+  "google_secret_manager_secret",
+  "google_service_account",
+  "google_service_networking_connection",
+  "google_sql_database",
+  "google_sql_database_instance",
+  "google_sql_user",
+  "google_storage_bucket",
+  "google_storage_bucket_iam_member",
+  "google_storage_bucket_object",
+]);
+
+/** The data sources they read; `archive_file` has its own strict check below. */
+export const ALLOWED_DATA = new Set(["archive_file", "google_bigquery_default_service_account", "google_project", "google_storage_project_service_account"]);
+
+/** Data sources that hand out a token or an identity of the caller: refused even if someone lists them above. */
+export const DENIED_DATA = new Set([
+  "google_client_config",
+  "google_service_account_access_token",
+  "google_service_account_id_token",
+  "google_service_account_jwt",
+  "google_client_openid_userinfo",
+]);
+const TOKEN_LIKE = /client_config|access_token|id_token|jwt|openid|userinfo|credential|secret_version|kms_secret|service_account_key/;
+for (const type of ALLOWED_DATA) if (DENIED_DATA.has(type) || TOKEN_LIKE.test(type)) throw new Error(`${type} may not be an allowed data source`);
+
+/** Attributes that read a local path or carry a credential: refused in any resource, at any depth. */
+const LOCAL_PATH_ATTRIBUTES = new Set(["source", "source_file", "source_dir", "source_content", "source_content_filename", "credentials", "access_token", "impersonate_service_account", "key_file", "private_key_path"]);
+/** What a bucket object may set: its content is the archive the plan zipped, by its `source`, and nothing written inline. */
+const BUCKET_OBJECT_ATTRIBUTES = new Set(["name", "bucket", "source", "content_type", "depends_on"]);
+
 const TOP_LEVEL = { terraform: 0, provider: 1, variable: 1, locals: 0, resource: 2, data: 2, output: 1 };
 const PROVIDER_ATTRIBUTES = new Set(["project", "region", "zone", "default_labels"]);
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+// Compared in lower case, and refused as a bare identifier wherever it appears: HCL reads a call with a newline,
+// a comment or a template between the name and its parenthesis, so the name alone is what is refused.
 const FUNCTIONS_THAT_READ_THE_DISK = new Set([
+  "templatestring",
   "file",
   "filebase64",
   "filebase64sha256",
@@ -85,7 +164,7 @@ function hasHiddenCharacter(text) {
   for (const ch of text) {
     const code = ch.codePointAt(0);
     const control = (code < 0x20 && code !== 9 && code !== 10 && code !== 13) || code === 0x7f;
-    const invisible = (code >= 0x200b && code <= 0x200f) || (code >= 0x202a && code <= 0x202e) || (code >= 0x2060 && code <= 0x2064) || (code >= 0x2066 && code <= 0x2069) || code === 0xfeff;
+    const invisible = (code >= 0x200b && code <= 0x200f) || (code >= 0x202a && code <= 0x202e) || (code >= 0x2060 && code <= 0x2064) || (code >= 0x2066 && code <= 0x2069) || code === 0xfeff || code === 0x61c || code === 0x180e || (code >= 0x80 && code <= 0x9f) || code === 0x2028 || code === 0x2029;
     if (control || invisible) return true;
   }
   return false;
@@ -104,6 +183,8 @@ const reject = (where, why) => {
  * character that HCL has no use for is refused.
  */
 function tokenize(text, where) {
+  // HCL ends a line at \n only, which a lone \r in a comment would make a question of: refused.
+  if (/\r(?!\n)/.test(text)) reject(where, "a carriage return that is not part of a line ending");
   let line = 1;
   const scan = (start, inInterpolation) => {
     const tokens = [];
@@ -141,17 +222,26 @@ function tokenize(text, where) {
         while (j < text.length) {
           const d = text[j];
           if (d === "\\") {
-            j += 2;
+            // Only the escapes HCL reads: anything else is an error there, and is refused here.
+            const e = text[j + 1];
+            const hex = e === "u" ? 4 : e === "U" ? 8 : 0;
+            if (hex > 0 ? !new RegExp(`^[0-9A-Fa-f]{${hex}}$`).test(text.slice(j + 2, j + 2 + hex)) : e === undefined || !'nrt"\\'.includes(e)) reject(`${where}:${line}`, "an escape in a string that HCL does not read");
+            j += 2 + hex;
+          } else if (d === "\r") {
+            reject(`${where}:${line}`, "a string runs over a line");
           } else if (d === '"') {
             closed = true;
             break;
           } else if (d === "\n") {
             reject(`${where}:${line}`, "a string runs over a line");
           } else if ((d === "$" || d === "%") && text[j + 1] === d && text[j + 2] === "{") {
-            j += 3; // `$${` and `%%{` are text
+            // `$${` and `%%{` are text; after a third `$` HCL and this tokenizer might not agree on where the escape is.
+            if (text[j - 1] === d) reject(`${where}:${line}`, `a run of three or more ${d} before a brace`);
+            j += 3;
           } else if ((d === "$" || d === "%") && text[j + 1] === "{") {
             const sub = scan(j + 2, true);
-            inner.push(...sub.tokens);
+            // Each interpolation is bracketed, so the last token of one is never read as followed by the first of the next.
+            inner.push({ t: "p", v: "${", line: startLine }, ...sub.tokens, { t: "p", v: "}", line: startLine });
             j = sub.end + 1;
           } else {
             j++;
@@ -183,14 +273,6 @@ function tokenize(text, where) {
     return { tokens, end: i };
   };
   return scan(0, false).tokens;
-}
-
-/** Every token, those of the interpolations in strings included. */
-function* walkTokens(tokens) {
-  for (const token of tokens) {
-    yield token;
-    if (token.inner !== undefined) yield* walkTokens(token.inner);
-  }
 }
 
 /** Items of a body: `{ kind: "attr", name, value, line }` and `{ kind: "block", type, labels, body, line }`. */
@@ -296,7 +378,32 @@ function checkProviderBlock(block, where) {
   }
 }
 
-function checkObjectBlock(block, where) {
+/** Every attribute of a body and of the blocks in it, with the block types that lead to it. */
+function* attributesOf(items) {
+  for (const item of items) {
+    if (item.kind === "attr") yield item;
+    else yield* attributesOf(item.body);
+  }
+}
+
+/** The value tokens of every attribute of a body, nested blocks included. */
+const valuesOf = (items) => [...attributesOf(items)].map((item) => item.value);
+
+/** Whether a value is exactly `data.archive_file.<name>.output_path` of an archive the file declares. */
+function isOwnArchiveOutput(value, archives) {
+  const [a, b, c, d, e, f, g] = value;
+  return (
+    value.length === 7 &&
+    [a, c, e, g].every((t) => t.t === "id") &&
+    [b, d, f].every((t) => t.t === "p" && t.v === ".") &&
+    a.v === "data" &&
+    c.v === "archive_file" &&
+    archives.has(e.v) &&
+    g.v === "output_path"
+  );
+}
+
+function checkObjectBlock(block, where, archives) {
   const [type] = block.labels;
   const here = `${where}:${block.line}`;
   if (block.type === "data" && type === "archive_file") {
@@ -312,24 +419,62 @@ function checkObjectBlock(block, where) {
     if (seen.type !== "zip" || !sourceOk || !outputOk || !only) reject(here, "archive_file may only zip its own src/<name> directory into .terraform/<name>.zip");
     return;
   }
-  if (type === undefined || !/^google_[a-z0-9_]+$/.test(type)) reject(here, `${block.type} ${type ?? ""} is not of an allowed provider`);
+  if (block.type === "data") {
+    if (type !== undefined && (DENIED_DATA.has(type) || TOKEN_LIKE.test(type))) reject(here, `data ${type} hands out a token or the caller's identity`);
+    if (type === undefined || !ALLOWED_DATA.has(type)) reject(here, `data ${type ?? ""} is not a data source the generator writes`);
+  } else if (type === undefined || !ALLOWED_RESOURCES.has(type)) {
+    reject(here, `resource ${type ?? ""} is not a resource type the generator writes`);
+  }
+  if (type === "google_storage_bucket_object") {
+    for (const item of block.body) {
+      const at = `${where}:${item.line}`;
+      if (item.kind !== "attr" || !BUCKET_OBJECT_ATTRIBUTES.has(item.name)) reject(at, "a bucket object may set only name, bucket, source and content_type, and a block or an inline content is refused");
+      if (item.name === "source" && !isOwnArchiveOutput(item.value, archives)) reject(at, "a bucket object's source may only be the output_path of an archive_file of the plan");
+    }
+    return;
+  }
+  for (const item of attributesOf(block.body)) {
+    if (LOCAL_PATH_ATTRIBUTES.has(item.name)) reject(`${where}:${item.line}`, `the attribute ${item.name}, which reads a local path or carries a credential`);
+  }
+}
+
+/** The references in a value that reach outside the plan: `path` (the runner's directories) and any data source not allowed. */
+function checkReferences(list, where) {
+  const sig = list.filter((t) => t.t !== "nl");
+  sig.forEach((token, i) => {
+    const next = sig[i + 1];
+    if (token.t === "id" && token.v === "path" && next?.t === "p" && (next.v === "." || next.v === "[")) reject(`${where}:${token.line}`, "a reference to path");
+    if (token.t === "id" && token.v === "data" && !(next?.t === "p" && next.v === "=")) {
+      const [dot, type, dot2, name] = sig.slice(i + 1, i + 5);
+      const shaped = dot?.v === "." && type?.t === "id" && dot2?.v === "." && name?.t === "id";
+      if (!shaped) reject(`${where}:${token.line}`, "a reference to a data source that is not written plainly");
+      if (DENIED_DATA.has(type.v) || TOKEN_LIKE.test(type.v)) reject(`${where}:${token.line}`, `a reference to data ${type.v}, which hands out a token or the caller's identity`);
+      if (!ALLOWED_DATA.has(type.v)) reject(`${where}:${token.line}`, `a reference to data ${type.v}, which the generator does not write`);
+    }
+    if (token.inner !== undefined) checkReferences(token.inner, where);
+  });
+}
+
+/** Names that matter wherever they are: a provisioner, a function that reads the disk or belongs to a provider, a command string. */
+function checkNames(list, where) {
+  const sig = list.filter((t) => t.t !== "nl");
+  for (const token of sig) {
+    const at = `${where}:${token.line}`;
+    if (token.t === "id" && token.v === "provisioner") reject(at, "a provisioner");
+    if (token.t === "id" && FUNCTIONS_THAT_READ_THE_DISK.has(token.v.toLowerCase())) reject(at, `the function ${token.v}`);
+    if (token.t === "p" && token.v === "::") reject(at, "a function of a provider");
+    if (token.t === "str" && [...FORBIDDEN_STRINGS].some((word) => token.v.toLowerCase().includes(word))) reject(at, "a string naming local-exec or remote-exec");
+    if (token.inner !== undefined) checkNames(token.inner, where);
+  }
 }
 
 /** What may be in the text of one `*.tf` file of a plan, or an error naming the first thing that may not. */
 export function validateSource(text, where) {
   if (hasHiddenCharacter(text)) reject(where, "a control or direction-changing character");
   const tokens = tokenize(text, where);
-  for (const token of walkTokens(tokens)) {
-    if (token.t === "id" && token.v === "provisioner") reject(`${where}:${token.line}`, "a provisioner");
-    if (token.t === "str" && FORBIDDEN_STRINGS.has(token.v)) reject(`${where}:${token.line}`, `the string "${token.v}"`);
-  }
-  const flat = [...walkTokens(tokens)];
-  flat.forEach((token, i) => {
-    const call = flat[i + 1]?.t === "p" && flat[i + 1].v === "(";
-    if (token.t === "id" && call && FUNCTIONS_THAT_READ_THE_DISK.has(token.v)) reject(`${where}:${token.line}`, `the function ${token.v}`);
-    if (token.t === "id" && token.v === "provider" && flat[i + 1]?.v === "::") reject(`${where}:${token.line}`, "a function of a provider");
-  });
+  checkNames(tokens, where);
   const { items } = parseBody(tokens, 0, false, where);
+  const archives = new Set(items.filter((item) => item.kind === "block" && item.type === "data" && item.labels[0] === "archive_file" && item.labels.length === 2).map((item) => item.labels[1]));
   for (const item of items) {
     const here = `${where}:${item.line}`;
     if (item.kind !== "block") reject(here, "an attribute outside a block");
@@ -337,8 +482,10 @@ export function validateSource(text, where) {
     if (item.labels.length !== TOP_LEVEL[item.type]) reject(here, `a ${item.type} block takes ${TOP_LEVEL[item.type]} label${TOP_LEVEL[item.type] === 1 ? "" : "s"}`);
     if (item.type === "terraform") checkTerraformBlock(item, where);
     if (item.type === "provider") checkProviderBlock(item, where);
-    if (item.type === "resource" || item.type === "data") checkObjectBlock(item, where);
+    if (item.type === "resource" || item.type === "data") checkObjectBlock(item, where, archives);
     if (item.type === "locals" && item.body.some((b) => b.kind !== "attr")) reject(here, "locals may hold attributes only");
+    // The archive_file blocks are the one place `${path.module}` is written, and are held to their own pattern above.
+    if (!(item.type === "data" && item.labels[0] === "archive_file")) for (const value of valuesOf(item.body)) checkReferences(value, where);
   }
 }
 
