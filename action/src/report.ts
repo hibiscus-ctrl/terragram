@@ -251,6 +251,7 @@ function modelSection(input: ReportInput): string[] {
     `| Edges | ${edges.added.length} | ${edges.removed.length} | ${edges.changed.length} |`,
     "",
   );
+  out.push(`Access is compared as recorded in the model file \`${input.modelPath}\` on each side; it is not read back from the Terraform.`, "");
   if (nodes.changed.length > 0) {
     out.push(
       ...listed(nodes.changed, ({ before, after }) => {

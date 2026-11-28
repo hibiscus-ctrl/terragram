@@ -8,6 +8,7 @@ import type { InfraModel, ModelEdge, ModelNode } from "terragram-engine/model";
 
 import { mermaidText, renderDiagram } from "../action/src/mermaid.ts";
 import { diffModels, hasModelChanges } from "../action/src/model-diff.ts";
+import { parseModelDocument } from "../action/src/model-file.ts";
 import { type ReportInput, markdownText, renderReport } from "../action/src/report.ts";
 import { unifiedDiff } from "../action/src/text-diff.ts";
 
@@ -230,6 +231,64 @@ describe("renderReport", () => {
       files: [{ name: "main.tf", status: "different", diff: "--- a\n+++ b\n@@ -1,1 +1,1 @@\n-x\n+````\n" }],
     });
     assert.match(text, /`````diff\n/);
+  });
+});
+
+describe("the access diff trusts the committed model file, and says so", () => {
+  const n = (id: string, kind = "functions"): ModelNode => ({ id, category: "compute", kind, label: id, flag: null });
+  const nodes = [n("fn"), n("data", "object-storage")];
+  const e = (id: string, access?: ModelEdge["access"], conditional = false): ModelEdge => ({
+    id,
+    source: "fn",
+    target: "data",
+    origin: "user",
+    ...(access ? { access } : {}),
+    ...(conditional ? { conditional } : {}),
+  });
+
+  it("keeps the widest of several edges with the same two ends instead of the last one written", () => {
+    const empty = model(nodes, []);
+    for (const order of [["admin", "read"], ["read", "admin"]] as const) {
+      const diff = diffModels(empty, model(nodes, order.map((access, i) => e(`e${i}`, access))));
+      assert.deepEqual(diff.edges.added.map((x) => x.access), ["admin"], order.join(","));
+    }
+    // A plain connection beside a typed one does not hide the type; a conditional one beside an unconditional one of the same level is not conditional.
+    assert.deepEqual(diffModels(empty, model(nodes, [e("a"), e("b", "write")])).edges.added.map((x) => x.access), ["write"]);
+    const merged = diffModels(empty, model(nodes, [e("a", "admin", true), e("b", "admin")])).edges.added[0];
+    assert.equal(merged?.conditional, undefined);
+    // The base is collapsed the same way, so a widened grant shows as widened against the widest the base had.
+    const diff = diffModels(model(nodes, [e("a", "read"), e("b", "admin")]), model(nodes, [e("c", "admin")]));
+    assert.equal(hasModelChanges(diff), false);
+  });
+
+  it("does not accept a model file that draws two edges between the same two nodes", () => {
+    const doc = (edges: ModelEdge[]) => JSON.stringify({ nodes: [n("fn"), n("data", "object-storage")], edges, topology: "manual", cloud: "aws" });
+    const bad = parseModelDocument(doc([e("a", "read"), e("b", "admin")]));
+    assert.equal(bad.ok, false);
+    assert.match(bad.ok ? "" : bad.problem, /edges 1 and 2 join the same two nodes/);
+    assert.equal(parseModelDocument(doc([e("a", "admin")])).ok, true);
+  });
+
+  it("tells the reader the access changes are the access the committed model file records, not read from the Terraform", () => {
+    const before = model(nodes, [e("a", "read")]);
+    const after = model(nodes, [e("a", "admin")]);
+    const diff = diffModels(before, after);
+    const text = renderReport({
+      mode: "check",
+      modelPath: "diagram.json",
+      terraformDir: "infra/",
+      cloud: "aws",
+      base: { state: "compared" },
+      diff,
+      diagram: renderDiagram(diff),
+      warnings: [],
+      terraformChanged: [],
+      files: [],
+      written: [],
+      contentHash: "sha256:abc",
+      signed: false,
+    });
+    assert.match(text, /Access is compared as recorded in the model file `diagram\.json` on each side; it is not read back from the Terraform\./);
   });
 });
 

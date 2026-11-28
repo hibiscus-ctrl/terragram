@@ -1,6 +1,7 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { mergeAccess } from "terragram-engine/iam";
 import type { InfraModel, ModelEdge, ModelNode } from "terragram-engine/model";
 
 /**
@@ -37,6 +38,27 @@ export function onlySelfAccessChanged(before: ModelNode, after: ModelNode): bool
 }
 
 const edgeKey = (edge: ModelEdge) => `${edge.source}\u0000${edge.target}`;
+
+/**
+ * An edge per pair of nodes. A model file that draws two between the same nodes is refused by `parseModelDocument`, but a caller
+ * that did not check must not get the last one written: the pair keeps the widest access of them, as the engine merges grants.
+ */
+function edgesByPair(edges: ModelEdge[]): Map<string, ModelEdge> {
+  const out = new Map<string, ModelEdge>();
+  for (const edge of edges) {
+    const key = edgeKey(edge);
+    const existing = out.get(key);
+    if (!existing || !edge.access) {
+      if (!existing) out.set(key, edge);
+      continue;
+    }
+    const { access: _a, conditional: _c, unconditional: _u, ...rest } = existing;
+    out.set(key, { ...rest, ...mergeAccess(existing, { ...edge, access: edge.access }) });
+  }
+  return out;
+}
+
+
 const byId = (a: ModelNode, b: ModelNode) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 export function diffModels(base: InfraModel, head: InfraModel): ModelDiff {
@@ -51,8 +73,8 @@ export function diffModels(base: InfraModel, head: InfraModel): ModelDiff {
   }
   for (const node of [...base.nodes].sort(byId)) if (!headNodes.has(node.id)) nodes.removed.push(node);
 
-  const baseEdges = new Map(base.edges.map((e) => [edgeKey(e), e]));
-  const headEdges = new Map(head.edges.map((e) => [edgeKey(e), e]));
+  const baseEdges = edgesByPair(base.edges);
+  const headEdges = edgesByPair(head.edges);
   const edges: ModelDiff["edges"] = { added: [], removed: [], changed: [], unchanged: [] };
   for (const [key, edge] of headEdges) {
     const before = baseEdges.get(key);

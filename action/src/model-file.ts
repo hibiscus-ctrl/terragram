@@ -30,6 +30,14 @@ export function parseModelDocument(text: string): { ok: true; document: ModelDoc
     return { ok: false, problem: `it is not a diagram model:\n${issues}` };
   }
   const { nodes, edges, topology, cloud } = parsed.data;
+  // Two edges between the same two nodes would be read as one, the last: the model must say which it means.
+  const seen = new Map<string, number>();
+  for (const [index, edge] of edges.entries()) {
+    const key = `${edge.source}\u0000${edge.target}`;
+    const first = seen.get(key);
+    if (first !== undefined) return { ok: false, problem: `it draws two edges between the same two nodes: edges ${first + 1} and ${index + 1} join the same two nodes` };
+    seen.set(key, index);
+  }
   const problems = attributeProblems(resourceNodes({ nodes, edges, topology }), cloud ?? DEFAULT_CLOUD);
   if (problems.length > 0) return { ok: false, problem: `it has values that cannot be used:\n${problems.map((p) => `  ${p}`).join("\n")}` };
   return { ok: true, document: { model: { nodes, edges, topology }, cloud: cloud ?? DEFAULT_CLOUD } };
