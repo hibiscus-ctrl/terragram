@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Cloud Function, GKE node pool or Compute instance that names a service account in `service_account`, `service_account_email` or its
   `service_account` block `runs-as` it. The AWS, Azure and Google Cloud grants of a file are all read, whichever cloud it goes to. The Action's
   "Access changes" list shows them like any other.
+- A virtual network's address space has to be private: a block inside `10.0.0.0/8`, `172.16.0.0/12` or `192.168.0.0/16`, on AWS and Azure as on Google Cloud. `0.0.0.0/0`, a public range and a block wider than those three are refused with the reason, where before any IPv4 block was written into the plan.
 - `terragram generate`, the Action and `emitTerraform` write Terraform for Google Cloud, as they do for AWS and Azure. `--cloud gcp` is accepted, a brief that names
   Google Cloud or one of its services (GKE, Cloud Run, Cloud SQL, BigQuery, Pub/Sub, Firestore, Memorystore) picks it, a managed model and a picture can
   choose it, and a `gcp` model has a receipt whose plan is hashed like any other. The plan is on `hashicorp/google` `~> 8.12` (and `hashicorp/archive`
@@ -62,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scanner and a reviewer look for. Every plan has `project_id` (asked for, no default), `region` (`europe-west2`), `name_prefix` and `labels` variables, a
   `default_labels` provider setting, and one `google_project_service` that switches on exactly the APIs its components use; a resource that stands on nothing
   else waits for it. What each kind writes: `dns` a public zone with DNSSEC and query logging; `vnet` a custom-mode network, a subnetwork with flow logs and
-  private access to Google APIs, a router with NAT, and an internal and an IAP-only SSH firewall rule; `virtual-machine` an instance with no public address,
+  private access to Google APIs, a router with NAT, and an internal rule (sourced from the subnetwork's own range) and an IAP-only SSH rule; `virtual-machine` an instance with no public address,
   Shielded VM, OS Login, no project-wide SSH keys and its own service account; `kubernetes` a private GKE cluster with authorised networks, Workload Identity,
   Shielded Nodes, network policy, intranode visibility and a release channel, on a node pool whose service account holds only what nodes need; `containers` a
   Cloud Run service on its own service account; `functions` a second-generation Cloud Function packaged from a directory written beside the plan, its source in a

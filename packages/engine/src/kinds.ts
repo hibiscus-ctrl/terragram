@@ -506,12 +506,23 @@ const DELIVERY_FIELD: KindField = {
   fallback: "At least once",
 };
 
-/** An IPv4 CIDR block such as `10.0.0.0/16`: four octets and a prefix length. */
+/** An IPv4 CIDR block such as `10.0.0.0/16`: four octets and a prefix length, inside private address space. */
 function cidrProblem(value: string): string | null {
   const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(value);
   const [, a, b, c, d, prefix] = match ?? [];
   const valid = match !== null && [a, b, c, d].every((octet) => Number(octet) <= 255) && Number(prefix) <= 32;
-  return valid ? null : `${JSON.stringify(value)} is not an IPv4 CIDR block such as 10.0.0.0/16`;
+  if (!valid) return `${JSON.stringify(value)} is not an IPv4 CIDR block such as 10.0.0.0/16`;
+  // The network is private: a block of RFC 1918 space, whole. Anything wider or public is the internet, or part of it.
+  const first = Number(a);
+  const second = Number(b);
+  const length = Number(prefix);
+  const private1918 =
+    (first === 10 && length >= 8) ||
+    (first === 172 && second >= 16 && second <= 31 && length >= 12) ||
+    (first === 192 && second === 168 && length >= 16);
+  return private1918
+    ? null
+    : `${JSON.stringify(value)} is not a private address range: use a block inside 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16, such as 10.0.0.0/16`;
 }
 
 /** A DNS name without the root label's dot: `example.com.` is `example.com`. */

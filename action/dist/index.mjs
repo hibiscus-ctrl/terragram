@@ -20927,7 +20927,8 @@ var GCP = {
             { key: "name", value: cloudName("allow-internal", c.slug) },
             { key: "network", value: `google_compute_network.${c.name}.name` },
             { key: "direction", value: quote("INGRESS") },
-            { key: "source_ranges", value: `[${cidr}]` }
+            // The subnetwork's own range, as the plan wrote it: whatever else a reviewer edits, this is never wider than it.
+            { key: "source_ranges", value: `[google_compute_subnetwork.${c.name}.ip_cidr_range]` }
           ], [
             block("allow", [], [{ key: "protocol", value: quote("tcp") }]),
             block("allow", [], [{ key: "protocol", value: quote("udp") }]),
@@ -21696,7 +21697,12 @@ function cidrProblem(value) {
   const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(value);
   const [, a, b, c, d, prefix] = match ?? [];
   const valid = match !== null && [a, b, c, d].every((octet) => Number(octet) <= 255) && Number(prefix) <= 32;
-  return valid ? null : `${JSON.stringify(value)} is not an IPv4 CIDR block such as 10.0.0.0/16`;
+  if (!valid) return `${JSON.stringify(value)} is not an IPv4 CIDR block such as 10.0.0.0/16`;
+  const first = Number(a);
+  const second = Number(b);
+  const length = Number(prefix);
+  const private1918 = first === 10 && length >= 8 || first === 172 && second >= 16 && second <= 31 && length >= 12 || first === 192 && second === 168 && length >= 16;
+  return private1918 ? null : `${JSON.stringify(value)} is not a private address range: use a block inside 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16, such as 10.0.0.0/16`;
 }
 function withoutTrailingDot(value) {
   return value.endsWith(".") ? value.slice(0, -1) : value;

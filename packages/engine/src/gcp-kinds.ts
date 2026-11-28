@@ -645,7 +645,8 @@ export const GCP = {
             { key: "name", value: cloudName("allow-internal", c.slug) },
             { key: "network", value: `google_compute_network.${c.name}.name` },
             { key: "direction", value: quote("INGRESS") },
-            { key: "source_ranges", value: `[${cidr}]` },
+            // The subnetwork's own range, as the plan wrote it: whatever else a reviewer edits, this is never wider than it.
+            { key: "source_ranges", value: `[google_compute_subnetwork.${c.name}.ip_cidr_range]` },
           ], [
             block("allow", [], [{ key: "protocol", value: quote("tcp") }]),
             block("allow", [], [{ key: "protocol", value: quote("udp") }]),

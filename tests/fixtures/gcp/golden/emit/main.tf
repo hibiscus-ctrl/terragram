@@ -106,7 +106,7 @@ resource "google_compute_firewall" "vnet_internal" {
   name          = "allow-internal-${var.name_prefix}-vnet"
   network       = google_compute_network.vnet.name
   direction     = "INGRESS"
-  source_ranges = ["10.0.0.0/16"]
+  source_ranges = [google_compute_subnetwork.vnet.ip_cidr_range]
 
   allow {
     protocol = "tcp"

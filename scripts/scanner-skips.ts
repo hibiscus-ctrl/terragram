@@ -210,13 +210,17 @@ export const SCANNER_SKIPS: readonly ScannerSkip[] = [
   {
     trivy: "GCP-0072",
     reason:
-      "The one rule that admits traffic inside the network, from the network's own address range only, " +
-      "as Google's default network does: instances of one plan reach each other on any port. A rule that " +
-      "named ports could not know what the plan's workloads listen on.",
+      "The one rule that admits traffic inside the network, from the subnetwork's own ip_cidr_range and nothing else " +
+      "(the address space is validated as private RFC 1918 space, so the source can never be public), as Google's " +
+      "default network does: instances of one plan reach each other on any port. A rule that named ports could not " +
+      "know what the plan's workloads listen on. A source from the internet is a different finding (GCP-0027, " +
+      "GCP-0070, GCP-0071), which is not skipped.",
   },
   {
     trivy: "GCP-0074",
-    reason: "The same internal rule: its source is the network's own range, so the port range is the plan's own traffic.",
+    reason:
+      "The same internal rule: its source is the subnetwork's own private range, so the port range is the plan's own " +
+      "traffic. Ingress from the internet on a wide range is still GCP-0027, which is not skipped.",
   },
 ];
 

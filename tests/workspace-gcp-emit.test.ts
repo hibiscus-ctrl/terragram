@@ -251,7 +251,31 @@ describe("choices the reviewer makes in the inspector reach the plan", () => {
   it("the address space of the network", () => {
     const main = choose("vnet", "Address space", "192.168.0.0/16");
     assert.match(main, /ip_cidr_range\s+= cidrsubnet\("192\.168\.0\.0\/16", 8, 1\)/);
-    assert.match(main, /source_ranges\s+= \["192\.168\.0\.0\/16"\]/);
+    assert.match(main, /source_ranges\s+= \[google_compute_subnetwork\.vnet\.ip_cidr_range\]/);
+  });
+
+  it("the network's rule for its own traffic is sourced from the subnetwork, never from the address space as typed", () => {
+    const { main } = plan(modelOf("vnet").model);
+    const rule = /resource "google_compute_firewall" "vnet_internal" \{[\s\S]*?\n\}/.exec(main)?.[0] ?? "";
+    assert.match(rule, /source_ranges\s+= \[google_compute_subnetwork\.vnet\.ip_cidr_range\]/);
+    assert.doesNotMatch(rule, /0\.0\.0\.0|"\d+\.\d+/);
+    // The one other rule admits Identity-Aware Proxy's range alone.
+    assert.match(main, /source_ranges\s+= \["35\.235\.240\.0\/20"\]/);
+  });
+
+  it("refuses an address space that is not private, before any rule is written from it", () => {
+    for (const space of ["0.0.0.0/0", "8.8.8.0/24", "11.0.0.0/16", "10.0.0.0/7", "172.32.0.0/16", "172.15.0.0/16", "172.16.0.0/11", "192.168.0.0/15", "192.169.0.0/16", "100.64.0.0/10"]) {
+      const { model, ids } = modelOf("vnet");
+      const chosen = setNodeAttribute(model, ids[0] ?? "", "Address space", space);
+      for (const cloud of ["gcp", "aws", "azure"] as const) {
+        assert.throws(() => emitTerraform(chosen, cloud), /is not a private address range/, `${cloud} ${space}`);
+      }
+    }
+    for (const space of ["10.0.0.0/8", "10.20.0.0/16", "172.16.0.0/12", "172.31.0.0/16", "192.168.0.0/16", "192.168.4.0/24"]) {
+      const { model, ids } = modelOf("vnet");
+      const main = plan(setNodeAttribute(model, ids[0] ?? "", "Address space", space)).main;
+      assert.match(main, new RegExp(`cidrsubnet\\("${space.replace(/[./]/g, "\\$&")}", 8, 1\\)`), space);
+    }
   });
 
   it("the name of the zone", () => {
