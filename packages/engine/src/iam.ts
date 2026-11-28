@@ -1239,6 +1239,12 @@ const GCP_NOT_A_TARGET = new Set([
   "folder",
   "org_id",
   "billing_account_id",
+  // Meta-arguments: they say how or when a resource is made, never which one a grant is on.
+  "depends_on",
+  "count",
+  "for_each",
+  "lifecycle",
+  "provider",
 ]);
 
 /** Basic and predefined roles that can mint a key for, or act as, a service account, so they reach everything it does: `admin`, whatever their name says. */
@@ -1336,6 +1342,12 @@ function isGcpCondition(b: HclBlock): boolean {
   return gcpExpressionNarrows(expression);
 }
 
+/** A string with nothing in it to resolve: a name written out in the file. */
+function isPlainName(expression: string): boolean {
+  const read = readVal(expression);
+  return read?.t === "str" && !read.interpolated && read.refs.length === 0 && read.text !== "";
+}
+
 type GcpGrant = {
   /** The block holding it, consumed once it has drawn an edge. */
   holder: HclBlock;
@@ -1401,9 +1413,10 @@ function readGcp(blocks: HclBlock[], owner: (address: string) => string | undefi
    */
   const reachOfTarget = (b: HclBlock, service: string): GcpReach => {
     const named = GCP_TARGET_ATTRIBUTES.get(service);
-    const expressions = named
-      ? named.flatMap((key) => attributeOf(b, key) ?? [])
-      : b.attributes.filter((a) => !GCP_NOT_A_TARGET.has(a.key)).map((a) => a.value);
+    const candidates = named ? [] : b.attributes.filter((a) => !GCP_NOT_A_TARGET.has(a.key));
+    // A type with no target attribute that names its resource in text (a repository, a database) is on one this reader cannot match to a drawn node: any resource, whatever else points at.
+    if (candidates.some((a) => isPlainName(a.value))) return { ids: [], broad: true, undrawn: false };
+    const expressions = named ? named.flatMap((key) => attributeOf(b, key) ?? []) : candidates.map((a) => a.value);
     const ids: string[] = [];
     let broad = expressions.length === 0;
     let undrawn = false;

@@ -260,3 +260,73 @@ resource "aws_iam_role_policy" "fn" {
     assert.deepEqual(typed(model), [`entra-id -> ${ANY_RESOURCE_ID}: read`]);
   });
 });
+
+describe("a Google Cloud grant's target is only what names the resource it is on", () => {
+  const GCP = `
+resource "google_project" "app" {
+  name       = "App"
+  project_id = "app"
+}
+
+resource "google_storage_bucket" "data" {
+  name = "data"
+}
+`;
+  const edgesOf = (grant: string) => typed(read(GCP + grant).model);
+
+  it("does not take a depends_on, count, for_each or provider as the target", () => {
+    for (const meta of ["depends_on = [google_storage_bucket.data]", "provider = google.other", "for_each = toset([google_storage_bucket.data.name])", "count = length(google_storage_bucket.data.name)"]) {
+      assert.deepEqual(
+        edgesOf(`
+resource "google_artifact_registry_repository_iam_member" "g" {
+  location = "europe-west2"
+  role     = "roles/artifactregistry.reader"
+  member   = "allUsers"
+  ${meta}
+}
+`),
+        ["principal-all-users -> any-resource: unscoped"],
+        meta,
+      );
+    }
+  });
+
+  it("draws any resource, not a reference found elsewhere, when the resource is named by a literal", () => {
+    assert.deepEqual(
+      edgesOf(`
+resource "google_artifact_registry_repository_iam_member" "g" {
+  repository = "my-repo"
+  role       = "roles/artifactregistry.reader"
+  member     = "allUsers"
+  depends_on = [google_storage_bucket.data]
+}
+`),
+      ["principal-all-users -> any-resource: unscoped"],
+    );
+    assert.deepEqual(
+      edgesOf(`
+resource "google_artifact_registry_repository_iam_member" "g" {
+  repository = "my-repo"
+  repository_project = google_storage_bucket.data.project
+  role       = "roles/artifactregistry.reader"
+  member     = "allUsers"
+}
+`),
+      ["principal-all-users -> any-resource: unscoped"],
+    );
+  });
+
+  it("still takes a reference in an attribute that names the resource", () => {
+    assert.deepEqual(
+      edgesOf(`
+resource "google_artifact_registry_repository_iam_member" "g" {
+  repository = google_storage_bucket.data.name
+  role       = "roles/artifactregistry.reader"
+  member     = "allUsers"
+  depends_on = [google_project.app]
+}
+`),
+      ["principal-all-users -> object-storage: read"],
+    );
+  });
+});
