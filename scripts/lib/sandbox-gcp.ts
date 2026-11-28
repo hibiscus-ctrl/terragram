@@ -34,11 +34,11 @@ export const SANDBOX_ADAPTATIONS: Readonly<Record<string, readonly string[]>> = 
 /** A change that did not find what it expects to change. */
 export class AdaptationError extends Error {}
 
-function once(text: string, needle: string | RegExp, what: string): RegExpExecArray | { index: number; 0: string } {
-  const pattern = typeof needle === "string" ? new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g") : new RegExp(needle.source, needle.flags.includes("g") ? needle.flags : `${needle.flags}g`);
-  const found = [...text.matchAll(pattern)];
-  if (found.length !== 1) throw new AdaptationError(`${what}: expected exactly one match, found ${found.length}`);
-  return found[0] as RegExpExecArray;
+function once(text: string, needle: string, what: string): { index: number; 0: string } {
+  const index = text.indexOf(needle);
+  const count = index === -1 ? 0 : text.indexOf(needle, index + 1) === -1 ? 1 : 2;
+  if (count !== 1) throw new AdaptationError(`${what}: expected exactly one match, found ${count === 2 ? "more than one" : 0}`);
+  return { index, 0: needle };
 }
 
 /** Remove one top-level block (`resource "type" "name" {` to its closing brace in column 0), and the blank line after it. */
@@ -64,9 +64,12 @@ function replaceTimes(text: string, from: string, to: string, count: number, wha
   return parts.join(to);
 }
 
-/** Remove the single line that matches. */
+/** Remove the single line that matches. `line` is a literal pattern with the `g` and `m` flags that matches a whole line and its newline. */
 function dropLine(text: string, line: RegExp, what: string): string {
-  const m = once(text, new RegExp(`^${line.source}\\n`, "m"), what);
+  if (!line.global || !line.multiline) throw new AdaptationError(`${what}: the pattern needs the g and m flags`);
+  const found = [...text.matchAll(line)];
+  if (found.length !== 1) throw new AdaptationError(`${what}: expected exactly one match, found ${found.length}`);
+  const m = found[0] as RegExpExecArray;
   return text.slice(0, m.index) + text.slice(m.index + m[0].length);
 }
 
@@ -98,7 +101,7 @@ function adaptData(files: Map<string, string>): void {
   );
   main = replaceTimes(main, "  deletion_protection = true\n", "  deletion_protection = false\n", 2, "the Cloud SQL instances' deletion protection");
   main = replaceTimes(main, "    deletion_protection_enabled = true\n", "    deletion_protection_enabled = false\n", 2, "the Cloud SQL instances' settings");
-  main = dropLine(main, /\s*deletion_policy\s*=\s*"ABANDON"/, "the private service connection's deletion policy");
+  main = dropLine(main, /^[ \t]*deletion_policy[ \t]*=[ \t]*"ABANDON"\n/gm, "the private service connection's deletion policy");
   if (main.includes("google_app_engine")) throw new AdaptationError("App Engine is still referenced after it was left out");
   files.set("main.tf", main);
   files.set("outputs.tf", dropBlock(files.get("outputs.tf") ?? "", "output", ["app_service_hostname"]));

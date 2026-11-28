@@ -408,15 +408,17 @@ function checkObjectBlock(block, where, archives) {
   const here = `${where}:${block.line}`;
   if (block.type === "data" && type === "archive_file") {
     // The only thing a plan may zip is the placeholder next to it, into the directory Terraform keeps its data in.
-    const seen = {};
+    const seen = new Map();
     for (const item of block.body) {
       if (item.kind !== "attr") reject(`${where}:${item.line}`, "archive_file may hold attributes only");
-      seen[item.name] = item.value.length === 1 && item.value[0].t === "str" ? item.value[0].v : undefined;
+      seen.set(item.name, item.value.length === 1 && item.value[0].t === "str" ? item.value[0].v : undefined);
     }
-    const sourceOk = typeof seen.source_dir === "string" && /^\$\{path\.module\}\/src\/[a-z0-9-]+$/.test(seen.source_dir);
-    const outputOk = typeof seen.output_path === "string" && /^\$\{path\.module\}\/\.terraform\/[a-z0-9-]+\.zip$/.test(seen.output_path);
-    const only = Object.keys(seen).every((k) => k === "type" || k === "source_dir" || k === "output_path");
-    if (seen.type !== "zip" || !sourceOk || !outputOk || !only) reject(here, "archive_file may only zip its own src/<name> directory into .terraform/<name>.zip");
+    const sourceDir = seen.get("source_dir");
+    const outputPath = seen.get("output_path");
+    const sourceOk = typeof sourceDir === "string" && /^\$\{path\.module\}\/src\/[a-z0-9-]+$/.test(sourceDir);
+    const outputOk = typeof outputPath === "string" && /^\$\{path\.module\}\/\.terraform\/[a-z0-9-]+\.zip$/.test(outputPath);
+    const only = [...seen.keys()].every((k) => k === "type" || k === "source_dir" || k === "output_path");
+    if (seen.get("type") !== "zip" || !sourceOk || !outputOk || !only) reject(here, "archive_file may only zip its own src/<name> directory into .terraform/<name>.zip");
     return;
   }
   if (block.type === "data") {
