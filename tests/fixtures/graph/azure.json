@@ -1,0 +1,1385 @@
+{
+ "schema": "infraharvest/graph/v1",
+ "run_id": "9d4f2a76-3b18-5c0e-8a52-6e1b7c3d9f04",
+ "generated_at": "2026-11-27T09:30:00Z",
+ "tool": {
+  "name": "infraharvest",
+  "version": "0.4.0"
+ },
+ "cloud": "azure",
+ "nodes": [
+  {
+   "kind": "resource",
+   "type": "azurerm_log_analytics_workspace",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_log_analytics_workspace/core-law",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_virtual_network",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_virtual_network/core-vnet",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_subnet",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_subnet/core-snet-web",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_subnet",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_subnet/core-snet-data",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_subnet",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_subnet/core-snet-aks",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_subnet",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_subnet/core-snet-pe",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_network_security_group",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_network_security_group/core-nsg",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_subnet_network_security_group_association",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_subnet_network_security_group_association/core-nsga-2",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_subnet_network_security_group_association",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_subnet_network_security_group_association/core-nsga-3",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_subnet_network_security_group_association",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_subnet_network_security_group_association/core-nsga-4",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_subnet_network_security_group_association",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_subnet_network_security_group_association/core-nsga-5",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_dns_zone",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_private_dns_zone/core-dns",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_dns_zone_virtual_network_link",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-core/providers/azurerm_private_dns_zone_virtual_network_link/core-dnslink",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_container_registry",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_container_registry/plat-acr",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_kubernetes_cluster",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_kubernetes_cluster/plat-aks",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_role_assignment",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_role_assignment/plat-acrpull",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_key_vault",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_key_vault/plat-kv",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_monitor_diagnostic_setting",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_monitor_diagnostic_setting/plat-kv-diag",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_servicebus_namespace",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_servicebus_namespace/plat-sb",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_monitor_diagnostic_setting",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_monitor_diagnostic_setting/plat-sb-diag",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_cosmosdb_account",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_cosmosdb_account/plat-cosmos",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_redis_cache",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_redis_cache/plat-redis",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_private_endpoint/plat-pe-22",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_private_endpoint/plat-pe-23",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_private_endpoint/plat-pe-24",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-plat/providers/azurerm_private_endpoint/plat-pe-25",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_service_plan",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-shop/providers/azurerm_service_plan/shop-plan",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_linux_web_app",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-shop/providers/azurerm_linux_web_app/shop-web",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_application_insights",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-shop/providers/azurerm_application_insights/shop-ai",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_user_assigned_identity",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-shop/providers/azurerm_user_assigned_identity/shop-id",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_role_assignment",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-shop/providers/azurerm_role_assignment/shop-kv",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_mssql_server",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-shop/providers/azurerm_mssql_server/shop-sql",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_mssql_database",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-shop/providers/azurerm_mssql_database/shop-db",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_storage_account",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-shopst/providers/azurerm_storage_account/shopst",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_storage_container",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-shop/providers/azurerm_storage_container/shop-data",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-shop/providers/azurerm_private_endpoint/shop-pe-sql",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-shop/providers/azurerm_private_endpoint/shop-pe-st",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_monitor_diagnostic_setting",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-shop/providers/azurerm_monitor_diagnostic_setting/shop-sql-diag",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_service_plan",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-billing/providers/azurerm_service_plan/billing-plan",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_linux_web_app",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-billing/providers/azurerm_linux_web_app/billing-web",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_application_insights",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-billing/providers/azurerm_application_insights/billing-ai",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_user_assigned_identity",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-billing/providers/azurerm_user_assigned_identity/billing-id",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_role_assignment",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-billing/providers/azurerm_role_assignment/billing-kv",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_mssql_server",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-billing/providers/azurerm_mssql_server/billing-sql",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_mssql_database",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-billing/providers/azurerm_mssql_database/billing-db",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_storage_account",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-billingst/providers/azurerm_storage_account/billingst",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_storage_container",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-billing/providers/azurerm_storage_container/billing-data",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-billing/providers/azurerm_private_endpoint/billing-pe-sql",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-billing/providers/azurerm_private_endpoint/billing-pe-st",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_monitor_diagnostic_setting",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-billing/providers/azurerm_monitor_diagnostic_setting/billing-sql-diag",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_service_plan",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-search/providers/azurerm_service_plan/search-plan",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_linux_web_app",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-search/providers/azurerm_linux_web_app/search-web",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_application_insights",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-search/providers/azurerm_application_insights/search-ai",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_user_assigned_identity",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-search/providers/azurerm_user_assigned_identity/search-id",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_role_assignment",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-search/providers/azurerm_role_assignment/search-kv",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_mssql_server",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-search/providers/azurerm_mssql_server/search-sql",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_mssql_database",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-search/providers/azurerm_mssql_database/search-db",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_storage_account",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-searchst/providers/azurerm_storage_account/searchst",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_storage_container",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-search/providers/azurerm_storage_container/search-data",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-search/providers/azurerm_private_endpoint/search-pe-sql",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-search/providers/azurerm_private_endpoint/search-pe-st",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_monitor_diagnostic_setting",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-search/providers/azurerm_monitor_diagnostic_setting/search-sql-diag",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_service_plan",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-reports/providers/azurerm_service_plan/reports-plan",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_linux_web_app",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-reports/providers/azurerm_linux_web_app/reports-web",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_application_insights",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-reports/providers/azurerm_application_insights/reports-ai",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_user_assigned_identity",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-reports/providers/azurerm_user_assigned_identity/reports-id",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_role_assignment",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-reports/providers/azurerm_role_assignment/reports-kv",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_mssql_server",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-reports/providers/azurerm_mssql_server/reports-sql",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_mssql_database",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-reports/providers/azurerm_mssql_database/reports-db",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_storage_account",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-reportsst/providers/azurerm_storage_account/reportsst",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_storage_container",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-reports/providers/azurerm_storage_container/reports-data",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-reports/providers/azurerm_private_endpoint/reports-pe-sql",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-reports/providers/azurerm_private_endpoint/reports-pe-st",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_monitor_diagnostic_setting",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-reports/providers/azurerm_monitor_diagnostic_setting/reports-sql-diag",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_service_plan",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-auth/providers/azurerm_service_plan/auth-plan",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_linux_web_app",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-auth/providers/azurerm_linux_web_app/auth-web",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_application_insights",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-auth/providers/azurerm_application_insights/auth-ai",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_user_assigned_identity",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-auth/providers/azurerm_user_assigned_identity/auth-id",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_role_assignment",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-auth/providers/azurerm_role_assignment/auth-kv",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_mssql_server",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-auth/providers/azurerm_mssql_server/auth-sql",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_mssql_database",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-auth/providers/azurerm_mssql_database/auth-db",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_storage_account",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-authst/providers/azurerm_storage_account/authst",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_storage_container",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-auth/providers/azurerm_storage_container/auth-data",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-auth/providers/azurerm_private_endpoint/auth-pe-sql",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-auth/providers/azurerm_private_endpoint/auth-pe-st",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_monitor_diagnostic_setting",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-auth/providers/azurerm_monitor_diagnostic_setting/auth-sql-diag",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_service_plan",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-mail/providers/azurerm_service_plan/mail-plan",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_linux_web_app",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-mail/providers/azurerm_linux_web_app/mail-web",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_application_insights",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-mail/providers/azurerm_application_insights/mail-ai",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_user_assigned_identity",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-mail/providers/azurerm_user_assigned_identity/mail-id",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_role_assignment",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-mail/providers/azurerm_role_assignment/mail-kv",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_mssql_server",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-mail/providers/azurerm_mssql_server/mail-sql",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_mssql_database",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-mail/providers/azurerm_mssql_database/mail-db",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_storage_account",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-mailst/providers/azurerm_storage_account/mailst",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_storage_container",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-mail/providers/azurerm_storage_container/mail-data",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-mail/providers/azurerm_private_endpoint/mail-pe-sql",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_private_endpoint",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-mail/providers/azurerm_private_endpoint/mail-pe-st",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_monitor_diagnostic_setting",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-mail/providers/azurerm_monitor_diagnostic_setting/mail-sql-diag",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_network_interface",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-jump/providers/azurerm_network_interface/jump-nic",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_managed_disk",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-jump/providers/azurerm_managed_disk/jump-disk",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_linux_virtual_machine",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-jump/providers/azurerm_linux_virtual_machine/jump-vm",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_public_ip",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-jump/providers/azurerm_public_ip/jump-pip",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_network_interface",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-build/providers/azurerm_network_interface/build-nic",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_managed_disk",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-build/providers/azurerm_managed_disk/build-disk",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_linux_virtual_machine",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-build/providers/azurerm_linux_virtual_machine/build-vm",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  },
+  {
+   "kind": "resource",
+   "type": "azurerm_public_ip",
+   "id": "/subscriptions/5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37/resourceGroups/rg-build/providers/azurerm_public_ip/build-pip",
+   "account": "5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37",
+   "region": "westeurope"
+  }
+ ],
+ "edges": [
+  {
+   "from": 2,
+   "to": 1
+  },
+  {
+   "from": 3,
+   "to": 1
+  },
+  {
+   "from": 4,
+   "to": 1
+  },
+  {
+   "from": 5,
+   "to": 1
+  },
+  {
+   "from": 7,
+   "to": 2
+  },
+  {
+   "from": 7,
+   "to": 6
+  },
+  {
+   "from": 8,
+   "to": 3
+  },
+  {
+   "from": 8,
+   "to": 6
+  },
+  {
+   "from": 9,
+   "to": 4
+  },
+  {
+   "from": 9,
+   "to": 6
+  },
+  {
+   "from": 10,
+   "to": 5
+  },
+  {
+   "from": 10,
+   "to": 6
+  },
+  {
+   "from": 12,
+   "to": 11
+  },
+  {
+   "from": 12,
+   "to": 1
+  },
+  {
+   "from": 14,
+   "to": 4
+  },
+  {
+   "from": 14,
+   "to": 0
+  },
+  {
+   "from": 15,
+   "to": 13
+  },
+  {
+   "from": 15,
+   "to": 14
+  },
+  {
+   "from": 17,
+   "to": 16
+  },
+  {
+   "from": 17,
+   "to": 0
+  },
+  {
+   "from": 19,
+   "to": 18
+  },
+  {
+   "from": 19,
+   "to": 0
+  },
+  {
+   "from": 22,
+   "to": 5
+  },
+  {
+   "from": 22,
+   "to": 16
+  },
+  {
+   "from": 22,
+   "to": 11
+  },
+  {
+   "from": 23,
+   "to": 5
+  },
+  {
+   "from": 23,
+   "to": 18
+  },
+  {
+   "from": 23,
+   "to": 11
+  },
+  {
+   "from": 24,
+   "to": 5
+  },
+  {
+   "from": 24,
+   "to": 20
+  },
+  {
+   "from": 24,
+   "to": 11
+  },
+  {
+   "from": 25,
+   "to": 5
+  },
+  {
+   "from": 25,
+   "to": 21
+  },
+  {
+   "from": 25,
+   "to": 11
+  },
+  {
+   "from": 27,
+   "to": 26
+  },
+  {
+   "from": 28,
+   "to": 0
+  },
+  {
+   "from": 27,
+   "to": 28
+  },
+  {
+   "from": 27,
+   "to": 29
+  },
+  {
+   "from": 30,
+   "to": 16
+  },
+  {
+   "from": 30,
+   "to": 29
+  },
+  {
+   "from": 32,
+   "to": 31
+  },
+  {
+   "from": 34,
+   "to": 33
+  },
+  {
+   "from": 35,
+   "to": 5
+  },
+  {
+   "from": 35,
+   "to": 31
+  },
+  {
+   "from": 35,
+   "to": 11
+  },
+  {
+   "from": 36,
+   "to": 5
+  },
+  {
+   "from": 36,
+   "to": 33
+  },
+  {
+   "from": 36,
+   "to": 11
+  },
+  {
+   "from": 37,
+   "to": 31
+  },
+  {
+   "from": 37,
+   "to": 0
+  },
+  {
+   "from": 27,
+   "to": 2
+  },
+  {
+   "from": 27,
+   "to": 32
+  },
+  {
+   "from": 27,
+   "to": 33
+  },
+  {
+   "from": 39,
+   "to": 38
+  },
+  {
+   "from": 40,
+   "to": 0
+  },
+  {
+   "from": 39,
+   "to": 40
+  },
+  {
+   "from": 39,
+   "to": 41
+  },
+  {
+   "from": 42,
+   "to": 16
+  },
+  {
+   "from": 42,
+   "to": 41
+  },
+  {
+   "from": 44,
+   "to": 43
+  },
+  {
+   "from": 46,
+   "to": 45
+  },
+  {
+   "from": 47,
+   "to": 5
+  },
+  {
+   "from": 47,
+   "to": 43
+  },
+  {
+   "from": 47,
+   "to": 11
+  },
+  {
+   "from": 48,
+   "to": 5
+  },
+  {
+   "from": 48,
+   "to": 45
+  },
+  {
+   "from": 48,
+   "to": 11
+  },
+  {
+   "from": 49,
+   "to": 43
+  },
+  {
+   "from": 49,
+   "to": 0
+  },
+  {
+   "from": 39,
+   "to": 2
+  },
+  {
+   "from": 39,
+   "to": 44
+  },
+  {
+   "from": 39,
+   "to": 45
+  },
+  {
+   "from": 51,
+   "to": 50
+  },
+  {
+   "from": 52,
+   "to": 0
+  },
+  {
+   "from": 51,
+   "to": 52
+  },
+  {
+   "from": 51,
+   "to": 53
+  },
+  {
+   "from": 54,
+   "to": 16
+  },
+  {
+   "from": 54,
+   "to": 53
+  },
+  {
+   "from": 56,
+   "to": 55
+  },
+  {
+   "from": 58,
+   "to": 57
+  },
+  {
+   "from": 59,
+   "to": 5
+  },
+  {
+   "from": 59,
+   "to": 55
+  },
+  {
+   "from": 59,
+   "to": 11
+  },
+  {
+   "from": 60,
+   "to": 5
+  },
+  {
+   "from": 60,
+   "to": 57
+  },
+  {
+   "from": 60,
+   "to": 11
+  },
+  {
+   "from": 61,
+   "to": 55
+  },
+  {
+   "from": 61,
+   "to": 0
+  },
+  {
+   "from": 51,
+   "to": 2
+  },
+  {
+   "from": 51,
+   "to": 56
+  },
+  {
+   "from": 51,
+   "to": 57
+  },
+  {
+   "from": 63,
+   "to": 62
+  },
+  {
+   "from": 64,
+   "to": 0
+  },
+  {
+   "from": 63,
+   "to": 64
+  },
+  {
+   "from": 63,
+   "to": 65
+  },
+  {
+   "from": 66,
+   "to": 16
+  },
+  {
+   "from": 66,
+   "to": 65
+  },
+  {
+   "from": 68,
+   "to": 67
+  },
+  {
+   "from": 70,
+   "to": 69
+  },
+  {
+   "from": 71,
+   "to": 5
+  },
+  {
+   "from": 71,
+   "to": 67
+  },
+  {
+   "from": 71,
+   "to": 11
+  },
+  {
+   "from": 72,
+   "to": 5
+  },
+  {
+   "from": 72,
+   "to": 69
+  },
+  {
+   "from": 72,
+   "to": 11
+  },
+  {
+   "from": 73,
+   "to": 67
+  },
+  {
+   "from": 73,
+   "to": 0
+  },
+  {
+   "from": 63,
+   "to": 2
+  },
+  {
+   "from": 63,
+   "to": 68
+  },
+  {
+   "from": 63,
+   "to": 69
+  },
+  {
+   "from": 75,
+   "to": 74
+  },
+  {
+   "from": 76,
+   "to": 0
+  },
+  {
+   "from": 75,
+   "to": 76
+  },
+  {
+   "from": 75,
+   "to": 77
+  },
+  {
+   "from": 78,
+   "to": 16
+  },
+  {
+   "from": 78,
+   "to": 77
+  },
+  {
+   "from": 80,
+   "to": 79
+  },
+  {
+   "from": 82,
+   "to": 81
+  },
+  {
+   "from": 83,
+   "to": 5
+  },
+  {
+   "from": 83,
+   "to": 79
+  },
+  {
+   "from": 83,
+   "to": 11
+  },
+  {
+   "from": 84,
+   "to": 5
+  },
+  {
+   "from": 84,
+   "to": 81
+  },
+  {
+   "from": 84,
+   "to": 11
+  },
+  {
+   "from": 85,
+   "to": 79
+  },
+  {
+   "from": 85,
+   "to": 0
+  },
+  {
+   "from": 75,
+   "to": 2
+  },
+  {
+   "from": 75,
+   "to": 80
+  },
+  {
+   "from": 75,
+   "to": 81
+  },
+  {
+   "from": 87,
+   "to": 86
+  },
+  {
+   "from": 88,
+   "to": 0
+  },
+  {
+   "from": 87,
+   "to": 88
+  },
+  {
+   "from": 87,
+   "to": 89
+  },
+  {
+   "from": 90,
+   "to": 16
+  },
+  {
+   "from": 90,
+   "to": 89
+  },
+  {
+   "from": 92,
+   "to": 91
+  },
+  {
+   "from": 94,
+   "to": 93
+  },
+  {
+   "from": 95,
+   "to": 5
+  },
+  {
+   "from": 95,
+   "to": 91
+  },
+  {
+   "from": 95,
+   "to": 11
+  },
+  {
+   "from": 96,
+   "to": 5
+  },
+  {
+   "from": 96,
+   "to": 93
+  },
+  {
+   "from": 96,
+   "to": 11
+  },
+  {
+   "from": 97,
+   "to": 91
+  },
+  {
+   "from": 97,
+   "to": 0
+  },
+  {
+   "from": 87,
+   "to": 2
+  },
+  {
+   "from": 87,
+   "to": 92
+  },
+  {
+   "from": 87,
+   "to": 93
+  },
+  {
+   "from": 98,
+   "to": 2
+  },
+  {
+   "from": 100,
+   "to": 98
+  },
+  {
+   "from": 100,
+   "to": 99
+  },
+  {
+   "from": 101,
+   "to": 98
+  },
+  {
+   "from": 102,
+   "to": 2
+  },
+  {
+   "from": 104,
+   "to": 102
+  },
+  {
+   "from": 104,
+   "to": 103
+  },
+  {
+   "from": 105,
+   "to": 102
+  }
+ ],
+ "redaction": {
+  "ids_hashed": false,
+  "hash_alg": "hmac-sha256",
+  "addresses": "plain"
+ }
+}

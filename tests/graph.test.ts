@@ -49,6 +49,7 @@ const small = load("small");
 const smallBase = load("small-base");
 const medium = load("medium");
 const large = load("large");
+const azure = load("azure");
 const gcp = load("gcp");
 const environments = load("environments");
 const environmentsBase = load("environments-base");
@@ -994,6 +995,10 @@ describe("goldens", () => {
     golden("large.svg", `${renderGraphSvg(view(large))}\n`);
     golden("large.drawio", renderGraphDrawio(view(large)));
     golden("large.mmd", renderGraphMermaid(view(large)));
+  });
+
+  it("draws the Azure estate, a subscription whose resources refer to each other, at the Services level as wide as it is tall", () => {
+    golden("azure-services.svg", `${renderGraphSvg(view(azure, { level: "services" }))}\n`);
   });
 
   it("draws what changed between two small estates, in full and as a delta", () => {

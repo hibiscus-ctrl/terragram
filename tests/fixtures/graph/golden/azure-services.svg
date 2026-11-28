@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1352" height="868" viewBox="0 0 1352 868" role="img" aria-labelledby="tg-title tg-desc">
+<title id="tg-title">Infrastructure graph</title>
+<desc id="tg-desc">21 resources in 1 group, 28 references.</desc>
+<defs><marker id="tg-arrow-unchanged" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a8a090"/></marker><marker id="tg-arrow-added" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#15803d"/></marker><marker id="tg-arrow-removed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#b91c1c"/></marker><marker id="tg-arrow-changed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#b45309"/></marker></defs>
+<rect width="1352" height="868" fill="#faf8f4"/>
+<g><rect x="24" y="24" width="1304" height="772" rx="12" fill="#f6f3ec" stroke="#cfc7b4" stroke-width="1.25"/>
+<text x="36" y="39" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#665e4f">Azure subscription 5b3c1d52-7e0a-4f6b-9a8d-2c4e6f801a37</text>
+</g>
+<path d="M 414 550 Q 414 586 282 586 Q 150 586 150 604 L 150 622" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 414 550 L 414 622" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 414 550 Q 414 611 480 611 Q 546 611 546 665.5 L 546 720" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 414 550 Q 414 586 678 586 Q 942 586 942 604 L 942 622" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 942 354 L 414 622" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 942 354 L 678 622" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 150 122 L 150 292" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 150 122 Q 150 207 282 207 Q 414 207 414 249.5 L 414 292" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 546 220 Q 546 458 480 458 Q 414 458 414 473 L 414 488" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 546 220 L 546 720" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 546 220 Q 546 458 612 458 Q 678 458 678 473 L 678 488" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 546 220 Q 546 557 612 557 Q 678 557 678 589.5 L 678 622" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 546 220 Q 546 361 744 361 Q 942 361 942 375.5 L 942 390" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 414 354 L 678 622" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 414 452 L 678 622" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 942 122 L 150 390" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 942 122 L 150 622" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 942 122 Q 942 285 744 285 Q 546 285 546 502.5 L 546 720" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 942 122 L 414 390" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 942 122 L 678 390" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 942 122 L 942 622" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 942 122 L 678 488" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 942 122 L 678 622" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 414 122 L 414 292" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 678 122 L 678 292" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 678 122 L 150 622" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 678 122 Q 678 207 810 207 Q 942 207 942 249.5 L 942 292" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<path d="M 678 122 L 942 390" fill="none" stroke="#a8a090" stroke-width="1.5" marker-end="url(#tg-arrow-unchanged)"/>
+<g><title>Monitor ×14: 14 resources; azurerm_monitor_diagnostic_setting 8, azurerm_application_insights 6, region westeurope</title>
+<rect x="302" y="488" width="224" height="62" rx="9" fill="#ffffff" stroke="#665e4f" stroke-width="1.5"/>
+<rect x="302" y="498" width="4" height="42" rx="2" fill="#665e4f"/>
+<text x="316" y="512" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#665e4f" letter-spacing="0.3">azurerm_monitor_di…c_setting +1 more</text>
+<text x="316" y="534" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">Monitor ×14</text><g transform="translate(490 516)" fill="none" stroke="#665e4f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></g>
+</g>
+<g><title>azurerm_container_registry plat-acr, region westeurope</title>
+<rect x="566" y="292" width="224" height="62" rx="9" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<rect x="566" y="302" width="4" height="42" rx="2" fill="#7c3aed"/>
+<text x="580" y="316" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#7c3aed" letter-spacing="0.3">azurerm_container_registry</text>
+<text x="580" y="338" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">plat-acr</text><g transform="translate(754 320)" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="4.5" rx="1"/><rect x="4" y="9.75" width="16" height="4.5" rx="1"/><rect x="4" y="15.5" width="16" height="4.5" rx="1"/><path d="M7 6.25h.01M7 12h.01M7 17.75h.01"/></g>
+</g>
+<g><title>azurerm_cosmosdb_account plat-cosmos, region westeurope</title>
+<rect x="38" y="390" width="224" height="62" rx="9" fill="#ffffff" stroke="#be185d" stroke-width="1.5"/>
+<rect x="38" y="400" width="4" height="42" rx="2" fill="#be185d"/>
+<text x="52" y="414" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#be185d" letter-spacing="0.3">azurerm_cosmosdb_account</text>
+<text x="52" y="436" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">plat-cosmos</text><g transform="translate(226 418)" fill="none" stroke="#be185d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></g>
+</g>
+<g><title>azurerm_key_vault plat-kv, region westeurope</title>
+<rect x="38" y="622" width="224" height="62" rx="9" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
+<rect x="38" y="632" width="4" height="42" rx="2" fill="#b45309"/>
+<text x="52" y="646" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#b45309" letter-spacing="0.3">azurerm_key_vault</text>
+<text x="52" y="668" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">plat-kv</text><g transform="translate(226 650)" fill="none" stroke="#b45309" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><circle cx="12" cy="10.5" r="2"/><path d="M12 12.5v3"/></g>
+</g>
+<g><title>azurerm_kubernetes_cluster plat-aks, region westeurope</title>
+<rect x="830" y="292" width="224" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
+<rect x="830" y="302" width="4" height="42" rx="2" fill="#047857"/>
+<text x="844" y="316" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.3">azurerm_kubernetes_cluster</text>
+<text x="844" y="338" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">plat-aks</text><g transform="translate(1018 320)" fill="none" stroke="#047857" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></g>
+</g>
+<g><title>Virtual Machines ×2: 2 resources; azurerm_linux_virtual_machine 2, region westeurope</title>
+<rect x="38" y="60" width="224" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
+<rect x="38" y="70" width="4" height="42" rx="2" fill="#047857"/>
+<text x="52" y="84" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.3">azurerm_linux_virtual_machine</text>
+<text x="52" y="106" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">Virtual Machines ×2</text><g transform="translate(226 88)" fill="none" stroke="#047857" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></g>
+</g>
+<g><title>App Service ×12: 12 resources; azurerm_linux_web_app 6, azurerm_service_plan 6, region westeurope</title>
+<rect x="434" y="158" width="224" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
+<rect x="434" y="168" width="4" height="42" rx="2" fill="#047857"/>
+<text x="448" y="182" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.3">azurerm_linux_web_app +1 more</text>
+<text x="448" y="204" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">App Service ×12</text><g transform="translate(622 186)" fill="none" stroke="#047857" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></g>
+</g>
+<g><title>azurerm_log_analytics_workspace core-law, region westeurope</title>
+<rect x="302" y="622" width="224" height="62" rx="9" fill="#ffffff" stroke="#665e4f" stroke-width="1.5"/>
+<rect x="302" y="632" width="4" height="42" rx="2" fill="#665e4f"/>
+<text x="316" y="646" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#665e4f" letter-spacing="0.3">azurerm_log_analytics_workspace</text>
+<text x="316" y="668" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">core-law</text><g transform="translate(490 650)" fill="none" stroke="#665e4f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></g>
+</g>
+<g><title>Managed Disks ×2: 2 resources; azurerm_managed_disk 2, region westeurope</title>
+<rect x="38" y="292" width="224" height="62" rx="9" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<rect x="38" y="302" width="4" height="42" rx="2" fill="#7c3aed"/>
+<text x="52" y="316" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#7c3aed" letter-spacing="0.3">azurerm_managed_disk</text>
+<text x="52" y="338" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">Managed Disks ×2</text><g transform="translate(226 320)" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="4.5" rx="1"/><rect x="4" y="9.75" width="16" height="4.5" rx="1"/><rect x="4" y="15.5" width="16" height="4.5" rx="1"/><path d="M7 6.25h.01M7 12h.01M7 17.75h.01"/></g>
+</g>
+<g><title>SQL Database ×12: 12 resources; azurerm_mssql_database 6, azurerm_mssql_server 6, region westeurope</title>
+<rect x="434" y="720" width="224" height="62" rx="9" fill="#ffffff" stroke="#be185d" stroke-width="1.5"/>
+<rect x="434" y="730" width="4" height="42" rx="2" fill="#be185d"/>
+<text x="448" y="744" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#be185d" letter-spacing="0.3">azurerm_mssql_database +1 more</text>
+<text x="448" y="766" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">SQL Database ×12</text><g transform="translate(622 748)" fill="none" stroke="#be185d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></g>
+</g>
+<g><title>Network Interface ×2: 2 resources; azurerm_network_interface 2, region westeurope</title>
+<rect x="302" y="292" width="224" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+<rect x="302" y="302" width="4" height="42" rx="2" fill="#2563eb"/>
+<text x="316" y="316" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">azurerm_network_interface</text>
+<text x="316" y="338" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">Network Interface ×2</text><g transform="translate(490 320)" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4.5M12 12l-5.2 5M12 12l5.2 5"/></g>
+</g>
+<g><title>azurerm_network_security_group core-nsg, region westeurope</title>
+<rect x="1090" y="60" width="224" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+<rect x="1090" y="70" width="4" height="42" rx="2" fill="#2563eb"/>
+<text x="1104" y="84" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">azurerm_network_security_group</text>
+<text x="1104" y="106" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">core-nsg</text><g transform="translate(1278 88)" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4.5M12 12l-5.2 5M12 12l5.2 5"/></g>
+</g>
+<g><title>Private DNS ×2: 2 resources; azurerm_private_dns_zone 1, azurerm_private_dns_zone_virtual_network_link 1, region westeurope</title>
+<rect x="302" y="390" width="224" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+<rect x="302" y="400" width="4" height="42" rx="2" fill="#2563eb"/>
+<text x="316" y="414" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">azurerm_private_dns_zone +1 more</text>
+<text x="316" y="436" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">Private DNS ×2</text><g transform="translate(490 418)" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4.5M12 12l-5.2 5M12 12l5.2 5"/></g>
+</g>
+<g><title>Private Link ×16: 16 resources; azurerm_private_endpoint 16, region westeurope</title>
+<rect x="830" y="60" width="224" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+<rect x="830" y="70" width="4" height="42" rx="2" fill="#2563eb"/>
+<text x="844" y="84" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">azurerm_private_endpoint</text>
+<text x="844" y="106" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">Private Link ×16</text><g transform="translate(1018 88)" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4.5M12 12l-5.2 5M12 12l5.2 5"/></g>
+</g>
+<g><title>Public IP ×2: 2 resources; azurerm_public_ip 2, region westeurope</title>
+<rect x="302" y="60" width="224" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+<rect x="302" y="70" width="4" height="42" rx="2" fill="#2563eb"/>
+<text x="316" y="84" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">azurerm_public_ip</text>
+<text x="316" y="106" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">Public IP ×2</text><g transform="translate(490 88)" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4.5M12 12l-5.2 5M12 12l5.2 5"/></g>
+</g>
+<g><title>azurerm_redis_cache plat-redis, region westeurope</title>
+<rect x="566" y="390" width="224" height="62" rx="9" fill="#ffffff" stroke="#be185d" stroke-width="1.5"/>
+<rect x="566" y="400" width="4" height="42" rx="2" fill="#be185d"/>
+<text x="580" y="414" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#be185d" letter-spacing="0.3">azurerm_redis_cache</text>
+<text x="580" y="436" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">plat-redis</text><g transform="translate(754 418)" fill="none" stroke="#be185d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></g>
+</g>
+<g><title>Role assignment ×7: 7 resources; azurerm_role_assignment 7, region westeurope</title>
+<rect x="566" y="60" width="224" height="62" rx="9" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
+<rect x="566" y="70" width="4" height="42" rx="2" fill="#b45309"/>
+<text x="580" y="84" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#b45309" letter-spacing="0.3">azurerm_role_assignment</text>
+<text x="580" y="106" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">Role assignment ×7</text><g transform="translate(754 88)" fill="none" stroke="#b45309" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><circle cx="12" cy="10.5" r="2"/><path d="M12 12.5v3"/></g>
+</g>
+<g><title>azurerm_servicebus_namespace plat-sb, region westeurope</title>
+<rect x="830" y="622" width="224" height="62" rx="9" fill="#ffffff" stroke="#665e4f" stroke-width="1.5"/>
+<rect x="830" y="632" width="4" height="42" rx="2" fill="#665e4f"/>
+<text x="844" y="646" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#665e4f" letter-spacing="0.3">azurerm_servicebus_namespace</text>
+<text x="844" y="668" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">plat-sb</text><g transform="translate(1018 650)" fill="none" stroke="#665e4f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></g>
+</g>
+<g><title>Storage account ×12: 12 resources; azurerm_storage_account 6, azurerm_storage_container 6, region westeurope</title>
+<rect x="566" y="488" width="224" height="62" rx="9" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
+<rect x="566" y="498" width="4" height="42" rx="2" fill="#7c3aed"/>
+<text x="580" y="512" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#7c3aed" letter-spacing="0.3">azurerm_storage_account +1 more</text>
+<text x="580" y="534" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">Storage account ×12</text><g transform="translate(754 516)" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="4.5" rx="1"/><rect x="4" y="9.75" width="16" height="4.5" rx="1"/><rect x="4" y="15.5" width="16" height="4.5" rx="1"/><path d="M7 6.25h.01M7 12h.01M7 17.75h.01"/></g>
+</g>
+<g><title>Virtual Network ×5: 5 resources; azurerm_subnet 4, azurerm_virtual_network 1, region westeurope</title>
+<rect x="566" y="622" width="224" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+<rect x="566" y="632" width="4" height="42" rx="2" fill="#2563eb"/>
+<text x="580" y="646" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">azurerm_subnet +1 more</text>
+<text x="580" y="668" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">Virtual Network ×5</text><g transform="translate(754 650)" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4.5M12 12l-5.2 5M12 12l5.2 5"/></g>
+</g>
+<g><title>Managed Identity ×6: 6 resources; azurerm_user_assigned_identity 6, region westeurope</title>
+<rect x="830" y="390" width="224" height="62" rx="9" fill="#ffffff" stroke="#b45309" stroke-width="1.5"/>
+<rect x="830" y="400" width="4" height="42" rx="2" fill="#b45309"/>
+<text x="844" y="414" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#b45309" letter-spacing="0.3">azurerm_user_assigned_identity</text>
+<text x="844" y="436" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">Managed Identity ×6</text><g transform="translate(1018 418)" fill="none" stroke="#b45309" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><circle cx="12" cy="10.5" r="2"/><path d="M12 12.5v3"/></g>
+</g>
+<g><title>14 references</title><rect x="399.4" y="578" width="29.2" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="414" y="590" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×14</text></g>
+<g><title>6 references</title><rect x="468.6" y="603" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="480" y="615" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×6</text></g>
+<g><title>2 references</title><rect x="138.6" y="199" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="150" y="211" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×2</text></g>
+<g><title>2 references</title><rect x="270.6" y="199" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="282" y="211" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×2</text></g>
+<g><title>6 references</title><rect x="468.6" y="450" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="480" y="462" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×6</text></g>
+<g><title>6 references</title><rect x="534.6" y="462" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="546" y="474" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×6</text></g>
+<g><title>6 references</title><rect x="600.6" y="450" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="612" y="462" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×6</text></g>
+<g><title>6 references</title><rect x="600.6" y="549" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="612" y="561" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×6</text></g>
+<g><title>6 references</title><rect x="732.6" y="353" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="744" y="365" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×6</text></g>
+<g><title>2 references</title><rect x="534.6" y="480" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="546" y="492" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×2</text></g>
+<g><title>6 references</title><rect x="732.6" y="277" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="744" y="289" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×6</text></g>
+<g><title>16 references</title><rect x="663.4" y="248" width="29.2" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="678" y="260" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×16</text></g>
+<g><title>6 references</title><rect x="798.6" y="297" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="810" y="309" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×6</text></g>
+<g><title>16 references</title><rect x="795.4" y="364" width="29.2" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="810" y="376" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×16</text></g>
+<g><title>2 references</title><rect x="402.6" y="199" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="414" y="211" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×2</text></g>
+<g><title>6 references</title><rect x="402.6" y="364" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="414" y="376" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×6</text></g>
+<g><title>6 references</title><rect x="798.6" y="248" width="22.8" height="16" rx="8" fill="#faf8f4" stroke="#a8a090" stroke-width="1"/><text x="810" y="260" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" font-weight="700" fill="#211d16">×6</text></g>
+<text x="24" y="836" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">Services: one card per service in a box, with its number of resources; a line carries the number of references between two cards.</text>
+<text x="24" y="852" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">4 glue resources hidden: azurerm_subnet_network_security_group_association x4.</text>
+</svg>
