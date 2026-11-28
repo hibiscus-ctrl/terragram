@@ -496,3 +496,66 @@ resource "aws_sns_topic_policy" "t" {
     assert.deepEqual(edgesOf(bucketPolicy(`{ Effect = "Deny", Principal = "*", Action = "s3:*", Resource = "*" }`)), []);
   });
 });
+
+describe("an Azure role assignment to a principal that is not drawn is still a grant", () => {
+  const AZURE = `
+resource "azurerm_storage_account" "data" {
+  name = "data"
+}
+
+resource "azurerm_user_assigned_identity" "app" {
+  name = "app"
+}
+`;
+  const edgesOf = (assignment: string) => typed(read(AZURE + assignment).model);
+
+  it("draws Owner on the subscription for a variable or a data-sourced group as unscoped from a stand-in", () => {
+    for (const principal of ["var.admin_group_id", "data.azuread_group.admins.object_id", `"00000000-0000-0000-0000-000000000000"`]) {
+      const { model } = read(`${AZURE}
+resource "azurerm_role_assignment" "owner" {
+  scope                = data.azurerm_subscription.current.id
+  role_definition_name = "Owner"
+  principal_id         = ${principal}
+}
+`);
+      assert.deepEqual(typed(model), [`principal-azure -> ${ANY_RESOURCE_ID}: unscoped`], principal);
+      assert.equal(model.nodes.find((n) => n.id === "principal-azure")?.label, "An Azure principal (not drawn)");
+    }
+  });
+
+  it("marks the grant over one drawn resource unscoped too, and keeps a drawn principal's own edge", () => {
+    assert.deepEqual(
+      edgesOf(`
+resource "azurerm_role_assignment" "blob" {
+  scope                = azurerm_storage_account.data.id
+  role_definition_name = "Storage Blob Data Reader"
+  principal_id         = var.group
+}
+`),
+      ["principal-azure -> object-storage: unscoped"],
+    );
+    assert.deepEqual(
+      edgesOf(`
+resource "azurerm_role_assignment" "blob" {
+  scope                = azurerm_storage_account.data.id
+  role_definition_name = "Storage Blob Data Reader"
+  principal_id         = azurerm_user_assigned_identity.app.principal_id
+}
+`),
+      ["entra-id -> object-storage: read"],
+    );
+  });
+
+  it("adds the stand-in beside a drawn principal when the expression may be something else", () => {
+    assert.deepEqual(
+      edgesOf(`
+resource "azurerm_role_assignment" "blob" {
+  scope                = azurerm_storage_account.data.id
+  role_definition_name = "Owner"
+  principal_id         = var.use_group ? var.group : azurerm_user_assigned_identity.app.principal_id
+}
+`),
+      ["entra-id -> object-storage: admin", "principal-azure -> object-storage: unscoped"],
+    );
+  });
+});

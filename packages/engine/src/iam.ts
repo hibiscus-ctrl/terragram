@@ -1313,30 +1313,42 @@ function azureScopeTarget(scope: string, owner: (address: string) => string | un
   return owner(`${type}.${m[2]}`);
 }
 
+/** The stand-in for the principal of a role assignment that the picture does not draw: its object id is a variable, a data source or text, and never reaches the model. */
+const AZURE_PRINCIPAL = { id: "principal-azure", label: "An Azure principal (not drawn)" };
+
+/** One reference to an attribute of an Azure resource: `azurerm_x.name.principal_id`, `azurerm_x.name.identity[0].principal_id`, with an index on the resource. */
+const AZURE_PRINCIPAL_REFERENCE = /^azurerm_[a-z0-9_]+\.[A-Za-z_][\w-]*(?:\[(?:\d+|each\.key|count\.index)\])?(?:\.[A-Za-z_][\w-]*(?:\[\d+\])?)+$/;
+
 function readAzure(blocks: HclBlock[], owner: (address: string) => string | undefined, out: IamReading): void {
   for (const b of blocks) {
     if (b.type !== "resource" || b.labels[0] !== "azurerm_role_assignment") continue;
-    let source: string | undefined;
-    for (const address of extractReferences(attributeOf(b, "principal_id") ?? "")) {
-      source = owner(address);
-      if (source) break;
+    const principal = attributeOf(b, "principal_id") ?? "";
+    let drawn: string | undefined;
+    for (const address of extractReferences(principal)) {
+      drawn = owner(address);
+      if (drawn) break;
     }
-    if (!source) continue;
+    // Only exactly one reference to a drawn identity is that identity: anything else (a variable, a data-sourced group, a conditional) may be someone who is not drawn, and is a stand-in's unscoped grant.
+    const exact = drawn !== undefined && AZURE_PRINCIPAL_REFERENCE.test(principal.trim());
+    const sources: Array<{ id: string; standIn: boolean }> = [];
+    if (drawn) sources.push({ id: drawn, standIn: false });
+    if (!exact) sources.push({ id: AZURE_PRINCIPAL.id, standIn: true });
 
-    const unscoped: IamEdge = { source, target: ANY_RESOURCE_ID, access: "unscoped" };
-    let edge: IamEdge | null;
-    try {
-      const roleName = stringValue(attributeOf(b, "role_definition_name"));
-      const level: EdgeAccess = (roleName === undefined ? null : azureRoleLevel(roleName)) ?? "unscoped";
-      const target = azureScopeTarget(attributeOf(b, "scope") ?? "", owner);
-      edge = target === undefined ? unscoped : { source, target, access: level };
-    } catch {
-      edge = unscoped;
-    }
-    if (edge) {
+    for (const { id: source, standIn } of sources) {
+      const unscoped: IamEdge = { source, target: ANY_RESOURCE_ID, access: "unscoped" };
+      let edge: IamEdge;
+      try {
+        const roleName = stringValue(attributeOf(b, "role_definition_name"));
+        const level: EdgeAccess = standIn ? "unscoped" : ((roleName === undefined ? null : azureRoleLevel(roleName)) ?? "unscoped");
+        const target = azureScopeTarget(attributeOf(b, "scope") ?? "", owner);
+        edge = target === undefined ? unscoped : { source, target, access: level };
+      } catch {
+        edge = unscoped;
+      }
       out.edges.push(edge);
-      out.consumed.add(b);
+      if (standIn) out.principals.set(AZURE_PRINCIPAL.id, AZURE_PRINCIPAL.label);
     }
+    out.consumed.add(b);
   }
 }
 
