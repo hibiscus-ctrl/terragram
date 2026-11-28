@@ -175,3 +175,43 @@ resource "aws_iam_role_policy" "fn" {
     assert.equal(selfOf(model), undefined);
   });
 });
+
+describe("actions that change who can use a resource are admin, whatever their name says", () => {
+  const levelOf = (action: string) => {
+    const { model } = read(`${BASE}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = jsonencode({ Statement = [{ Effect = "Allow", Action = "${action}", Resource = aws_s3_bucket.data.arn }] })
+}
+`);
+    return model.edges.find((e) => e.source === "entra-id" && e.target === "object-storage")?.access;
+  };
+
+  it("ranks the attribute, public-access and sharing calls as admin", () => {
+    for (const action of [
+      "sqs:SetQueueAttributes",
+      "sns:SetTopicAttributes",
+      "s3:PutBucketPublicAccessBlock",
+      "s3:PutAccountPublicAccessBlock",
+      "s3:PutBucketOwnershipControls",
+      "ec2:ModifySnapshotAttribute",
+      "ec2:ModifyImageAttribute",
+      "rds:ModifyDBSnapshotAttribute",
+      "rds:ModifyDBClusterSnapshotAttribute",
+      "redshift:AuthorizeSnapshotAccess",
+      "kms:CreateGrant",
+      "lambda:AddPermission",
+      "lambda:CreateFunctionUrlConfig",
+      "ram:CreateResourceShare",
+      "SQS:setqueueattributes",
+    ]) {
+      assert.equal(levelOf(action), "admin", action);
+    }
+  });
+
+  it("leaves ordinary writes and reads where they were", () => {
+    assert.equal(levelOf("sqs:SendMessage"), "write");
+    assert.equal(levelOf("s3:PutObject"), "write");
+    assert.equal(levelOf("s3:GetBucketPublicAccessBlock"), "read");
+  });
+});

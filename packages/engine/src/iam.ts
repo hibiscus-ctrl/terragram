@@ -449,7 +449,14 @@ function isConditionBlock(b: HclBlock): boolean {
 }
 
 const READ_VERBS = ["get", "list", "describe", "head", "batchget", "query", "scan", "select", "lookup", "view", "search", "read", "receive", "decrypt", "verify"];
-const PERMISSION_NAME = /(policy|acl|grant|permission|passrole|assumerole)/;
+/**
+ * Names that change who can use a resource. Most say so (policy, acl, grant, permission); the rest are the calls
+ * that do it without the word: queue and topic attributes hold the resource policy, a public access block, an
+ * ownership control, a snapshot or image attribute and a resource share decide who outside the account sees it, a
+ * function URL can make a function public, and authorising snapshot access hands one to another account.
+ */
+const PERMISSION_NAME =
+  /(policy|acl|grant|permission|passrole|assumerole|setqueueattributes|settopicattributes|publicaccessblock|ownershipcontrols|snapshotattribute|imageattribute|authorizesnapshotaccess|functionurlconfig|resourceshare)/;
 const ACTION_CHARS = /^[A-Za-z0-9*:-]+$/;
 
 const startsWithReadVerb = (name: string) => READ_VERBS.some((verb) => name.startsWith(verb));
