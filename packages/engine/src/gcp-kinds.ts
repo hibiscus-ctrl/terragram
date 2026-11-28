@@ -26,6 +26,7 @@ type VariableSpec = {
   description?: string;
   default?: string;
   sensitive?: boolean;
+  validation?: { condition: string; message: string };
 };
 
 /** What a kind asks of the plan around it. */
@@ -109,12 +110,14 @@ function serviceAccount(name: string, id: string, description: string): HclBlock
 }
 
 /** A grant of one project role to a service account the plan creates. */
-function projectRole(name: string, role: string, account: string): HclBlock {
+function projectRole(name: string, role: string, account: string, condition?: { title: string; expression: string }): HclBlock {
   return block("resource", ["google_project_iam_member", name], [
     { key: "project", value: "var.project_id" },
     { key: "role", value: quote(role) },
     { key: "member", value: `"serviceAccount:\${${account}.email}"` },
-  ]);
+  ], condition
+    ? [block("condition", [], [{ key: "title", value: quote(condition.title) }, { key: "expression", value: condition.expression }])]
+    : []);
 }
 
 /** The provider a resource that only the beta provider has names: `google_project_service_identity` is one. */
@@ -491,6 +494,10 @@ function sqlInstance(c: GcpContext, engine: SqlEngine, prefix: string): GcpEmit 
   ]);
   instance.attributes.push({ key: "depends_on", value: `[${connection}]` });
   const appAccount = `${c.name}_app`;
+  const onInstance = {
+    title: `Only the ${c.slug} instance`,
+    expression: `"resource.name == \\"projects/\${var.project_id}/instances/\${google_sql_database_instance.${c.name}.name}\\""`,
+  };
   const database = block("resource", ["google_sql_database", c.name], [
     { key: "name", value: quote("app") },
     { key: "instance", value: `google_sql_database_instance.${c.name}.name` },
@@ -504,8 +511,9 @@ function sqlInstance(c: GcpContext, engine: SqlEngine, prefix: string): GcpEmit 
     blocks: [
       instance,
       serviceAccount(appAccount, `${c.slug}-app`, `Connects to the ${c.slug} database with IAM authentication`),
-      projectRole(`${c.name}_app_instance_user`, "roles/cloudsql.instanceUser", `google_service_account.${appAccount}`),
-      projectRole(`${c.name}_app_client`, "roles/cloudsql.client", `google_service_account.${appAccount}`),
+      // The grants are the project's, but bounded by a condition to this one instance.
+      projectRole(`${c.name}_app_instance_user`, "roles/cloudsql.instanceUser", `google_service_account.${appAccount}`, onInstance),
+      projectRole(`${c.name}_app_client`, "roles/cloudsql.client", `google_service_account.${appAccount}`, onInstance),
       database,
       user,
     ],
@@ -695,8 +703,6 @@ export type GcpBackendTarget = {
   kind: string;
   /** The Terraform name the target's blocks carry. */
   name: string;
-  /** The name the target's own certificate covers, when a zone has given it one. */
-  domain?: string | undefined;
 };
 
 /** What a wire from a balancer or an edge to a target adds. */
@@ -776,31 +782,13 @@ export function gcpBackend(
     ]);
   }
   if (target.kind === "app-service") {
-    return serverless("app_engine", [{ key: "service", value: `google_app_engine_standard_app_version.${target.name}.service` }], []);
-  }
-  if (target.kind === "load-balancer") {
-    // Another balancer is reached the way a browser reaches it: by its name when it has one, else its address.
-    const group = `google_compute_global_network_endpoint_group.${name}`;
-    const named = target.domain !== undefined;
-    return {
-      blocks: [
-        block("resource", ["google_compute_global_network_endpoint_group", name], [
-          { key: "name", value: cloudName(`${edge.prefix}-neg`, `${edge.slug}-${target.name}`.replace(/_/g, "-")) },
-          { key: "network_endpoint_type", value: quote(named ? "INTERNET_FQDN_PORT" : "INTERNET_IP_PORT") },
-          { key: "default_port", value: named ? "443" : "80" },
-        ]),
-        block("resource", ["google_compute_global_network_endpoint", name], [
-          { key: "global_network_endpoint_group", value: `${group}.id` },
-          named
-            ? { key: "fqdn", value: quote(target.domain ?? "") }
-            : { key: "ip_address", value: `google_compute_global_address.${target.name}.address` },
-          { key: "port", value: named ? "443" : "80" },
-        ]),
-        service(named ? "HTTPS" : "HTTP", `${group}.id`),
-      ],
-      service: `google_compute_backend_service.${name}.id`,
-      routes: [],
-    };
+    const version = `google_app_engine_standard_app_version.${target.name}`;
+    // Reached through the balancer, the application admits what comes from it and from inside Google, and nothing else.
+    return serverless("app_engine", [{ key: "service", value: `${version}.service` }], [
+      block("resource", ["google_app_engine_service_network_settings", name], [
+        { key: "service", value: `${version}.service` },
+      ], [block("network_settings", [], [{ key: "ingress_traffic_allowed", value: quote("INGRESS_TRAFFIC_ALLOWED_INTERNAL_AND_LB") }])]),
+    ]);
   }
   if (target.kind === "static-site") {
     const bucket = `google_storage_bucket.${target.name}`;
@@ -869,6 +857,11 @@ function armorPolicy(c: GcpContext): HclBlock {
       block("match", [], [{ key: "versioned_expr", value: quote("SRC_IPS_V1") }], [
         block("config", [], [{ key: "src_ip_ranges", value: `["*"]` }]),
       ]),
+    ]),
+    // Every request the policy judges is logged with what matched it, as the AWS web ACL's log is.
+    block("advanced_options_config", [], [
+      { key: "json_parsing", value: quote("STANDARD") },
+      { key: "log_level", value: quote("VERBOSE") },
     ]),
     block("adaptive_protection_config", [], [], [
       block("layer_7_ddos_defense_config", [], [{ key: "enable", value: "true" }]),
@@ -1642,7 +1635,12 @@ export const GCP = {
           ]),
           serviceAccount(c.name, c.slug, `Runs the ${c.slug} application`),
           projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
-          projectRole(`${c.name}_object_viewer`, "roles/storage.objectViewer", `google_service_account.${c.name}`),
+          // The deployment reads the zip as the application's account: from its own source bucket, and no other.
+          block("resource", ["google_storage_bucket_iam_member", `${source}_viewer`], [
+            { key: "bucket", value: `google_storage_bucket.${source}.name` },
+            { key: "role", value: quote("roles/storage.objectViewer") },
+            { key: "member", value: `"serviceAccount:\${google_service_account.${c.name}.email}"` },
+          ]),
           block("data", ["archive_file", c.name], [
             { key: "type", value: quote("zip") },
             { key: "source_dir", value: quoteTemplate`\${path.module}/src/${c.slug}` },

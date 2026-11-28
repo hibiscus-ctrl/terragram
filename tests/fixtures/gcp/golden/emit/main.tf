@@ -690,12 +690,22 @@ resource "google_project_iam_member" "postgres_app_instance_user" {
   project = var.project_id
   role    = "roles/cloudsql.instanceUser"
   member  = "serviceAccount:${google_service_account.postgres_app.email}"
+
+  condition {
+    title      = "Only the postgres instance"
+    expression = "resource.name == \"projects/${var.project_id}/instances/${google_sql_database_instance.postgres.name}\""
+  }
 }
 
 resource "google_project_iam_member" "postgres_app_client" {
   project = var.project_id
   role    = "roles/cloudsql.client"
   member  = "serviceAccount:${google_service_account.postgres_app.email}"
+
+  condition {
+    title      = "Only the postgres instance"
+    expression = "resource.name == \"projects/${var.project_id}/instances/${google_sql_database_instance.postgres.name}\""
+  }
 }
 
 resource "google_sql_database" "postgres" {

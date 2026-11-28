@@ -1807,7 +1807,7 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     },
     gcp: {
       type: "google_app_engine_standard_app_version",
-      matches: ["google_app_engine_flexible_app_version", "google_app_engine_application"],
+      matches: ["google_app_engine_flexible_app_version", "google_app_engine_application", "google_app_engine_service_network_settings"],
       emit: (c) => GCP.appService.emit({ ...c, gcp: gcpPlan(c) }),
       read: (b) => readOne(b, "instance_class", "Compute tier", (v) => appEngineClassFrom(v)),
       settings: { attribute: "env_variables" },

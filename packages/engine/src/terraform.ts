@@ -173,6 +173,8 @@ type WirePlan = {
   notes: string[];
   /** node id -> the name its own certificate covers, once a zone has given it one. */
   domains: Map<string, string>;
+  /** Google Cloud: load balancer node id -> the front door whose CDN and policy it carries. One front end does both. */
+  collapsed: Map<string, Emitted>;
 };
 
 /**
@@ -190,16 +192,20 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
   // A load balancer, or the CDN in front of an application, gets a backend for what it fronts. Whatever has
   // none to write (a database, a queue) is the dependency the generic wire below makes it.
   if (cloud === "gcp" && (source.node.kind === "front-door" || source.node.kind === "load-balancer")) {
+    // A CDN in front of a balancer is the balancer: its backends are cached and pass the policy, and there is
+    // no second front end to reach around either.
+    if (source.node.kind === "front-door" && target.node.kind === "load-balancer") return [];
     const edge = source.node.kind === "front-door";
+    const front = edge ? source : plan.collapsed.get(source.node.id);
     const backend = gcpBackend(
       {
         name: originName,
         slug: tfSlug(source.node.id),
         prefix: edge ? GCP_EDGE_PREFIX : "lb",
-        cdn: edge,
-        ...(edge ? { policy: `google_compute_security_policy.${source.name}.id` } : {}),
+        cdn: front !== undefined,
+        ...(front ? { policy: `google_compute_security_policy.${front.name}.id` } : {}),
       },
-      { kind: target.node.kind, name: target.name, domain: plan.domains.get(target.node.id) },
+      { kind: target.node.kind, name: target.name },
     );
     if (backend) {
       // The first backend is where the URL map sends what no rule names; a later one is reachable by rule only.
@@ -769,15 +775,33 @@ export function emitTerraform(
 
   const byNodeId = new Map(emitted.map((e) => [e.node.id, e]));
   const wireBlocks: HclBlock[] = [];
-  const plan: WirePlan = { notes, domains: new Map() };
+  const plan: WirePlan = { notes, domains: new Map(), collapsed: new Map() };
+  if (cloud === "gcp") {
+    // A front door in front of a load balancer adds its policy and its cache to that balancer's backends and keeps
+    // nothing else: the balancer is the one front end, so there is no second address to reach the origin around it.
+    for (const edge of model.edges) {
+      const front = byNodeId.get(edge.source);
+      const balancer = byNodeId.get(edge.target);
+      if (front?.node.kind !== "front-door" || balancer?.node.kind !== "load-balancer" || plan.collapsed.has(balancer.node.id)) continue;
+      plan.collapsed.set(balancer.node.id, front);
+      front.blocks.splice(0, front.blocks.length, ...front.blocks.filter((b) => b.labels[0] === "google_compute_security_policy"));
+      const gone = outputs.findIndex((o) => o.name === `${front.name}_address`);
+      if (gone >= 0) outputs.splice(gone, 1);
+    }
+  }
   // A zone's edges first: what a tier is named decides how the tiers in front
   // of it reach it.
   const fromZone = (id: string) => byNodeId.get(id)?.node.kind === "dns";
   const edges = [...model.edges.filter((e) => fromZone(e.source)), ...model.edges.filter((e) => !fromZone(e.source))];
   for (const edge of edges) {
     const source = byNodeId.get(edge.source);
-    const target = byNodeId.get(edge.target);
+    let target = byNodeId.get(edge.target);
     if (!source || !target || source === target) continue;
+    // A zone's name goes to the balancer a front door has become.
+    if (source.node.kind === "dns" && target.node.kind === "front-door") {
+      const balancer = [...plan.collapsed].find(([, front]) => front === target)?.[0];
+      if (balancer) target = byNodeId.get(balancer) ?? target;
+    }
     wireBlocks.push(...wireEdge(source, target, cloud, plan));
   }
 
@@ -786,6 +810,7 @@ export function emitTerraform(
   // Shapes that are only valid once their edges are known complete themselves
   // last, after every wire has landed.
   for (const item of emitted) {
+    if ([...plan.collapsed.values()].includes(item)) continue;
     for (const variable of item.spec.finalize?.(item.consumer, item.context) ?? []) {
       variables.set(variable.name, variable);
     }
