@@ -3,10 +3,12 @@
 
 import { CATEGORY_META } from "../model.ts";
 import { SEVERITIES, type Severity } from "./findings.ts";
-import { HEADER, type LayoutOptions, type Point } from "./layout.ts";
-import { type LayoutGroup, type LayoutNode, layoutGraphView } from "./layout-view.ts";
+import { CATEGORY_GLYPHS } from "./glyphs.ts";
+import { HEADER, type Point } from "./layout.ts";
+import { type LayoutGroup, type LayoutNode, type LayoutViewOptions, layoutGraphView } from "./layout-view.ts";
+import { GRAPH_CATEGORIES } from "./services.ts";
 import { CARD_KIND_CHARS, CARD_LABEL_CHARS, cleanText, clipMiddle } from "./text.ts";
-import type { EdgeStatus, GraphCategory, GraphStatus, GraphView, ViewGroup, ViewNode } from "./project.ts";
+import type { EdgeStatus, GraphCategory, GraphStatus, GraphView, ViewGroup, ViewNode } from "./view.ts";
 
 /**
  * A {@link GraphView} as a standalone SVG: no script, no external font or image, and the
@@ -56,6 +58,7 @@ export const EDGE_STYLE: Record<EdgeStatus, { stroke: string; width: number; das
   unchanged: { stroke: "#a8a090", width: 1.5 },
   added: { stroke: "#15803d", width: 2 },
   removed: { stroke: "#b91c1c", width: 2, dash: "5 4" },
+  changed: { stroke: "#b45309", width: 2 },
 };
 
 /** Text for XML: control characters dropped (they are not legal there), markup escaped. */
@@ -105,6 +108,35 @@ function groupSvg(group: LayoutGroup): string {
 </g>`;
 }
 
+/** The side of the square a card keeps for its icon or glyph, in its bottom right corner. */
+const SLOT = 28;
+
+/** The icon the caller chose for a node, or the engine's glyph of its category, in the slot. */
+function pictureSvg(node: LayoutNode, colour: string): string {
+  const x = node.x + node.width - SLOT - 10;
+  const y = node.y + node.height - SLOT - 8;
+  if (node.icon !== undefined) {
+    return "href" in node.icon
+      ? `<image href="${esc(node.icon.href)}" x="${x}" y="${y}" width="${SLOT}" height="${SLOT}" preserveAspectRatio="xMidYMid meet"/>`
+      : `<use href="#${esc(node.icon.symbol)}" x="${x}" y="${y}" width="${SLOT}" height="${SLOT}"/>`;
+  }
+  return `<g transform="translate(${x + 2} ${y + 2})" fill="none" stroke="${colour}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${CATEGORY_GLYPHS[node.category]}</g>`;
+}
+
+/** The counts of a summary card: a square in each category's colour and the number of resources of it. */
+function chipsSvg(node: LayoutNode): string {
+  const counts = node.aggregate?.byCategory ?? {};
+  let x = node.x + 14;
+  const y = node.y + node.height - 20;
+  return GRAPH_CATEGORIES.flatMap((category) => {
+    const n = counts[category];
+    if (n === undefined) return [];
+    const out = `<rect x="${x}" y="${y}" width="9" height="9" rx="2" fill="${CATEGORY_COLOUR[category]}"/><text x="${x + 13}" y="${y + 8.5}" font-family="${FONT}" font-size="10" fill="${MUTED}">${n}</text>`;
+    x += 13 + String(n).length * 6.2 + 12;
+    return [out];
+  }).join("");
+}
+
 function nodeSvg(node: LayoutNode): string {
   const colour = CATEGORY_COLOUR[node.category];
   const style = STATUS_STYLE[node.status];
@@ -119,7 +151,7 @@ function nodeSvg(node: LayoutNode): string {
 <rect x="${x}" y="${y}" width="${node.width}" height="${node.height}" rx="9" fill="${style.fill}" stroke="${stroke}" stroke-width="1.5"${style.dash ? ` stroke-dasharray="${style.dash}"` : ""}/>
 <rect x="${x}" y="${y + 10}" width="4" height="${node.height - 20}" rx="2" fill="${colour}"/>
 <text x="${x + 14}" y="${y + 24}" font-family="${FONT}" font-size="9" font-weight="600" fill="${colour}" letter-spacing="0.3"${strike}>${esc(clipMiddle(node.kind, CARD_KIND_CHARS))}</text>
-<text x="${x + 14}" y="${y + 46}" font-family="${FONT}" font-size="12" font-weight="700" fill="${INK}"${strike}>${esc(clipMiddle(node.label, CARD_LABEL_CHARS))}</text>${mark}${node.badges.findings ? marker(node.badges.findings, x + node.width - 6, y) : ""}
+<text x="${x + 14}" y="${y + 46}" font-family="${FONT}" font-size="12" font-weight="700" fill="${INK}"${strike}>${esc(clipMiddle(node.label, CARD_LABEL_CHARS))}</text>${node.aggregate?.level === "overview" ? chipsSvg(node) : pictureSvg(node, colour)}${mark}${node.badges.findings ? marker(node.badges.findings, x + node.width - 6, y) : ""}
 </g>`;
 }
 
@@ -127,6 +159,10 @@ function legend(view: GraphView, y: number): string {
   const items: { colour: string; text: string }[] = [];
   if (view.compared) {
     items.push({ colour: "#15803d", text: "+ added" }, { colour: "#b91c1c", text: "- removed" }, { colour: "#b45309", text: "~ changed" });
+  }
+  if (view.level === "overview") {
+    const present = new Set(view.nodes.flatMap((n) => Object.keys(n.aggregate?.byCategory ?? {})));
+    for (const category of GRAPH_CATEGORIES) if (present.has(category)) items.push({ colour: CATEGORY_COLOUR[category], text: category });
   }
   for (const s of SEVERITIES) if (view.findings?.bySeverity[s]) items.push({ colour: SEVERITY_COLOUR[s], text: s });
   let x = 24;
@@ -139,8 +175,24 @@ function legend(view: GraphView, y: number): string {
     .join("\n");
 }
 
-/** The picture of `view`, its boxes packed toward `options.aspect` (width over height; see {@link LayoutOptions}). */
-export function renderGraphSvg(view: GraphView, options: LayoutOptions = {}): string {
+/** The middle of a line, where the number of references it stands for is written. */
+function middle(points: readonly Point[]): Point | undefined {
+  const n = points.length;
+  if (n === 0) return undefined;
+  if (n % 2 === 1) return points[(n - 1) / 2];
+  const [a, b] = [points[n / 2 - 1] as Point, points[n / 2] as Point];
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+/** `×12` on a line that stands for twelve references. */
+function countSvg(count: number, at: Point, stroke: string): string {
+  const label = `×${count}`;
+  const width = 10 + label.length * 6.4;
+  return `<g><title>${count} references</title><rect x="${num(at.x - width / 2)}" y="${num(at.y - 8)}" width="${num(width)}" height="16" rx="8" fill="${PAPER}" stroke="${stroke}" stroke-width="1"/><text x="${num(at.x)}" y="${num(at.y + 4)}" text-anchor="middle" font-family="${FONT}" font-size="10" font-weight="700" fill="${INK}">${label}</text></g>`;
+}
+
+/** The picture of `view`, its boxes packed toward `options.aspect` (width over height; see {@link LayoutOptions}) and its cards showing the icons `options.icon` chooses. */
+export function renderGraphSvg(view: GraphView, options: LayoutViewOptions = {}): string {
   const layout = layoutGraphView(view, options);
   const head = layout.header;
   const top = layout.top;
@@ -152,7 +204,9 @@ export function renderGraphSvg(view: GraphView, options: LayoutOptions = {}): st
   const bodyHeight = empty ? top + 56 : layout.height;
   const keyItems = legend(view, 0) !== "";
   const footTop = bodyHeight + 4;
-  const width = Math.ceil(Math.max(bodyWidth, 360));
+  // Wide enough for the longest line under the picture, so a small picture does not cut its notes off.
+  const noteWidth = Math.max(0, ...foot.map((line) => 48 + line.length * 6.2));
+  const width = Math.ceil(Math.max(bodyWidth, 360, noteWidth));
   const height = Math.ceil(footTop + foot.length * 16 + (keyItems ? 24 : 0) + 12);
 
   const parts: string[] = [];
@@ -168,6 +222,10 @@ export function renderGraphSvg(view: GraphView, options: LayoutOptions = {}): st
       parts.push(`<path d="${d}" fill="none" stroke="${s.stroke}" stroke-width="${s.width}"${s.dash ? ` stroke-dasharray="${s.dash}"` : ""} marker-end="url(#tg-arrow-${edge.status})"/>`);
     }
     for (const node of layout.nodes) parts.push(nodeSvg(node));
+    for (const edge of layout.edges) {
+      const at = edge.count > 1 ? middle(edge.points) : undefined;
+      if (at !== undefined) parts.push(countSvg(edge.count, at, EDGE_STYLE[edge.status].stroke));
+    }
   } else {
     parts.push(`<text x="24" y="${top + 36}" font-family="${FONT}" font-size="12" fill="${MUTED}">${message}</text>`);
   }

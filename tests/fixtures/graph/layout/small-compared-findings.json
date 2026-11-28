@@ -1,11 +1,13 @@
 {
-  "schema": "diagram.graph-layout/v1",
+  "schema": "diagram.graph-layout/v2",
   "cloud": "aws",
   "title": "Estate",
   "mode": "full",
+  "level": "detailed",
+  "focus": null,
   "compared": true,
-  "width": 934,
-  "height": 520,
+  "width": 852,
+  "height": 582,
   "top": 42,
   "cut": null,
   "header": [
@@ -36,31 +38,32 @@
       },
       "x": 24,
       "y": 66,
-      "width": 886,
-      "height": 430
+      "width": 804,
+      "height": 492
     },
     {
       "id": "g1",
       "kind": "module",
       "label": "module terraform-aws-modules/vpc/aws",
       "detail": "5.13.0",
-      "heading": "module terraform-aws-modules/vpc/aws 5.13.0 [changed]",
+      "heading": "module terraform-aws-modules…",
       "parent": "g0",
       "status": "changed",
       "badges": {
         "change": "changed",
         "findings": null
       },
-      "x": 256,
-      "y": 236,
-      "width": 422,
-      "height": 246
+      "x": 38,
+      "y": 102,
+      "width": 252,
+      "height": 344
     }
   ],
   "nodes": [
     {
       "id": "n0",
       "kind": "module call",
+      "service": "terraform.module",
       "category": "other",
       "label": "terraform-aws-modules/vpc/aws",
       "title": "module call terraform-aws-modules/vpc/aws, changed",
@@ -70,14 +73,15 @@
         "change": "changed",
         "findings": null
       },
-      "x": 270,
-      "y": 272,
-      "width": 172,
+      "x": 52,
+      "y": 370,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n1",
       "kind": "aws_iam_policy",
+      "service": "aws.iam",
       "category": "identity",
       "label": "ReadOnlyAccess",
       "title": "aws_iam_policy ReadOnlyAccess",
@@ -87,14 +91,15 @@
         "change": null,
         "findings": null
       },
-      "x": 724,
-      "y": 406,
-      "width": 172,
+      "x": 326,
+      "y": 370,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n2",
       "kind": "aws_iam_role",
+      "service": "aws.iam",
       "category": "identity",
       "label": "web-role",
       "title": "aws_iam_role web-role",
@@ -104,14 +109,15 @@
         "change": null,
         "findings": null
       },
-      "x": 724,
-      "y": 272,
-      "width": 172,
+      "x": 326,
+      "y": 236,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n3",
       "kind": "aws_instance",
+      "service": "aws.ec2",
       "category": "compute",
       "label": "i-0abc123def456",
       "title": "aws_instance i-0abc123def456, region eu-west-1",
@@ -122,14 +128,15 @@
         "change": null,
         "findings": null
       },
-      "x": 280,
+      "x": 458,
       "y": 102,
-      "width": 172,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n4",
       "kind": "aws_instance",
+      "service": "aws.ec2",
       "category": "compute",
       "label": "i-0old999",
       "title": "aws_instance i-0old999, region eu-west-1, removed",
@@ -140,14 +147,15 @@
         "change": "removed",
         "findings": null
       },
-      "x": 588,
-      "y": 102,
-      "width": 172,
+      "x": 38,
+      "y": 482,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n5",
       "kind": "aws_security_group",
+      "service": "aws.securitygroup",
       "category": "network",
       "label": "sg-0123abcd",
       "title": "aws_security_group sg-0123abcd, region eu-west-1, added",
@@ -158,14 +166,15 @@
         "change": "added",
         "findings": null
       },
-      "x": 38,
-      "y": 272,
-      "width": 172,
+      "x": 590,
+      "y": 236,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n6",
       "kind": "aws_subnet",
+      "service": "aws.vpc",
       "category": "network",
       "label": "subnet-0f1e2d3c",
       "title": "aws_subnet subnet-0f1e2d3c, region eu-west-1",
@@ -176,14 +185,15 @@
         "change": null,
         "findings": null
       },
-      "x": 492,
-      "y": 272,
-      "width": 172,
+      "x": 52,
+      "y": 138,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n7",
       "kind": "aws_vpc",
+      "service": "aws.vpc",
       "category": "network",
       "label": "vpc-0a1b2c3d",
       "title": "aws_vpc vpc-0a1b2c3d, region eu-west-1",
@@ -200,9 +210,9 @@
           }
         }
       },
-      "x": 472,
-      "y": 406,
-      "width": 172,
+      "x": 52,
+      "y": 272,
+      "width": 224,
       "height": 62
     }
   ],
@@ -213,18 +223,19 @@
       "target": "n1",
       "kind": "reference",
       "status": "unchanged",
+      "count": 1,
       "points": [
         {
-          "x": 810,
+          "x": 438,
+          "y": 298
+        },
+        {
+          "x": 438,
           "y": 334
         },
         {
-          "x": 810,
+          "x": 438,
           "y": 370
-        },
-        {
-          "x": 810,
-          "y": 406
         }
       ]
     },
@@ -234,22 +245,23 @@
       "target": "n0",
       "kind": "reference",
       "status": "added",
+      "count": 1,
       "points": [
         {
-          "x": 361,
+          "x": 570,
           "y": 164
         },
         {
-          "x": 356,
-          "y": 200
+          "x": 570,
+          "y": 347
         },
         {
-          "x": 356,
-          "y": 236
+          "x": 164,
+          "y": 347
         },
         {
-          "x": 356,
-          "y": 272
+          "x": 164,
+          "y": 370
         }
       ]
     },
@@ -259,22 +271,19 @@
       "target": "n2",
       "kind": "reference",
       "status": "unchanged",
+      "count": 1,
       "points": [
         {
-          "x": 452,
-          "y": 146
+          "x": 509,
+          "y": 164
         },
         {
-          "x": 810,
+          "x": 438,
           "y": 200
         },
         {
-          "x": 810,
+          "x": 438,
           "y": 236
-        },
-        {
-          "x": 810,
-          "y": 272
         }
       ]
     },
@@ -284,22 +293,19 @@
       "target": "n5",
       "kind": "reference",
       "status": "added",
+      "count": 1,
       "points": [
         {
-          "x": 280,
-          "y": 157
+          "x": 631,
+          "y": 164
         },
         {
-          "x": 124,
+          "x": 702,
           "y": 200
         },
         {
-          "x": 124,
+          "x": 702,
           "y": 236
-        },
-        {
-          "x": 124,
-          "y": 272
         }
       ]
     },
@@ -309,22 +315,23 @@
       "target": "n6",
       "kind": "reference",
       "status": "unchanged",
+      "count": 1,
       "points": [
         {
-          "x": 415,
-          "y": 164
+          "x": 458,
+          "y": 133
         },
         {
-          "x": 472,
-          "y": 200
+          "x": 367,
+          "y": 133
         },
         {
-          "x": 472,
-          "y": 236
+          "x": 367,
+          "y": 169
         },
         {
-          "x": 529,
-          "y": 272
+          "x": 276,
+          "y": 169
         }
       ]
     },
@@ -334,22 +341,15 @@
       "target": "n6",
       "kind": "reference",
       "status": "removed",
+      "count": 1,
       "points": [
         {
-          "x": 652,
-          "y": 164
+          "x": 150,
+          "y": 482
         },
         {
-          "x": 626,
+          "x": 164,
           "y": 200
-        },
-        {
-          "x": 626,
-          "y": 236
-        },
-        {
-          "x": 600,
-          "y": 272
         }
       ]
     },
@@ -359,18 +359,23 @@
       "target": "n7",
       "kind": "reference",
       "status": "added",
+      "count": 1,
       "points": [
         {
-          "x": 210,
-          "y": 324
+          "x": 702,
+          "y": 236
         },
         {
-          "x": 404,
-          "y": 370
+          "x": 702,
+          "y": 224
         },
         {
-          "x": 487,
-          "y": 406
+          "x": 164,
+          "y": 224
+        },
+        {
+          "x": 164,
+          "y": 272
         }
       ]
     },
@@ -380,18 +385,19 @@
       "target": "n7",
       "kind": "reference",
       "status": "unchanged",
+      "count": 1,
       "points": [
         {
-          "x": 578,
-          "y": 334
+          "x": 164,
+          "y": 200
         },
         {
-          "x": 578,
-          "y": 370
+          "x": 164,
+          "y": 236
         },
         {
-          "x": 567,
-          "y": 406
+          "x": 164,
+          "y": 272
         }
       ]
     }

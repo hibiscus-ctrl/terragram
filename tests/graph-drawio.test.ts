@@ -28,16 +28,17 @@ function golden(name: string, actual: string): void {
 
 /** A group, two cards and one reference, written out so that the golden does not depend on the projection. */
 const tiny: GraphView = {
-  schema: "diagram.graph-view/v1",
+  schema: "diagram.graph-view/v2",
   cloud: "aws",
   mode: "full",
+  level: "detailed",
   compared: false,
   groups: [{ id: "g0", kind: "scope", label: "AWS account 123456789012", parent: null, status: "unchanged", findings: null }],
   nodes: [
-    { id: "n0", group: "g0", type: "aws_vpc", label: "vpc-0a1b2c3d", category: "network", status: "unchanged", findings: null },
-    { id: "n1", group: "g0", type: "aws_subnet", label: "subnet-0f1e2d3c", category: "network", status: "unchanged", findings: null },
+    { id: "n0", group: "g0", type: "aws_vpc", label: "vpc-0a1b2c3d", service: "aws.network", category: "network", status: "unchanged", findings: null },
+    { id: "n1", group: "g0", type: "aws_subnet", label: "subnet-0f1e2d3c", service: "aws.network", category: "network", status: "unchanged", findings: null },
   ],
-  edges: [{ from: "n1", to: "n0", status: "unchanged" }],
+  edges: [{ from: "n1", to: "n0", status: "unchanged", count: 1 }],
   hidden: { count: 0, types: [] },
 };
 
@@ -132,5 +133,58 @@ describe("renderGraphDrawio", () => {
     );
     assert.match(xml, /value="No resources to draw\."/);
     assert.match(renderGraphDrawio({ ...view, mode: "delta" }), /value="No changes\."/);
+  });
+
+  it("carries draw.io's own shape name for a service it has one for, and no art", () => {
+    const doc = (cloud: "aws" | "azure" | "google", nodes: object[]) =>
+      parseGraphDocument(
+        JSON.stringify({
+          schema: "infraharvest/graph/v1",
+          run_id: "6f1c9d3e-0a52-5b8e-9c47-2d1f3a5b7c90",
+          generated_at: "2026-11-20T10:00:00Z",
+          tool: { name: "infraharvest", version: "0.4.0" },
+          cloud,
+          nodes,
+          edges: [],
+          redaction: { ids_hashed: false, hash_alg: "hmac-sha256" },
+        }),
+      );
+    const aws = renderGraphDrawio(
+      projectGraph(
+        doc("aws", [
+          { kind: "resource", type: "aws_lambda_function", id: "fn", account: "1" },
+          { kind: "resource", type: "aws_db_instance", id: "db", account: "1" },
+          { kind: "resource", type: "aws_accessanalyzer_analyzer", id: "an", account: "1" },
+        ]),
+      ),
+    );
+    assert.match(aws, /style="[^"]*shape=mxgraph\.aws4\.resourceIcon;resIcon=mxgraph\.aws4\.lambda;"/);
+    assert.match(aws, /resIcon=mxgraph\.aws4\.rds;/);
+    const found = cells(aws);
+    const icons = found.filter((c) => c.id?.endsWith("-icon"));
+    assert.equal(icons.length, 2, "the analyzer has no draw.io shape and keeps the plain card");
+    for (const icon of icons) assert.ok(found.some((c) => c.id === icon.parent), "an icon is inside its card");
+    assert.match(aws, /<mxCell id="n\d+-icon" value="" style="[^"]*" vertex="1" parent="n\d+"><mxGeometry x="10" y="\d+" width="32" height="32" as="geometry"\/>/);
+    assert.ok(!/html=|<image|data:|base64|<svg/.test(aws), "a name, never markup or art");
+
+    const azure = renderGraphDrawio(projectGraph(doc("azure", [{ kind: "resource", type: "azurerm_mssql_server", id: "sql", account: "sub" }])));
+    assert.match(azure, /style="image;aspect=fixed;image=img\/lib\/azure2\/databases\/SQL_Database\.svg;"/);
+    const gcp = renderGraphDrawio(projectGraph(doc("google", [{ kind: "resource", type: "google_container_cluster", id: "gke", account: "p" }])));
+    assert.match(gcp, /shape=mxgraph\.gcp3\.gke;"/);
+
+    const none = renderGraphDrawio(projectGraph(doc("aws", [{ kind: "resource", type: "aws_lambda_function", id: "fn", account: "1" }]), { level: "overview" }));
+    assert.ok(!none.includes("-icon"), "a summary card stands for no service");
+    assert.match(none, /value="[^"]*lambda 1|value="[^"]*compute 1/, "it lists its counts instead");
+    const services = renderGraphDrawio(
+      projectGraph(
+        doc("aws", [
+          { kind: "resource", type: "aws_lambda_function", id: "a", account: "1" },
+          { kind: "resource", type: "aws_lambda_function", id: "b", account: "1" },
+        ]),
+        { level: "services" },
+      ),
+    );
+    assert.match(services, /value="aws_lambda_function&#10;Lambda ×2"/);
+    assert.match(services, /resIcon=mxgraph\.aws4\.lambda;/);
   });
 });

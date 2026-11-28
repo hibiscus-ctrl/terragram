@@ -164,3 +164,13 @@ export function tally(findings: readonly Severity[]): FindingTally | null {
   const worst = SEVERITIES.find((severity) => bySeverity[severity] !== undefined) ?? "info";
   return { count: findings.length, worst, bySeverity };
 }
+
+/** The sum of tallies (a box and the cards it stands for, say); null when there is nothing in any of them. */
+export function mergeTallies(tallies: readonly (FindingTally | null)[]): FindingTally | null {
+  const severities: Severity[] = [];
+  for (const t of tallies) {
+    if (t === null) continue;
+    for (const severity of SEVERITIES) for (let i = 0; i < (t.bySeverity[severity] ?? 0); i++) severities.push(severity);
+  }
+  return tally(severities);
+}

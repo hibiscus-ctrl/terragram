@@ -1,10 +1,12 @@
 {
-  "schema": "diagram.graph-layout/v1",
+  "schema": "diagram.graph-layout/v2",
   "cloud": "aws",
   "mode": "full",
+  "level": "detailed",
+  "focus": null,
   "compared": false,
-  "width": 1164,
-  "height": 344,
+  "width": 588,
+  "height": 456,
   "top": 0,
   "cut": {
     "maxNodes": 6,
@@ -30,15 +32,15 @@
       },
       "x": 24,
       "y": 24,
-      "width": 1116,
-      "height": 296
+      "width": 540,
+      "height": 408
     },
     {
       "id": "g2",
       "kind": "module",
       "label": "module terraform-aws-modules/s3-bucket/aws",
       "detail": "4.1.0",
-      "heading": "module terraform-aws…",
+      "heading": "module terraform-aws-modules…",
       "parent": "g0",
       "status": "unchanged",
       "badges": {
@@ -46,8 +48,8 @@
         "findings": null
       },
       "x": 38,
-      "y": 194,
-      "width": 200,
+      "y": 306,
+      "width": 252,
       "height": 112
     },
     {
@@ -55,23 +57,24 @@
       "kind": "module",
       "label": "module terraform-aws-modules/vpc/aws",
       "detail": "5.13.0",
-      "heading": "module terraform-aws-modules/vpc/aws 5.13.0",
+      "heading": "module terraform-aws-modules…",
       "parent": "g0",
       "status": "unchanged",
       "badges": {
         "change": null,
         "findings": null
       },
-      "x": 714,
-      "y": 194,
-      "width": 412,
-      "height": 112
+      "x": 38,
+      "y": 60,
+      "width": 252,
+      "height": 210
     }
   ],
   "nodes": [
     {
       "id": "n0",
       "kind": "module call",
+      "service": "terraform.module",
       "category": "other",
       "label": "terraform-aws-modules/s3-bucket/aws",
       "title": "module call terraform-aws-modules/s3-bucket/aws",
@@ -82,13 +85,14 @@
         "findings": null
       },
       "x": 52,
-      "y": 230,
-      "width": 172,
+      "y": 342,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n1",
       "kind": "module call",
+      "service": "terraform.module",
       "category": "other",
       "label": "terraform-aws-modules/vpc/aws",
       "title": "module call terraform-aws-modules/vpc/aws",
@@ -98,14 +102,15 @@
         "change": null,
         "findings": null
       },
-      "x": 728,
-      "y": 230,
-      "width": 172,
+      "x": 52,
+      "y": 96,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n2",
       "kind": "aws_db_instance",
+      "service": "aws.rds",
       "category": "data",
       "label": "db-main",
       "title": "aws_db_instance db-main, region eu-west-1",
@@ -116,14 +121,15 @@
         "change": null,
         "findings": null
       },
-      "x": 284,
+      "x": 326,
       "y": 60,
-      "width": 172,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n3",
       "kind": "aws_db_subnet_group",
+      "service": "aws.rds",
       "category": "data",
       "label": "main-db",
       "title": "aws_db_subnet_group main-db, region eu-west-1",
@@ -134,14 +140,15 @@
         "change": null,
         "findings": null
       },
-      "x": 284,
-      "y": 230,
-      "width": 172,
+      "x": 326,
+      "y": 194,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n4",
       "kind": "aws_eip",
+      "service": "aws.vpc",
       "category": "network",
       "label": "eipalloc-0a1",
       "title": "aws_eip eipalloc-0a1, region eu-west-1",
@@ -152,14 +159,15 @@
         "change": null,
         "findings": null
       },
-      "x": 940,
-      "y": 230,
-      "width": 172,
+      "x": 52,
+      "y": 194,
+      "width": 224,
       "height": 62
     },
     {
       "id": "n5",
       "kind": "aws_iam_instance_profile",
+      "service": "aws.iam",
       "category": "identity",
       "label": "app-profile",
       "title": "aws_iam_instance_profile app-profile",
@@ -169,9 +177,9 @@
         "change": null,
         "findings": null
       },
-      "x": 496,
-      "y": 230,
-      "width": 172,
+      "x": 326,
+      "y": 306,
+      "width": 224,
       "height": 62
     }
   ],
@@ -182,22 +190,19 @@
       "target": "n3",
       "kind": "reference",
       "status": "unchanged",
+      "count": 1,
       "points": [
         {
-          "x": 370,
+          "x": 438,
           "y": 122
         },
         {
-          "x": 370,
+          "x": 438,
           "y": 158
         },
         {
-          "x": 370,
+          "x": 438,
           "y": 194
-        },
-        {
-          "x": 370,
-          "y": 230
         }
       ]
     }

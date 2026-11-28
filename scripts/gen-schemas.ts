@@ -38,8 +38,8 @@ type SchemaSpec = {
 
 const SCHEMAS: SchemaSpec[] = [
   {
-    file: "graph-layout.v1.schema.json",
-    title: "Estate graph layout (diagram.graph-layout/v1)",
+    file: "graph-layout.v2.schema.json",
+    title: "Estate graph layout (diagram.graph-layout/v2)",
     description:
       `An infraharvest graph/v1 estate laid out as plain data: nodes and boxes with their rectangles, edges with their routes, and the badges (change, findings) each carries. These are the coordinates the engine's SVG is drawn from, so a viewer that places them draws the same picture. Every string is plain text, never markup. At most ${MAX_GRAPH_NODES} nodes; \`cut\` says when an estate was cut.`,
     schema: graphLayoutSchema,

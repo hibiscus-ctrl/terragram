@@ -191,12 +191,23 @@ the CLI, so its output is a contract.
 
 - **Pipeline.** `parseGraphDocument` (zod, mirrors `schemas/vendor/infraharvest/graph-v1.schema.json`)
   → `normalizeGraph` (index-free keys, glue folded away) → `projectGraph` (the `GraphView`: groups,
-  nodes, edges, statuses, finding tallies) → `renderGraphSvg` / `renderGraphDrawio` / `renderGraphMermaid`. Layout (`graph/layout.ts`) is built inside out:
+  nodes, edges, statuses, finding tallies; then `atLevel` and `focusView` in `graph/levels.ts`, then the cut) → `renderGraphSvg` / `renderGraphDrawio` / `renderGraphMermaid`. Layout (`graph/layout.ts`) is built inside out:
   the cards of a box that refer to each other are a dagre cluster, a card that refers to none is a block of one, and a box's blocks (clusters,
   lone cards, inner boxes) are shelf-packed toward an `aspect` (width over height, default 1.6, bounds `MIN_ASPECT`..`MAX_ASPECT`, a RangeError outside them;
   `terragram graph --aspect`), tallest first with the view's order as the tie-break. The inner boxes are tried at a few shapes and the best picture is kept.
   A line between two cards of one box is the cluster's own route; every other line is routed in `route` through the gaps between cards.
-- **The layout is a public API** (`graph/layout-view.ts`, `diagram.graph-layout/v1`, `schemas/graph-layout.v1.schema.json`).
+- **Levels, focus and the service table.** The view types are in `graph/view.ts` (types only, so `levels.ts` can reshape a view without importing `project.ts`: the import cycle rule). `projectGraph` builds the detailed
+  view (delta already applied), then `atLevel` folds it (`services`: per box, per service id; `overview`: a box with no box inside becomes a summary card, a scope or a box with boxes inside stays a box with a card for what is directly in it),
+  then `focusView` keeps a node and its neighbours, then `cutView` cuts, so the 1000-card cap is of what is drawn. A folded card is `a<n>` and carries `aggregate.ids`: ids of the detailed view of the same options. A card of one
+  resource at `services` keeps its `n<n>` id. Focus keeps the ids of the unfocused picture and resolves `node` by id (of the same level, comparison and delta) or by a unique label. A folded card's status is the one all its members share,
+  else `changed` (any change among them); a folded line's likewise (`EdgeStatus` has `changed` for this). Conservation is tested: every detailed node is in one card, every reference is a line or inside a card.
+  `graph/services.ts` is the Terraform type to service table (rows of id, name, category and exact types or `prefix*`, the longest prefix wins, an exact type beats a prefix); a node's category comes from it, and a type it lacks is
+  `<cloud>.<category>` with `known: false`. `tests/graph-services.test.ts` holds every type of `tests/fixtures/graph/catalogue-types.json` (infraharvest's catalogue, with the commit) to a row: refresh the fixture when the catalogue grows
+  and add rows. Written from scratch: never copy another project's mapping (cycloidio/tfdocs has no licence). Keep service names short (a card shows 24 characters of "Name ×N").
+- **No vendor art in the engine.** Icons come in through `icon` (`graph/icons.ts`: `{ href } | { symbol }`, validated, a `TypeError` otherwise), are carried on the layout node and drawn by the SVG as `<image>`/`<use>`; the default is
+  `CATEGORY_GLYPHS` (`graph/glyphs.ts`, our own line drawings). draw.io gets shape *names* (`graph/drawio-shapes.ts`, copied from draw.io's own sidebar definitions: AWS 19 `resIcon`, Azure 2 `img/lib/azure2/...`, Google Cloud 3 `mxgraph.gcp3.*`),
+  so the file holds no art. Never add an SVG or PNG of a cloud's icon to this repo or a data URI of one to a test.
+- **The layout is a public API** (`graph/layout-view.ts`, `diagram.graph-layout/v2`, `schemas/graph-layout.v2.schema.json`).
   `layoutGraphDocument(doc, options)` (or `layoutGraphView(view)`) returns the picture as plain data: `groups` and `nodes` with their
   rectangles (whole numbers, the SVG's coordinates, shifted down by `top` when a title or summary sits above), `edges` with their routes,
   badges (`change`, `findings`), header and footer lines, `cut`. The web app's React Flow canvas places these; it must not lay out again.
@@ -206,7 +217,7 @@ the CLI, so its output is a contract.
   escapes it on writing and a viewer must render it as text, never as HTML. A field is added there (and to the zod schema, then `npm run schemas:gen`) before any
   renderer or viewer reads it. The bound is `MAX_GRAPH_NODES` (1000, `projectGraph`'s `maxNodes`): a larger estate is cut to the first cards of
   the picture's order in `projectGraph`, so every format shows the same part, and `view.cut` / `layout.cut` and a footer line say how much was left out.
-  Changing the shape is a new schema version.
+  Changing the shape is a new schema version (it is v2 since the levels; the view is `diagram.graph-view/v2`).
 - **Deterministic by construction.** Every order is by key with `compareText` (never `localeCompare`; the receipt hash, the preview id and the variable order included),
   ids are assigned after sorting, coordinates are rounded, nothing reads the clock or the environment.
   The one order of a picture (`byPlace` in `graph/project.ts`) is scope, environment name, module path

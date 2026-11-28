@@ -1,11 +1,14 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { type FindingTally, type GraphFinding, SEVERITIES, type Severity, tally } from "./findings.ts";
+import { type GraphFinding, SEVERITIES, type Severity, tally } from "./findings.ts";
 import { diffNormal } from "./diff.ts";
 import { DEFAULT_GLUE, type GlueRule } from "./glue.ts";
+import { atLevel, cutView, focusView } from "./levels.ts";
 import { compareText, type NormalGraph, type NormalNode, normalizeGraph } from "./normalize.ts";
 import type { GraphDocument } from "./schema.ts";
+import { serviceOf } from "./services.ts";
+import type { EdgeStatus, FocusOptions, GraphLevel, GraphStatus, GraphView, ViewEdge, ViewGroup, ViewNode } from "./view.ts";
 
 /**
  * The drawing of an estate before any drawing: what is in the picture, how it nests
@@ -28,55 +31,6 @@ import type { GraphDocument } from "./schema.ts";
  * edges follow it, so the same estate is the same picture whatever order the document lists it in.
  */
 
-export type GraphStatus = "unchanged" | "added" | "removed" | "changed" | "context";
-export type EdgeStatus = "unchanged" | "added" | "removed";
-export type GraphCategory = "network" | "compute" | "storage" | "identity" | "data" | "other";
-
-export type ViewGroup = {
-  id: string;
-  kind: "scope" | "environment" | "module";
-  label: string;
-  detail?: string;
-  parent: string | null;
-  status: GraphStatus;
-  findings: FindingTally | null;
-};
-
-export type ViewNode = {
-  id: string;
-  group: string;
-  /** The resource type, or `module call` for a module's card. */
-  type: string;
-  label: string;
-  category: GraphCategory;
-  region?: string;
-  /** The environment of the node's root, when the graph names one. */
-  environment?: string;
-  status: GraphStatus;
-  findings: FindingTally | null;
-};
-
-export type ViewEdge = { from: string; to: string; status: EdgeStatus };
-
-export type GraphView = {
-  schema: "diagram.graph-view/v1";
-  cloud: GraphDocument["cloud"];
-  title?: string;
-  mode: "full" | "delta";
-  /** A base graph was given, so statuses say what changed. */
-  compared: boolean;
-  groups: ViewGroup[];
-  nodes: ViewNode[];
-  edges: ViewEdge[];
-  hidden: { count: number; types: { type: string; count: number }[] };
-  /** Counts of what changed between base and head, with glue left out. */
-  changes?: { nodesAdded: number; nodesRemoved: number; nodesChanged: number; edgesAdded: number; edgesRemoved: number };
-  /** Present when the picture was cut to its first `maxNodes` resources: how many cards and references were left out. */
-  cut?: { maxNodes: number; nodes: number; edges: number };
-  /** How many findings were given, how many found nothing to attach to, and how many of each severity were placed. */
-  findings?: { total: number; unplaced: number; bySeverity: Partial<Record<Severity, number>> };
-};
-
 /**
  * The most cards a picture holds. A larger estate is cut to its first ones in the order of the picture
  * (scope, environment, module path, address, key) and the view says so in `cut`: the layout is the costly part
@@ -94,29 +48,20 @@ export type ProjectOptions = {
   base?: GraphDocument;
   /** With `base`: draw only what changed and the nodes one reference away from it. */
   delta?: boolean;
+  /**
+   * How much to draw: `detailed` (the default) a card per resource, `services` the resources of one service in a group as one card
+   * (`Lambda x12`), `overview` each group as one summary card with its resources counted by category. The references between cards
+   * are added up. Ids of the cards that stand for several resources are `a0`, `a1`, and `aggregate` lists the ids they stand for.
+   */
+  level?: GraphLevel;
+  /** Draw only this node, the nodes within `hops` references of it (either direction) and the boxes around them. Applied after `level` and `delta`. */
+  focus?: FocusOptions;
   findings?: readonly GraphFinding[];
   /** Turn a Terraform address into the type and ID graph/v1 names a resource by, for an address the graph itself does not keep or does not tell apart. */
   resolveAddress?: (address: string) => { type: string; id: string; account?: string } | undefined;
 };
 
 const PROVIDER_NAME = { aws: "AWS account", azure: "Azure subscription", google: "Google Cloud project" } as const;
-
-const CATEGORY_TOKENS: readonly (readonly [GraphCategory, ReadonlySet<string>])[] = [
-  ["identity", new Set(["iam", "role", "policy", "identity", "principal", "account", "kms", "key", "secret", "vault"])],
-  ["data", new Set(["db", "rds", "dynamodb", "sql", "cosmosdb", "redis", "cache", "elasticache", "bigtable", "spanner", "bigquery", "dataset", "mysql", "postgresql", "database", "redshift"])],
-  ["storage", new Set(["s3", "bucket", "storage", "disk", "volume", "ebs", "efs", "blob", "file", "backup", "snapshot"])],
-  ["network", new Set(["vpc", "subnet", "subnetwork", "route", "gateway", "network", "nat", "vnet", "firewall", "dns", "lb", "elb", "alb", "nlb", "security", "nsg", "eip", "endpoint", "peering", "vpn", "cloudfront", "cdn", "nic", "ip"])],
-  ["compute", new Set(["instance", "lambda", "function", "ecs", "eks", "container", "cluster", "kubernetes", "vm", "machine", "autoscaling", "launch", "app", "batch", "compute", "service"])],
-];
-
-/** A coarse kind for colouring: read off the words of a Terraform resource type. */
-function categoryOf(type: string): GraphCategory {
-  const tokens = type.split("_");
-  for (const [category, words] of CATEGORY_TOKENS) {
-    if (tokens.some((token) => words.has(token))) return category;
-  }
-  return "other";
-}
 
 /** A resource ID short enough for a card: a hashed ID by its first characters, a path by its last part. */
 function shortId(id: string, hashed: boolean): string {
@@ -340,12 +285,14 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
     const container = containerOf(key);
     const isCard = n.kind === "module";
     const group = (isCard ? moduleId.get(key) : container === undefined ? undefined : moduleId.get(container)) ?? boxOf(n.account, n.environment) ?? "";
+    const service = isCard ? undefined : serviceOf(n.type ?? "");
     nodes.push({
       id,
       group,
       type: isCard ? "module call" : (n.type ?? ""),
       label: isCard ? shortSource(n.source ?? "") : shortId(n.id ?? "", head.idsHashed),
-      category: isCard ? "other" : categoryOf(n.type ?? ""),
+      service: service?.id ?? "terraform.module",
+      category: service?.category ?? "other",
       ...(n.region !== undefined && !isCard && { region: n.region }),
       ...(n.environment !== undefined && { environment: n.environment }),
       status: entry.status,
@@ -360,7 +307,7 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
       return from !== undefined && to !== undefined ? [{ from, to, status: e.status, at: [nodeIndex.get(e.from) ?? 0, nodeIndex.get(e.to) ?? 0] as const }] : [];
     })
     .sort((a, b) => a.at[0] - b.at[0] || a.at[1] - b.at[1])
-    .map(({ from, to, status }) => ({ from, to, status }));
+    .map(({ from, to, status }) => ({ from, to, status, count: 1 }));
 
   const hiddenCounts = new Map<string, number>();
   for (const n of head.hidden) hiddenCounts.set(n.type ?? "", (hiddenCounts.get(n.type ?? "") ?? 0) + 1);
@@ -373,10 +320,11 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
   }
 
   const view: GraphView = {
-    schema: "diagram.graph-view/v1",
+    schema: "diagram.graph-view/v2",
     cloud: doc.cloud,
     ...(options.title !== undefined && { title: options.title }),
     mode: options.delta ? "delta" : "full",
+    level: "detailed",
     compared: base !== undefined,
     groups,
     nodes,
@@ -396,26 +344,8 @@ export function projectGraph(doc: GraphDocument, options: ProjectOptions = {}): 
     }),
     ...(given.length > 0 && { findings: { total: given.length, unplaced: given.length - placement.placed.length, bySeverity } }),
   };
-  return cutView(view, options.maxNodes ?? MAX_GRAPH_NODES);
-}
-
-/** The view's first `maxNodes` cards, the references between them and the boxes around them; `cut` says what was left out. */
-function cutView(view: GraphView, maxNodes: number): GraphView {
-  const limit = Math.max(0, Math.floor(maxNodes));
-  if (view.nodes.length <= limit) return view;
-  const nodes = view.nodes.slice(0, limit);
-  const kept = new Set(nodes.map((n) => n.id));
-  const edges = view.edges.filter((e) => kept.has(e.from) && kept.has(e.to));
-  const parentOf = new Map(view.groups.map((g) => [g.id, g.parent]));
-  const used = new Set<string>();
-  for (const node of nodes) {
-    for (let id: string | null | undefined = node.group; id !== null && id !== undefined && !used.has(id); id = parentOf.get(id)) used.add(id);
-  }
-  return {
-    ...view,
-    groups: view.groups.filter((g) => used.has(g.id)),
-    nodes,
-    edges,
-    cut: { maxNodes: limit, nodes: view.nodes.length - nodes.length, edges: view.edges.length - edges.length },
-  };
+  // The level and the focus change which cards there are, so the cut is of what is left: an estate of ten thousand
+  // resources is whole at the Overview level.
+  const leveled = atLevel(view, options.level ?? "detailed");
+  return cutView(options.focus === undefined ? leveled : focusView(leveled, options.focus), options.maxNodes ?? MAX_GRAPH_NODES);
 }

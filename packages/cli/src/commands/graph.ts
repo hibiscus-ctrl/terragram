@@ -8,8 +8,11 @@ import {
   DEFAULT_GLUE,
   type GraphLayoutOptions,
   type GraphDocument,
+  GRAPH_LEVELS,
   GraphDocumentError,
+  GraphViewError,
   MAX_ASPECT,
+  MAX_FOCUS_HOPS,
   MIN_ASPECT,
   parseFindings,
   parseGraphDocument,
@@ -39,6 +42,15 @@ Options:
   --title <text>           a title for the picture
   --aspect <ratio>         the width over the height to pack the picture toward (svg and drawio;
                            default ${DEFAULT_ASPECT}, from ${MIN_ASPECT} to ${MAX_ASPECT})
+  --level <level>          how much to draw: detailed (default; a card per resource), services (the
+                           resources of one service in a box as one card, "Lambda x12") or overview
+                           (each box as one card, its resources counted by category); a line between
+                           cards carries the number of references it stands for
+  --focus <node>           draw only this node and what is within --hops references of it, with the
+                           boxes around them; a node id from \`--format json\` run with the same --level,
+                           --base and --delta (n12; a0 for a card of several resources), or a label (a
+                           resource's short ID) that only one node has
+  --hops <n>               with --focus: how many references away to go, 1 to ${MAX_FOCUS_HOPS} (default 1)
   --show-glue              draw the resources that are hidden as glue (attachments,
                            associations, random_*, null_resource, ...)
   --hide <glob>            also hide resource types matching this glob, e.g. aws_cloudwatch_* (repeatable)
@@ -60,6 +72,16 @@ function readGraph(io: Io, path: string): GraphDocument {
   }
 }
 
+/** The picture, with a focus that the graph has no node for said as a mistake of the arguments. */
+function project(doc: GraphDocument, options: Parameters<typeof projectGraph>[1]) {
+  try {
+    return projectGraph(doc, options);
+  } catch (error) {
+    if (error instanceof GraphViewError) throw new UsageError(error.message);
+    throw error;
+  }
+}
+
 export async function graph(argv: string[], io: Io): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -70,6 +92,9 @@ export async function graph(argv: string[], io: Io): Promise<number> {
       format: { type: "string", short: "f", default: "svg" },
       title: { type: "string" },
       aspect: { type: "string" },
+      level: { type: "string" },
+      focus: { type: "string" },
+      hops: { type: "string" },
       "show-glue": { type: "boolean", default: false },
       hide: { type: "string", multiple: true },
       keep: { type: "string", multiple: true },
@@ -93,6 +118,12 @@ export async function graph(argv: string[], io: Io): Promise<number> {
     layout = { aspect };
   }
   if (values.delta && values.base === undefined) throw new UsageError("--delta needs --base");
+  const level = values.level === undefined ? "detailed" : GRAPH_LEVELS.find((l) => l === values.level);
+  if (level === undefined) throw new UsageError(`--level must be one of ${GRAPH_LEVELS.join(", ")}`);
+  if (values.focus === undefined && values.hops !== undefined) throw new UsageError("--hops needs --focus");
+  if (values.focus === "") throw new UsageError("--focus needs a node");
+  const hops = values.hops === undefined ? 1 : /^[0-9]+$/.test(values.hops) ? Number(values.hops) : Number.NaN;
+  if (!(hops >= 1 && hops <= MAX_FOCUS_HOPS)) throw new UsageError(`--hops must be a whole number from 1 to ${MAX_FOCUS_HOPS}`);
 
   const hide = values.hide ?? [];
   const glue = values["show-glue"]
@@ -111,9 +142,11 @@ export async function graph(argv: string[], io: Io): Promise<number> {
     }
   }
 
-  const view = projectGraph(doc, {
+  const view = project(doc, {
     glue,
     delta: values.delta,
+    level,
+    ...(values.focus !== undefined && { focus: { node: values.focus, hops } }),
     ...(base && { base }),
     ...(findings && { findings }),
     ...(values.title !== undefined && { title: values.title }),

@@ -1,0 +1,535 @@
+{
+  "schema": "diagram.graph-layout/v2",
+  "cloud": "aws",
+  "mode": "full",
+  "level": "services",
+  "focus": {
+    "node": "a3",
+    "label": "EC2 ×2",
+    "hops": 1,
+    "shown": 7,
+    "of": 15
+  },
+  "compared": false,
+  "width": 616,
+  "height": 540,
+  "top": 0,
+  "cut": null,
+  "header": [],
+  "footer": [
+    "Services: one card per service in a box, with its number of resources; a line carries the number of references between two cards.",
+    "Focus: EC2 ×2 and what is within 1 reference of it, 7 of 15 cards.",
+    "11 glue resources hidden: aws_route_table_association x4, aws_iam_role_policy_attachment x2, aws_lb_target_group_attachment x2, aws_lambda_permission x1, and 2 more types."
+  ],
+  "groups": [
+    {
+      "id": "g0",
+      "kind": "scope",
+      "label": "AWS account 123456789012",
+      "heading": "AWS account 123456789012",
+      "parent": null,
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 24,
+      "y": 24,
+      "width": 568,
+      "height": 492
+    },
+    {
+      "id": "g2",
+      "kind": "module",
+      "label": "module terraform-aws-modules/s3-bucket/aws",
+      "detail": "4.1.0",
+      "heading": "module terraform-aws-modules…",
+      "parent": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 38,
+      "y": 60,
+      "width": 252,
+      "height": 210
+    },
+    {
+      "id": "g3",
+      "kind": "module",
+      "label": "module terraform-aws-modules/vpc/aws",
+      "detail": "5.13.0",
+      "heading": "module terraform-aws-modules…",
+      "parent": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 326,
+      "y": 60,
+      "width": 252,
+      "height": 210
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n0",
+      "kind": "module call",
+      "service": "terraform.module",
+      "category": "other",
+      "label": "terraform-aws-modules/s3-bucket/aws",
+      "title": "module call terraform-aws-modules/s3-bucket/aws",
+      "group": "g2",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 52,
+      "y": 96,
+      "width": 224,
+      "height": 62
+    },
+    {
+      "id": "n1",
+      "kind": "module call",
+      "service": "terraform.module",
+      "category": "other",
+      "label": "terraform-aws-modules/vpc/aws",
+      "title": "module call terraform-aws-modules/vpc/aws",
+      "group": "g3",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 340,
+      "y": 96,
+      "width": 224,
+      "height": 62
+    },
+    {
+      "id": "a1",
+      "kind": "aws_subnet +5 more",
+      "service": "aws.vpc",
+      "category": "network",
+      "aggregate": {
+        "level": "services",
+        "count": 10,
+        "ids": [
+          "n4",
+          "n10",
+          "n14",
+          "n15",
+          "n16",
+          "n21",
+          "n22",
+          "n23",
+          "n24",
+          "n25"
+        ],
+        "byCategory": {
+          "network": 10
+        },
+        "byStatus": {
+          "unchanged": 10
+        },
+        "types": [
+          {
+            "type": "aws_subnet",
+            "count": 4
+          },
+          {
+            "type": "aws_route_table",
+            "count": 2
+          },
+          {
+            "type": "aws_eip",
+            "count": 1
+          },
+          {
+            "type": "aws_internet_gateway",
+            "count": 1
+          },
+          {
+            "type": "aws_nat_gateway",
+            "count": 1
+          },
+          {
+            "type": "aws_vpc",
+            "count": 1
+          }
+        ],
+        "internal": 11
+      },
+      "label": "VPC ×10",
+      "title": "VPC ×10: 10 resources; aws_subnet 4, aws_route_table 2, aws_eip 1, aws_internet_gateway 1, aws_nat_gateway 1, aws_vpc 1, region eu-west-1",
+      "group": "g3",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 340,
+      "y": 194,
+      "width": 224,
+      "height": 62
+    },
+    {
+      "id": "a2",
+      "kind": "aws_iam_instance_profile +2 more",
+      "service": "aws.iam",
+      "category": "identity",
+      "aggregate": {
+        "level": "services",
+        "count": 3,
+        "ids": [
+          "n5",
+          "n6",
+          "n7"
+        ],
+        "byCategory": {
+          "identity": 3
+        },
+        "byStatus": {
+          "unchanged": 3
+        },
+        "types": [
+          {
+            "type": "aws_iam_instance_profile",
+            "count": 1
+          },
+          {
+            "type": "aws_iam_policy",
+            "count": 1
+          },
+          {
+            "type": "aws_iam_role",
+            "count": 1
+          }
+        ],
+        "internal": 1
+      },
+      "label": "IAM ×3",
+      "title": "IAM ×3: 3 resources; aws_iam_instance_profile 1, aws_iam_policy 1, aws_iam_role 1",
+      "group": "g0",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 38,
+      "y": 440,
+      "width": 224,
+      "height": 62
+    },
+    {
+      "id": "a3",
+      "kind": "aws_instance",
+      "service": "aws.ec2",
+      "category": "compute",
+      "aggregate": {
+        "level": "services",
+        "count": 2,
+        "ids": [
+          "n8",
+          "n9"
+        ],
+        "byCategory": {
+          "compute": 2
+        },
+        "byStatus": {
+          "unchanged": 2
+        },
+        "types": [
+          {
+            "type": "aws_instance",
+            "count": 2
+          }
+        ],
+        "internal": 0
+      },
+      "label": "EC2 ×2",
+      "title": "EC2 ×2: 2 resources; aws_instance 2, region eu-west-1",
+      "group": "g0",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 170,
+      "y": 306,
+      "width": 224,
+      "height": 62
+    },
+    {
+      "id": "a5",
+      "kind": "aws_s3_bucket +1 more",
+      "service": "aws.s3",
+      "category": "storage",
+      "aggregate": {
+        "level": "services",
+        "count": 2,
+        "ids": [
+          "n17",
+          "n18"
+        ],
+        "byCategory": {
+          "storage": 2
+        },
+        "byStatus": {
+          "unchanged": 2
+        },
+        "types": [
+          {
+            "type": "aws_s3_bucket",
+            "count": 1
+          },
+          {
+            "type": "aws_s3_bucket_policy",
+            "count": 1
+          }
+        ],
+        "internal": 1
+      },
+      "label": "S3 ×2",
+      "title": "S3 ×2: 2 resources; aws_s3_bucket 1, aws_s3_bucket_policy 1, region eu-west-1",
+      "group": "g2",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 52,
+      "y": 194,
+      "width": 224,
+      "height": 62
+    },
+    {
+      "id": "a6",
+      "kind": "aws_security_group",
+      "service": "aws.securitygroup",
+      "category": "network",
+      "aggregate": {
+        "level": "services",
+        "count": 2,
+        "ids": [
+          "n19",
+          "n20"
+        ],
+        "byCategory": {
+          "network": 2
+        },
+        "byStatus": {
+          "unchanged": 2
+        },
+        "types": [
+          {
+            "type": "aws_security_group",
+            "count": 2
+          }
+        ],
+        "internal": 1
+      },
+      "label": "Security group ×2",
+      "title": "Security group ×2: 2 resources; aws_security_group 2, region eu-west-1",
+      "group": "g0",
+      "region": "eu-west-1",
+      "status": "unchanged",
+      "badges": {
+        "change": null,
+        "findings": null
+      },
+      "x": 302,
+      "y": 440,
+      "width": 224,
+      "height": 62
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "source": "a3",
+      "target": "n0",
+      "kind": "reference",
+      "status": "unchanged",
+      "count": 2,
+      "points": [
+        {
+          "x": 282,
+          "y": 306
+        },
+        {
+          "x": 282,
+          "y": 184
+        },
+        {
+          "x": 164,
+          "y": 184
+        },
+        {
+          "x": 164,
+          "y": 158
+        }
+      ]
+    },
+    {
+      "id": "e1",
+      "source": "a3",
+      "target": "n1",
+      "kind": "reference",
+      "status": "unchanged",
+      "count": 1,
+      "points": [
+        {
+          "x": 282,
+          "y": 306
+        },
+        {
+          "x": 282,
+          "y": 184
+        },
+        {
+          "x": 452,
+          "y": 184
+        },
+        {
+          "x": 452,
+          "y": 158
+        }
+      ]
+    },
+    {
+      "id": "e2",
+      "source": "a3",
+      "target": "a1",
+      "kind": "reference",
+      "status": "unchanged",
+      "count": 2,
+      "points": [
+        {
+          "x": 282,
+          "y": 306
+        },
+        {
+          "x": 452,
+          "y": 256
+        }
+      ]
+    },
+    {
+      "id": "e3",
+      "source": "a3",
+      "target": "a2",
+      "kind": "reference",
+      "status": "unchanged",
+      "count": 2,
+      "points": [
+        {
+          "x": 221,
+          "y": 368
+        },
+        {
+          "x": 150,
+          "y": 404
+        },
+        {
+          "x": 150,
+          "y": 440
+        }
+      ]
+    },
+    {
+      "id": "e4",
+      "source": "a3",
+      "target": "a5",
+      "kind": "reference",
+      "status": "unchanged",
+      "count": 1,
+      "points": [
+        {
+          "x": 282,
+          "y": 306
+        },
+        {
+          "x": 164,
+          "y": 256
+        }
+      ]
+    },
+    {
+      "id": "e5",
+      "source": "a3",
+      "target": "a6",
+      "kind": "reference",
+      "status": "unchanged",
+      "count": 2,
+      "points": [
+        {
+          "x": 343,
+          "y": 368
+        },
+        {
+          "x": 414,
+          "y": 404
+        },
+        {
+          "x": 414,
+          "y": 440
+        }
+      ]
+    },
+    {
+      "id": "e6",
+      "source": "a6",
+      "target": "a1",
+      "kind": "reference",
+      "status": "unchanged",
+      "count": 2,
+      "points": [
+        {
+          "x": 414,
+          "y": 440
+        },
+        {
+          "x": 452,
+          "y": 256
+        }
+      ]
+    }
+  ],
+  "hidden": {
+    "count": 11,
+    "types": [
+      {
+        "type": "aws_route_table_association",
+        "count": 4
+      },
+      {
+        "type": "aws_iam_role_policy_attachment",
+        "count": 2
+      },
+      {
+        "type": "aws_lb_target_group_attachment",
+        "count": 2
+      },
+      {
+        "type": "aws_lambda_permission",
+        "count": 1
+      },
+      {
+        "type": "null_resource",
+        "count": 1
+      },
+      {
+        "type": "random_id",
+        "count": 1
+      }
+    ]
+  }
+}

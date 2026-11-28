@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -14,14 +14,19 @@ import {
   type GraphFinding,
   type GraphLayoutView,
   graphLayoutSchema,
+  type IconQuery,
+  type IconRef,
+  type IconResolver,
   type LayoutEdge,
   type LayoutGroup,
   type LayoutNode,
   layoutGraphDocument,
   layoutGraphView,
+  type LayoutViewOptions,
   MAX_ASPECT,
   MIN_ASPECT,
   MAX_GRAPH_NODES,
+  CATEGORY_GLYPHS,
   parseGraphDocument,
   projectGraph,
   renderGraphSvg,
@@ -87,6 +92,13 @@ const layouts = (): [string, GraphLayoutView][] => [
   ["small, compared, with findings", layoutGraphDocument(small, { base: smallBase, findings: findingsOn(small), title: "Estate" })],
   ["small, delta", layoutGraphDocument(small, { base: smallBase, delta: true })],
   ["medium, with findings", layoutGraphDocument(medium, { findings: findingsOn(medium) })],
+  ["medium, services", layoutGraphDocument(medium, { level: "services" })],
+  ["medium, overview", layoutGraphDocument(medium, { level: "overview", findings: findingsOn(medium) })],
+  ["large, services", layoutGraphDocument(docs.large as GraphDocument, { level: "services" })],
+  ["environments, overview", layoutGraphDocument(docs.environments as GraphDocument, { level: "overview" })],
+  ["large, focus on a hub", layoutGraphDocument(docs.large as GraphDocument, { focus: { node: "n28", hops: 2 } })],
+  ["small, compared, delta, overview", layoutGraphDocument(small, { base: smallBase, delta: true, level: "overview" })],
+  ["medium, with icons", layoutGraphDocument(medium, { icon: (n) => (n.cloud === "aws" ? { symbol: `icon-${n.service.replace(".", "-")}` } : undefined) })],
 ];
 
 describe("graph layout", () => {
@@ -216,7 +228,9 @@ describe("the SVG is drawn from the layout", () => {
       assert.deepEqual(rects(svg, 12), layout.groups.map(pick), `${name}: boxes`);
       const starts = [...svg.matchAll(/<path d="M (-?[\d.]+) (-?[\d.]+)[^"]*" fill="none"/g)].map((m) => [Number(m[1]), Number(m[2])]);
       assert.deepEqual(starts, layout.edges.filter((e) => e.points.length >= 2).map((e) => [e.points[0]?.x, e.points[0]?.y]), `${name}: routes`);
-      assert.ok(svg.includes(`width="${Math.ceil(Math.max(layout.width, 360))}"`), `${name}: canvas`);
+      // The canvas is the layout's, or wider where a note under the picture needs the room.
+      const wanted = Math.ceil(Math.max(layout.width, 360, ...layout.footer.map((line) => 48 + line.length * 6.2)));
+      assert.ok(svg.includes(`width="${wanted}"`), `${name}: canvas`);
     }
   });
 
@@ -332,18 +346,158 @@ describe("strings in the layout", () => {
   });
 });
 
-describe("schemas/graph-layout.v1.schema.json", () => {
-  const schema = JSON.parse(readFileSync(new URL("../schemas/graph-layout.v1.schema.json", import.meta.url), "utf8")) as object;
+describe("graph layout levels and icons", () => {
+  it("says its level and focus, and what each card of the Services and Overview levels stands for", () => {
+    const detailed = layoutGraphDocument(medium);
+    assert.equal(detailed.level, "detailed");
+    assert.equal(detailed.focus, null);
+    assert.ok(detailed.nodes.every((n) => n.aggregate === undefined && n.service.length > 0));
+    assert.ok(detailed.edges.every((e) => e.count === 1));
+
+    const services = layoutGraphDocument(medium, { level: "services" });
+    const lambda = services.nodes.find((n) => n.service === "aws.lambda");
+    assert.equal(lambda?.label, "Lambda ×2");
+    assert.equal(lambda?.kind, "aws_lambda_function");
+    assert.equal(lambda?.aggregate?.level, "services");
+    assert.deepEqual(lambda?.aggregate?.types, [{ type: "aws_lambda_function", count: 2 }]);
+    assert.match(lambda?.title ?? "", /^Lambda ×2: 2 resources; aws_lambda_function 2/);
+    const subnets = services.nodes.find((n) => n.service === "aws.vpc" && (n.aggregate?.count ?? 0) > 3);
+    assert.equal(subnets?.kind, "aws_subnet +5 more");
+
+    const overview = layoutGraphDocument(medium, { level: "overview" });
+    const card = overview.nodes.find((n) => n.kind.startsWith("module"));
+    assert.equal(card?.kind, "module · 3 resources");
+    assert.match(card?.title ?? "", /^s3-bucket\/aws 4\.1\.0: 3 resources; storage 2, other 1/);
+    assert.equal(card?.height, 84, "a summary card has room for its counts");
+    assert.ok(overview.nodes.filter((n) => n.aggregate !== undefined).every((n) => n.height === 84));
+    assert.ok(overview.footer.some((line) => line.startsWith("Overview:")));
+
+    const focus = layoutGraphDocument(medium, { focus: { node: "n25", hops: 1 } });
+    assert.deepEqual(focus.focus, { node: "n25", label: "vpc-0a1b2c3d", hops: 1, shown: focus.nodes.length, of: detailed.nodes.length });
+    assert.ok(focus.footer.some((line) => line.startsWith("Focus: vpc-0a1b2c3d and what is within 1 reference of it")));
+  });
+
+  it("is the same layout from the same options, and a view the same as the document", () => {
+    const options = { level: "services", aspect: 1.3 } as const;
+    assert.deepEqual(layoutGraphDocument(medium, options), layoutGraphDocument(medium, options));
+    assert.deepEqual(layoutGraphView(projectGraph(medium, { level: "services" }), { aspect: 1.3 }), layoutGraphDocument(medium, options));
+  });
+
+  it("asks the resolver for each node once and carries its answer, but not for a summary card", () => {
+    const asked: string[] = [];
+    const icon: IconResolver = (node: IconQuery): IconRef | undefined => {
+      asked.push(`${node.id} ${node.service} ${node.level}`);
+      return node.service === "aws.ec2" ? { href: "https://icons.example/ec2.svg" } : node.service === "aws.iam" ? { symbol: "i-iam" } : undefined;
+    };
+    const options: LayoutViewOptions = { icon, aspect: 1.6 };
+    const layout = layoutGraphDocument(small, options);
+    assert.equal(asked.length, layout.nodes.length);
+    assert.ok(asked.includes("n3 aws.ec2 detailed"));
+    assert.deepEqual(layout.nodes.find((n) => n.id === "n3")?.icon, { href: "https://icons.example/ec2.svg" });
+    assert.deepEqual(layout.nodes.find((n) => n.service === "aws.iam")?.icon, { symbol: "i-iam" });
+    assert.equal(layout.nodes.find((n) => n.service === "aws.vpc")?.icon, undefined);
+
+    const overview: string[] = [];
+    layoutGraphDocument(medium, { level: "overview", icon: (n) => void overview.push(n.id) });
+    assert.deepEqual(overview, []);
+    const services: string[] = [];
+    layoutGraphDocument(medium, { level: "services", icon: (n) => void services.push(n.service) });
+    assert.ok(services.includes("aws.lambda") && services.length > 5);
+  });
+
+  it("refuses an icon it cannot place, rather than draw something else", () => {
+    const give = (answer: unknown) => () => layoutGraphDocument(small, { icon: () => answer as never });
+    for (const bad of [
+      "ec2",
+      {},
+      { href: "" },
+      { href: "javascript:alert(1)" },
+      { href: "http://insecure.example/a.svg" },
+      { href: "//host.example/a.svg" },
+      { href: "data:text/html,<script>" },
+      { href: "https://a.example/a.svg", symbol: "x" },
+      { href: 3 },
+      { symbol: "has space" },
+      { symbol: "1starts-with-digit" },
+      { symbol: "" },
+      { href: "x".repeat(40000) },
+    ]) {
+      assert.throws(give(bad), TypeError, JSON.stringify(bad).slice(0, 60));
+    }
+    for (const good of [
+      { href: "https://icons.example/a.svg" },
+      { href: "/icons/a.svg" },
+      { href: "icons/a.svg" },
+      { href: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" },
+      { href: "data:image/png;base64,AAAA" },
+      { symbol: "aws-ec2" },
+      { symbol: "icon:ec2.v1" },
+    ]) {
+      assert.deepEqual(layoutGraphDocument(small, { icon: () => good }).nodes[0]?.icon, good);
+    }
+  });
+
+  it("draws the engine's own glyph of the category without a resolver, and no image", () => {
+    const svg = renderGraphSvg(projectGraph(medium));
+    assert.ok(!svg.includes("<image") && !svg.includes("<use"), "the engine ships no vendor art");
+    const glyphs = svg.match(/<g transform="translate\(\d+ \d+\)" fill="none" stroke="#[0-9a-f]{6}"/g) ?? [];
+    assert.equal(glyphs.length, projectGraph(medium).nodes.length, "one on each card");
+    for (const category of ["network", "compute", "storage", "identity", "data", "other"] as const) assert.ok(CATEGORY_GLYPHS[category].length > 20);
+  });
+
+  it("draws an icon in place of the glyph: an image for an href, a use for a symbol", () => {
+    const view = projectGraph(small);
+    const svg = renderGraphSvg(view, {
+      icon: (n) => (n.service === "aws.ec2" ? { href: "https://icons.example/ec2.svg?a=1&b=<2>" } : n.service === "aws.iam" ? { symbol: "i-iam" } : undefined),
+    });
+    assert.equal((svg.match(/<image /g) ?? []).length, 1);
+    assert.ok(svg.includes('href="https://icons.example/ec2.svg?a=1&amp;b=&lt;2&gt;"'), "escaped once");
+    assert.equal((svg.match(/<use href="#i-iam"/g) ?? []).length, 2);
+    const glyphs = (svg.match(/<g transform="translate/g) ?? []).length;
+    assert.equal(glyphs, view.nodes.length - 3, "a card with an icon has no glyph");
+    assert.ok(!svg.includes("<script"));
+  });
+
+  it("draws the number of references on a line that stands for several, and counts on a summary card", () => {
+    const services = renderGraphSvg(projectGraph(medium, { level: "services" }));
+    assert.match(services, /<title>\d+ references<\/title>/);
+    assert.match(services, />×\d+<\/text>/);
+    const overview = renderGraphSvg(projectGraph(medium, { level: "overview" }));
+    assert.ok(!overview.includes("<use") && !overview.includes("<image"));
+    assert.match(overview, /<rect x="\d+" y="\d+" width="9" height="9" rx="2" fill="#[0-9a-f]{6}"\/>/, "a square per category");
+    assert.match(overview, />network<\/text>/, "the legend names the categories");
+  });
+});
+
+describe("schemas/graph-layout.v2.schema.json", () => {
+  const schema = JSON.parse(readFileSync(new URL("../schemas/graph-layout.v2.schema.json", import.meta.url), "utf8")) as object;
   const ajv = new Ajv2020({ strict: true, allErrors: true });
   addFormats(ajv);
   const valid = ajv.compile(schema);
   const accepts = (value: unknown) => valid(value) === true;
 
   it("is the schema the engine's own validator is", () => {
-    assert.equal((schema as { $id?: string }).$id, "https://github.com/hibiscus-ctrl/terragram/schemas/graph-layout.v1.schema.json");
+    assert.equal((schema as { $id?: string }).$id, "https://github.com/hibiscus-ctrl/terragram/schemas/graph-layout.v2.schema.json");
     for (const [name, layout] of layouts()) {
       assert.ok(accepts(layout), `${name}: ${JSON.stringify(valid.errors)}`);
       assert.deepEqual(graphLayoutSchema.parse(layout), layout, name);
+    }
+  });
+
+  it("is what the committed example layouts hold: the same estates, laid out again (UPDATE_GOLDEN=1 rewrites them)", () => {
+    const examples: Record<string, GraphLayoutView> = {
+      "small.json": layoutGraphDocument(small),
+      "small-compared-findings.json": layoutGraphDocument(small, { base: smallBase, findings: findingsOn(small), title: "Estate" }),
+      "medium-cut.json": layoutGraphView(projectGraph(medium, { maxNodes: 6 })),
+      "medium-services.json": layoutGraphDocument(medium, { level: "services" }),
+      "medium-overview.json": layoutGraphDocument(medium, { level: "overview", findings: findingsOn(medium) }),
+      "medium-focus.json": layoutGraphDocument(medium, { level: "services", focus: { node: "a3", hops: 1 } }),
+    };
+    for (const [file, layout] of Object.entries(examples)) {
+      const url = new URL(`./fixtures/graph/layout/${file}`, import.meta.url);
+      const text = `${JSON.stringify(layout, null, 2)}\n`;
+      if (process.env.UPDATE_GOLDEN === "1") writeFileSync(url, text);
+      else assert.equal(readFileSync(url, "utf8"), text, `${file} differs; UPDATE_GOLDEN=1 rewrites it`);
     }
   });
 
@@ -366,7 +520,7 @@ describe("schemas/graph-layout.v1.schema.json", () => {
       return copy;
     };
     assert.ok(accepts(base));
-    assert.ok(!accepts(mutate((c) => { c.schema = "diagram.graph-layout/v2"; })));
+    assert.ok(!accepts(mutate((c) => { c.schema = "diagram.graph-layout/v1"; })));
     assert.ok(!accepts(mutate((c) => { delete c.cut; })));
     assert.ok(!accepts(mutate((c) => { delete c.nodes[0].x; })));
     assert.ok(!accepts(mutate((c) => { c.nodes[0].x = 1.5; })));

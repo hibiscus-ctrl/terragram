@@ -9,11 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Graph levels and focus. `projectGraph`, `layoutGraphDocument` and `terragram graph --level` take `level: "overview" | "services" | "detailed"` (default `detailed`, today's picture).
+  `services` merges, inside each box, the resources of one cloud service into one card ("Lambda ×12"; a service of one resource keeps its card) and adds the references up;
+  `overview` turns each box with no box inside it into one summary card, with its resources counted by category and its findings, and adds the references between groups up. A card
+  that stands for several resources carries `aggregate` (their ids in the detailed picture of the same options, their count, counts by category, status and type, and the references inside it), so a
+  viewer can expand it. A line that stands for several references carries `count` (drawn as ×N) and says `changed` when they did not all change the same way. The cut at 1000 cards is applied
+  after the level, so a large estate is whole at the Overview level. The aspect packing is kept; a summary card is taller (84) to hold its counts. `focus: { node, hops }` (`--focus <node> --hops 1..3`)
+  keeps one node, the nodes within that many references of it and the boxes around them, with the ids of the picture without the focus. `--delta` and a comparison work at every level and with a focus.
+  `diagram.graph-layout/v1` becomes `diagram.graph-layout/v2` (`schemas/graph-layout.v2.schema.json`: `level`, `focus`, a node's `service`, `icon` and `aggregate`, an edge's `count` and the `changed` status) and the view `diagram.graph-view/v2`; no backward compatibility.
+- A table of Terraform resource types to cloud services, the engine's own (`serviceOf`, `listServices`, `serviceById` in `terragram-engine/graph`): a stable service id (`aws.rds`, `azure.sql`, `gcp.gke`), a name and a
+  category for 217 services (110 AWS, 62 Azure, 45 Google Cloud). It covers every type in infraharvest's catalogue (236 AWS, 88 Google Cloud, 38 Azure, plus `azapi_resource`), which a test holds; a type it does not know falls back to
+  `<cloud>.<category>`. Each node has its `service`, and takes its category from the table (an `aws_s3_bucket_policy` is now storage, not identity). The Services level merges by it and a web app maps the id to an icon.
+- An icon hook: `icon: (node) => ({ href } | { symbol } | undefined)` on `layoutGraphDocument`, `layoutGraphView` and `renderGraphSvg`. Without it a card shows the engine's own glyph of its category; with it the answer is
+  on the layout node and drawn as an `<image>` or `<use>`. The engine ships no vendor art; an answer it cannot place is a `TypeError`.
+- draw.io export names draw.io's own shape per service where it has one (AWS 19 resource icons, Azure 2 images, Google Cloud 3 product and category shapes), in a small cell inside the card; draw.io draws it from its own library, so the file holds no art.
+
 - The graph layout packs boxes and cards toward a 16:10 picture instead of laying the boxes side by side in one row: a 64-resource AWS estate in a few
   module and region boxes was about 10:1, and is now about 2:1, so its labels are readable at fit-to-view. The shape is an option, `aspect` (width over height,
   default 1.6, from 0.5 to 4; a value outside that is a `RangeError`) on `layoutGraphDocument`, `layoutGraphView`, `renderGraphSvg` and `renderGraphDrawio`, and `terragram graph --aspect`.
   Cards are 224 wide (were 172), so a type like `aws_s3_bucket_public_access_block` fits, and a longer one shows both its start and its end. Lines between boxes are
-  routed through the gaps between cards. `diagram.graph-layout/v1` keeps its shape. The same input still gives the same layout in any order.
+  routed through the gaps between cards. The same input still gives the same layout in any order.
 - `terragram-engine/graph` returns the layout of an estate as data: `layoutGraphDocument(doc, { base, findings, delta, title, maxNodes })`
   (or `layoutGraphView(view)`) gives a `diagram.graph-layout/v1` value with the boxes (account, environment, module call) and cards as
   rectangles, the references with the routes the picture draws, a `badges` object on each card and box (what changed against a base graph, and the findings by severity),
