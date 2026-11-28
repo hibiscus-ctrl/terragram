@@ -27,6 +27,12 @@ CI runs the same set, plus:
 - The diff-scoped security gates in `security-scan.yml`: Semgrep, Trivy secrets and the
   dep-CVE base-vs-head check.
 
+By hand, never in CI: `sandbox-google.yml` (environment `sandbox`, reviewers approve) applies the four Google Cloud plans of
+`scripts/emit-plans.ts` to a real sandbox project and destroys them again (`scripts/sandbox-gcp.sh`). The plans go through
+`scripts/lib/sandbox-gcp.ts` first, which lists what a shared project needs changed (no App Engine, no project, no deletion
+protection) and fails if a change finds nothing to change: a new plan or a generator change that moves one of those lines
+fails `tests/sandbox-gcp-plans.test.ts`. Everything it creates is named `ih-sbx-tg-` and swept by that name.
+
 ## The engine: `packages/engine`
 
 `terragram-engine` (an npm workspace, private for now) is the generation engine and nothing

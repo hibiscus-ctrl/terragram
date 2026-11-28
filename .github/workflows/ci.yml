@@ -82,6 +82,8 @@ jobs:
         run: npm run validate:emit
         env:
           TF_IN_AUTOMATION: "1"
+          # tflint --init fetches the Google ruleset from GitHub; signed in, the shared runner IP's rate limit does not apply.
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Module interfaces
         run: npm run check:modules
 
