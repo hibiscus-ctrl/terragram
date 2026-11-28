@@ -4,7 +4,7 @@
 /**
  * Prove the emitter's output is Terraform the real toolchain accepts.
  *
- * Runs a fixed set of briefs and every template through the deterministic engine,
+ * Runs a fixed set of briefs, every template and the Google Cloud plans of `emit-plans.ts` through the deterministic engine,
  * emits each for every generated cloud, writes the files to a scratch directory and puts
  * them through the same tools `infraweaver-action` scans a customer's repo with:
  *
@@ -65,11 +65,12 @@ import { dirname, join } from "node:path";
 
 import { errorMessage, retry, spawn } from "./lib/runtime.ts";
 
-import { composeFromPrompt } from "terragram-engine/engine";
+import { assembleModel, composeFromPrompt } from "terragram-engine/engine";
 import { type Cloud, GENERATED_CLOUDS, type InfraModel } from "terragram-engine/model";
 import { emitTerraform } from "terragram-engine/terraform";
 import { templateModel, WORKSPACE_TEMPLATES } from "terragram-engine/templates";
 import { BRIEFS } from "./emit-briefs.ts";
+import { GCP_PLANS } from "./emit-plans.ts";
 import { SCANNER_SKIPS, skipsFor } from "./scanner-skips.ts";
 
 const keep = process.argv.includes("--keep");
@@ -401,6 +402,11 @@ for (const template of WORKSPACE_TEMPLATES) {
   for (const cloud of clouds) {
     cases.push({ label: `template:${template.id}`, slug: template.id, cloud, model: templateModel(template) });
   }
+}
+
+// The Google Cloud kinds no brief or template reaches (GKE, BigQuery, the key store's own paths): see emit-plans.ts.
+for (const plan of GCP_PLANS) {
+  if (clouds.includes("gcp")) cases.push({ label: `plan:${plan.id}`, slug: plan.id, cloud: "gcp", model: assembleModel(plan.kinds, undefined, true).model });
 }
 
 let failed = 0;

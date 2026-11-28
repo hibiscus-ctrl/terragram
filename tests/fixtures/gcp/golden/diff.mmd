@@ -4,39 +4,40 @@ flowchart LR
   n2["DNS Zone<br/>dns"]
   n3["Managed Identity<br/>entra-id"]
   n4["Managed Identity<br/>entra-id"]
-  n5["Functions<br/>functions"]
-  n6["Internet<br/>internet"]
-  n7["Secret Store<br/>key-vault"]
-  n8["Kubernetes Cluster<br/>kubernetes"]
-  n9["Load Balancer<br/>load-balancer"]
-  n10["Monitoring<br/>monitoring"]
-  n11["Object Storage<br/>object-storage"]
+  n5["google_pubsub_subscription events<br/>external"]
+  n6["Functions<br/>functions"]
+  n7["Internet<br/>internet"]
+  n8["Secret Store<br/>key-vault"]
+  n9["Kubernetes Cluster<br/>kubernetes"]
+  n10["Load Balancer<br/>load-balancer"]
+  n11["Monitoring<br/>monitoring"]
   n12["Object Storage<br/>object-storage"]
-  n13["PostgreSQL<br/>postgres"]
-  n14["Project<br/>project"]
-  n15["Message Queue<br/>queue"]
-  n16["Cache for Redis<br/>redis-cache"]
-  n17["Static Site<br/>static-site"]
-  n18["Virtual Machine<br/>virtual-machine"]
-  n19["Virtual Network<br/>vnet"]
-  n6 --> n2
-  n2 --> n9
+  n13["Object Storage<br/>object-storage"]
+  n14["PostgreSQL<br/>postgres"]
+  n15["Project<br/>project"]
+  n16["Message Queue<br/>queue"]
+  n17["Cache for Redis<br/>redis-cache"]
+  n18["Static Site<br/>static-site"]
+  n19["Virtual Machine<br/>virtual-machine"]
+  n20["Virtual Network<br/>vnet"]
+  n7 --> n2
+  n2 --> n10
   n0 -->|runs as| n3
-  n0 --> n13
-  n0 --> n15
-  n0 --> n7
-  n0 --> n19
-  n5 --> n12
-  n5 -->|runs as| n4
-  n5 --> n11
-  n5 --> n15
-  n8 --> n19
-  n8 -->|runs as| n4
-  n18 --> n19
-  n18 -->|runs as| n4
-  n16 --> n19
+  n0 --> n14
+  n0 --> n16
+  n0 --> n8
+  n0 --> n20
+  n6 --> n13
+  n6 -->|runs as| n4
+  n6 --> n12
+  n6 --> n16
+  n9 --> n20
+  n9 -->|runs as| n4
+  n19 --> n20
+  n19 -->|runs as| n4
+  n17 --> n20
   classDef added fill:#d1fae5,stroke:#047857,stroke-width:2px,color:#064e3b
   classDef removed fill:#fee2e2,stroke:#b91c1c,stroke-width:2px,stroke-dasharray:5 5,color:#7f1d1d
   classDef changed fill:#fef3c7,stroke:#b45309,stroke-width:2px,color:#78350f
-  class n0,n1,n2,n3,n4,n5,n6,n7,n8,n9,n10,n11,n12,n13,n14,n15,n16,n17,n18,n19 added
+  class n0,n1,n2,n3,n4,n5,n6,n7,n8,n9,n10,n11,n12,n13,n14,n15,n16,n17,n18,n19,n20 added
   linkStyle 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 stroke:#047857,stroke-width:2px

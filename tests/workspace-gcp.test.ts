@@ -48,9 +48,10 @@ function golden(name: string, actual: string): void {
 describe("reading a Google Cloud file", () => {
   const parsed = read(FIXTURE);
 
-  it("is a gcp model, with every resource of the fixture translated", () => {
+  it("is a gcp model, with every resource of the fixture translated but the subscription, which the file wrote", () => {
     assert.equal(parsed.cloud, "gcp");
-    assert.deepEqual(parsed.untranslated, []);
+    // A subscription the plan did not write is a consumer of the queue the file added: shown flagged, not folded into the queue.
+    assert.deepEqual(parsed.untranslated, ["google_pubsub_subscription.events"]);
     const kinds = parsed.model.nodes.map((n) => n.kind).sort();
     assert.deepEqual(kinds, [
       "containers",
@@ -58,6 +59,7 @@ describe("reading a Google Cloud file", () => {
       "dns",
       "entra-id",
       "entra-id",
+      "external",
       "functions",
       "internet",
       "key-vault",
@@ -77,7 +79,7 @@ describe("reading a Google Cloud file", () => {
   });
 
   it("attaches the secondary resources of a component to it, one node each", () => {
-    // The record set joins its zone, the subscription its topic, the node pool its cluster, and so on.
+    // The record set joins its zone, the node pool its cluster, and so on. A subscription of the file's own does not join its topic.
     const count = (kind: string) => parsed.model.nodes.filter((n) => n.kind === kind).length;
     for (const kind of ["dns", "queue", "kubernetes", "load-balancer", "vnet", "key-vault"]) assert.equal(count(kind), 1, kind);
     assert.equal(count("object-storage"), 2);
@@ -313,11 +315,11 @@ describe("a Google Cloud model is read, drawn, explained and generated", () => {
     assert.match(out.files[0]?.content ?? "", /# Target: Google Cloud · London \(europe-west2\) · Terraform/);
   });
 
-  it("builds every component of the fixture, and says so as it does for AWS and Azure", () => {
+  it("builds every component of the fixture but the subscription the file wrote, and says so as it does for AWS and Azure", () => {
     const feasibility = assessFeasibility(model, "gcp");
-    assert.equal(feasibility.verdict, "full");
-    assert.deepEqual(feasibility.omitted, []);
-    assert.equal(feasibility.summary, "All 19 components can be built on Google Cloud.");
+    assert.equal(feasibility.verdict, "partial");
+    assert.deepEqual(feasibility.omitted, ["google_pubsub_subscription events"]);
+    assert.match(feasibility.summary, /^19 of 20 components can be built on Google Cloud\. Not buildable: google_pubsub_subscription events\./);
   });
 
   it("is described in plain English as Google Cloud", () => {
@@ -333,7 +335,7 @@ describe("a Google Cloud model is read, drawn, explained and generated", () => {
     assert.equal(built.receipt.cloud, "gcp");
     assert.deepEqual(built.receipt.plan.slice(0, 3), ["main.tf", "variables.tf", "outputs.tf"]);
     assert.ok(built.receipt.sbom.some((entry) => entry.name === "google"));
-    assert.deepEqual(built.receipt.omitted, []);
+    assert.deepEqual(built.receipt.omitted, ["google_pubsub_subscription events"]);
     const files = buildBundle(built.receipt, model, built.terraform.files, built.attestation);
     const report = await verifyBundle(files, { trustedKeys: [built.receipt.publicKey ?? ""] });
     assert.equal(report.ok, true, JSON.stringify(report));

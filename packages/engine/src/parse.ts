@@ -3,6 +3,8 @@
 
 import { attributeOf, extractReferences, type HclBlock, mapEntries, parseHcl, stringValue } from "./hcl.ts";
 import {
+  isDeadLetterTopic,
+  isForeignSubscription,
   isScaffoldModule,
   isScaffoldResource,
   kindDefinition,
@@ -94,7 +96,7 @@ export function parseTerraform(source: string): ParseResult {
   // What a Google Cloud plan adds around a component (API switches, log buckets) is not drawn.
   const resources = blocks.filter((b) => b.type === "resource" && !isScaffoldResource(b, blocks));
   const modules = blocks.filter(
-    (b) => b.type === "module" && !isScaffoldModule(b),
+    (b) => b.type === "module" && !isScaffoldModule(b, blocks),
   );
 
   if (resources.length === 0 && modules.length === 0) {
@@ -113,12 +115,15 @@ export function parseTerraform(source: string): ParseResult {
   const resolved: Resolved[] = [];
   const untranslated: string[] = [];
   const unreadModules: HclBlock[] = [];
+  // A resource the reader knows a kind for but will not fold into a component, so it is drawn flagged instead of absorbed.
+  const unfolded: HclBlock[] = [];
 
   for (const block of resources) {
     const label = resourceLabel(block);
     if (!label) continue;
     const match = resourceTypeToKind(label.type, cloud, block) ?? resourceTypeToKind(label.type, undefined, block);
-    if (match) resolved.push({ block, ...label, kind: match.kind });
+    if (match && isForeignSubscription(block, blocks)) unfolded.push(block);
+    else if (match) resolved.push({ block, ...label, kind: match.kind });
     else untranslated.push(`${label.type}.${label.name}`);
   }
   for (const block of modules) {
@@ -157,7 +162,8 @@ export function parseTerraform(source: string): ParseResult {
     // cluster beside an ECS service) attaches to the primary like any secondary.
     const primaries = items.filter(
       (i) =>
-        i.type === spec?.type ||
+        // The dead-letter topic of a queue is part of that queue, not a second one.
+        (i.type === spec?.type && !isDeadLetterTopic(i.block, blocks)) ||
         (i.type === "module" && moduleSource(i.block) === spec?.moduleSource),
     );
     const seeds = primaries.length > 0 ? primaries : [items[0] as Resolved];
@@ -187,6 +193,7 @@ export function parseTerraform(source: string): ParseResult {
       if (seeds.includes(item)) continue;
       const target =
         own.find((i) => item.name === i.tfName) ??
+        (isDeadLetterTopic(item.block, blocks) ? own.find((i) => item.name === `${i.tfName}_dead_letter`) : undefined) ??
         own.find((i) => item.name.startsWith(i.tfName)) ??
         own[0];
       target?.blocks.push(item.block);
@@ -204,6 +211,16 @@ export function parseTerraform(source: string): ParseResult {
   /* --------------------------------------------- references become edges -- */
 
   const ownerByAddress = new Map<string, string>();
+  // A subscription the file wrote is a node of its own, so a grant on it is a grant on that node and not on its queue.
+  const unfoldedIds = new Map<HclBlock, string>();
+  for (const block of unfolded) {
+    const label = resourceLabel(block);
+    if (!label) continue;
+    const id = uniqueNodeId(`external-${label.name}`, takenIds);
+    takenIds.push(id);
+    unfoldedIds.set(block, id);
+    ownerByAddress.set(`${label.type}.${label.name}`, id);
+  }
   for (const instance of instances) {
     for (const block of instance.blocks) {
       const label = resourceLabel(block);
@@ -306,20 +323,26 @@ export function parseTerraform(source: string): ParseResult {
     if (edges.some((e) => e.source === id)) nodes.push({ id, category: "edge", kind: "external", label, flag: null });
   }
   for (const block of blocks) {
-    if (block.type === "module" ? !unreadModules.includes(block) : block.type !== "data") continue;
-    if (block.type === "module" && isScaffoldModule(block)) continue;
+    if (!unfolded.includes(block) && (block.type === "module" ? !unreadModules.includes(block) : block.type !== "data")) continue;
+    if (block.type === "module" && isScaffoldModule(block, blocks)) continue;
     if (block.type === "data" && (isScaffoldResource(block, blocks) || readByComponents.has(block.labels.join(".")) || iam.consumed.has(block))) continue;
     const name = block.labels.at(-1) ?? block.type;
-    const id = uniqueNodeId(`external-${name}`, takenIds);
-    takenIds.push(id);
+    const id = unfoldedIds.get(block) ?? uniqueNodeId(`external-${name}`, takenIds);
+    if (!unfoldedIds.has(block)) takenIds.push(id);
+    // A subscription the plan did not write is a consumer of a queue the file added: it is shown, not folded into the queue.
+    const kind = unfolded.includes(block) ? (block.labels[0] ?? block.type) : block.type;
     nodes.push({
       id,
       category: "edge",
       kind: "external",
-      label: `${block.type} ${name}`,
-      flag: { reason: `This ${block.type} block was read but its contents cannot be translated.` },
+      label: `${kind} ${name}`,
+      flag: {
+        reason: unfolded.includes(block)
+          ? `This ${kind} is not the one a plan writes for its queue, so it is drawn on its own: where it delivers (a push endpoint, a filter) is not read.`
+          : `This ${block.type} block was read but its contents cannot be translated.`,
+      },
     });
-    untranslated.push(`${block.type}.${name}`);
+    untranslated.push(`${kind}.${name}`);
   }
 
   /* ---------------------------------------------------- ingress + assembly -- */

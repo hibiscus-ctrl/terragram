@@ -281,22 +281,14 @@ function interpolatedSegments(expr: string): string[] {
     const ch = expr[i] ?? "";
     if (ch === '"') {
       const end = stringEnd(expr, i);
-      const literal = expr.slice(i + 1, end - 1);
-      let k = 0;
-      while (k < literal.length) {
-        const open = literal.indexOf("${", k);
-        if (open === -1) break;
-        let depth = 1;
-        let j = open + 2;
-        while (j < literal.length && depth > 0) {
-          if (literal[j] === "{") depth++;
-          else if (literal[j] === "}") depth--;
-          if (depth === 0) break;
-          j++;
-        }
-        segments.push(literal.slice(open + 2, j));
-        k = j + 1;
-      }
+      segments.push(...interpolationsIn(expr.slice(i + 1, end - 1)));
+      i = end;
+      continue;
+    }
+    // A heredoc is a string too: its words are text, and only what is inside `${...}` is evaluated.
+    if (isHeredocStart(expr, i)) {
+      const end = heredocEnd(expr, i);
+      segments.push(...interpolationsIn(expr.slice(i, end)));
       i = end;
       continue;
     }
@@ -304,6 +296,27 @@ function interpolatedSegments(expr: string): string[] {
     i++;
   }
   if (plain.trim()) segments.push(plain);
+  return segments;
+}
+
+/** What is inside each `${...}` of the text of a string. */
+function interpolationsIn(literal: string): string[] {
+  const segments: string[] = [];
+  let k = 0;
+  while (k < literal.length) {
+    const open = literal.indexOf("${", k);
+    if (open === -1) break;
+    let depth = 1;
+    let j = open + 2;
+    while (j < literal.length && depth > 0) {
+      if (literal[j] === "{") depth++;
+      else if (literal[j] === "}") depth--;
+      if (depth === 0) break;
+      j++;
+    }
+    segments.push(literal.slice(open + 2, j));
+    k = j + 1;
+  }
   return segments;
 }
 
@@ -493,6 +506,35 @@ export function mapEntries(expr: string | undefined): Array<{ key: string; value
   const inner = trimmed.slice(1, -1);
   const body = parseBody(inner, 0, true);
   return body.attributes.map((a) => ({ key: a.key, value: a.value }));
+}
+
+/**
+ * The entries of an object written out as `{ key = value, ... }` and nothing else, or undefined for anything
+ * that is not one: a reference, a call (`merge({}, var.x)`), a `for` expression, a conditional, an object with
+ * something after it, or one with no entry. `mapEntries` answers `[]` for all of those, which is also what an
+ * empty object answers, so a reader that has to be sure of every entry asks this instead.
+ */
+export function objectLiteral(expr: string | undefined): Array<{ key: string; value: string }> | undefined {
+  const text = expr?.trim();
+  if (!text?.startsWith("{") || !text.endsWith("}") || /^\{\s*for\b/.test(text)) return undefined;
+  let depth = 0;
+  for (let i = 0; i < text.length; ) {
+    const ch = text[i] ?? "";
+    if (ch === '"') {
+      i = stringEnd(text, i);
+      continue;
+    }
+    if (isHeredocStart(text, i)) {
+      i = heredocEnd(text, i);
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}" && --depth === 0 && i !== text.length - 1) return undefined;
+    i++;
+  }
+  if (depth !== 0) return undefined;
+  const entries = mapEntries(text);
+  return entries.length > 0 ? entries : undefined;
 }
 
 /** A block builder that drops undefined attributes, so emit templates stay readable. */

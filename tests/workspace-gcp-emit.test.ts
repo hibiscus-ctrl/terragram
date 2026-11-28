@@ -518,6 +518,19 @@ describe("only what the generator writes is hidden as scaffolding", () => {
   public_access_prevention    = "enforced"
   force_destroy               = true
   labels                      = { purpose = "access-logs" }
+
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    condition {
+      age = 365
+    }
+    action {
+      type = "Delete"
+    }
+  }
 }
 `;
   const DATA = `resource "google_storage_bucket" "data" {
@@ -573,6 +586,13 @@ describe("only what the generator writes is hidden as scaffolding", () => {
       LOGS.replace(/\}\n$/, '  website { main_page_suffix = "index.html" }\n}\n'),
       LOGS.replace(/\}\n$/, '  cors { origin = ["*"] }\n}\n'),
       LOGS.replace(/\}\n$/, "  extra = true\n}\n"),
+      // Less than the generator writes is no more the generator's than more: versions kept, and a year's retention, are what a reviewer was told.
+      LOGS.replace(/\n\s+versioning \{\n\s+enabled = true\n\s+\}\n/, "\n"),
+      LOGS.replace("enabled = true", "enabled = false"),
+      LOGS.replace(/\n\s+lifecycle_rule \{[\s\S]*\n\s+\}\n/, "\n"),
+      LOGS.replace("age = 365", "age = 1"),
+      LOGS.replace('type = "Delete"', 'type = "SetStorageClass"'),
+      LOGS.replace(/\}\n$/, '  logging {\n    log_bucket = "x"\n  }\n}\n'),
     ];
     for (const logs of loosened) {
       assert.equal(scaffold(`${DATA}${logs}`, "google_storage_bucket", "logs"), false, logs);

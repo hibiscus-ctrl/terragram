@@ -100,7 +100,7 @@ describe("typed edges from Google Cloud IAM", () => {
       "entra-id-2 -> any-resource: write",
       "entra-id-2 -> key-vault: unscoped",
       "entra-id-2 -> object-storage: read",
-      "entra-id-2 -> queue: unscoped",
+      "entra-id-2 -> external-events: unscoped",
       "functions -> entra-id-2: runs-as",
       "kubernetes -> entra-id-2: runs-as",
       "principal-all-users -> containers: unscoped",
@@ -113,7 +113,8 @@ describe("typed edges from Google Cloud IAM", () => {
   });
 
   it("reads every grant of the fixture, so none is left as an untranslated block", () => {
-    assert.deepEqual(parsed.untranslated, []);
+    // Only the subscription the file wrote: shown beside its queue, not read as part of it.
+    assert.deepEqual(parsed.untranslated, ["google_pubsub_subscription.events"]);
   });
 
   it("is the same every time and a valid model", () => {

@@ -166,6 +166,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   picture whatever order the document lists it in. Where the graph hashes or drops its addresses, the
   order falls back to type and ID as before. The ids in the Mermaid and the JSON view of an estate with
   several accounts are numbered differently; the drawing is the same.
+- The generated-Terraform gate (`npm run validate:emit`) now also runs four Google Cloud plans (`scripts/emit-plans.ts`) beside the briefs and templates, so
+  the kinds they never reached go through `terraform validate`, tflint, trivy and checkov: GKE, the project, the virtual machine, BigQuery, the CDN in front of
+  a static site, and Pub/Sub topics, a dataset and buckets under the key store's key. A test holds that every Google Cloud kind is in one of them.
+
+### Fixed
+
+- Reading a plan back no longer hides a real Azure or AWS resource that only looks like the plan's own scaffolding. The Azure resource group and private
+  DNS zone modules, the network an Azure plan adds when the model draws none, and the S3 log bucket of a bucket are hidden only when they are exactly
+  what the generator writes (every input, no others, a name of the generator's shape) and a component of the file uses them, the way the Google Cloud
+  scaffolding already is. A resource group of your own, a virtual network that is called `network`, a zone nothing reads, or a bucket that takes the
+  access-log policy but is not the logging target of another is drawn, with its IAM edges.
+- A Google Cloud Pub/Sub queue reads back as one node instead of two. The dead-letter topic the generator writes for a queue (its name and retention, the key
+  store's key when there is one, no other attribute, given up on by the queue's own subscription and named like its topic) folds into the queue, and what is
+  granted on it is granted on the queue. A topic of your own, whatever its name, a lookalike that differs in any way, or one no subscription gives up on is
+  drawn as a queue of its own.
+- Reading a plan back hides less of what an author wrote. A network whose `subnets` is a reference, a `merge()` or a `for` expression, or has no subnet in
+  it, is drawn instead of passing as the plan's (only an object written out with every subnet exact is hidden); a private DNS zone is hidden only for the three
+  domains the plan writes; and the resource group, network or zone is kept hidden only by a block the reader draws, not by an output, a local, a variable, a
+  resource of a type no kind reads, or a string or heredoc that happens to spell `module.<name>`. The log and source buckets of a Google Cloud plan must also
+  have the versioning, logging and lifecycle blocks the plan writes, each once.
+- A Pub/Sub subscription that is not the one the plan writes for its queue is no longer absorbed into the queue: a push endpoint, a filter, a second
+  consumer of the queue's topic or a subscription on a topic of your own is drawn as its own flagged node, listed as not translated (so it counts as not
+  buildable, and a grant on it is a grant on it, not on the queue). A dead-letter topic is folded into its queue only when no subscription but the plan's own
+  reads it or gives up on it.
 
 ## [0.2.0] - 2026-11-23
 

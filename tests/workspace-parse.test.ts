@@ -8,6 +8,7 @@ import { composeFromPrompt } from "terragram-engine/engine";
 import {
   attributeOf,
   extractReferences,
+  objectLiteral,
   parseHcl,
   renderDocument,
   stringValue,
@@ -67,6 +68,21 @@ resource "aws_s3_bucket" "data" {
     ]);
     assert.deepEqual(extractReferences("var.name_prefix"), []);
     assert.deepEqual(extractReferences('"example.gov.uk"'), []);
+  });
+
+  it("reads a heredoc like a string: its words are text, only an interpolation is a reference", () => {
+    assert.deepEqual(extractReferences("<<-EOT\n  module.network.resource_id\nEOT"), []);
+    assert.deepEqual(extractReferences("<<-EOT\n  see module.network.resource_id and ${module.group.resource_id}\nEOT"), ["module.group"]);
+  });
+
+  it("answers an object only for one written out, so a reader that must see every entry is never told [] for a call", () => {
+    for (const expr of ["var.subnets", "merge({}, var.subnets)", "{ for k, v in var.x : k => v }", "{}", 'cond ? { a = 1 } : {}', "{ a = 1 }.a", "{ a = 1 } == var.x", undefined]) {
+      assert.equal(objectLiteral(expr), undefined, String(expr));
+    }
+    assert.deepEqual(objectLiteral('{\n  a = "}"\n  b = { c = 1 }\n}'), [
+      { key: "a", value: '"}"' },
+      { key: "b", value: "{ c = 1 }" },
+    ]);
   });
 
   it("renders what it parses", () => {

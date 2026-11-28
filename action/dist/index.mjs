@@ -21926,6 +21926,68 @@ var PROVIDER_VERSIONS = {
   }
 };
 
+// ../packages/engine/src/scaffold.ts
+var PLAN_NETWORK = "network";
+var PLAN_ADDRESS_SPACE = "10.0.0.0/16";
+var RESOURCE_GROUP = "resource_group";
+function resourceGroupModule() {
+  const pin = MODULE_VERSIONS["azure/resource-group"];
+  return block("module", [RESOURCE_GROUP], [
+    { key: "source", value: quote(pin.source) },
+    { key: "version", value: quote(pin.version) },
+    { key: "name", value: quoteTemplate`rg-\${var.name_prefix}` },
+    { key: "location", value: "var.location" },
+    { key: "enable_telemetry", value: "false" },
+    { key: "tags", value: "local.tags" }
+  ]);
+}
+function planNetworkModule() {
+  const pin = MODULE_VERSIONS["azure/virtual-network"];
+  return block("module", [PLAN_NETWORK], [
+    { key: "source", value: quote(pin.source) },
+    { key: "version", value: quote(pin.version) },
+    { key: "name", value: quoteTemplate`vnet-\${var.name_prefix}` },
+    { key: "parent_id", value: `module.${RESOURCE_GROUP}.resource_id` },
+    { key: "location", value: `module.${RESOURCE_GROUP}.location` },
+    { key: "address_space", value: `[${quote(PLAN_ADDRESS_SPACE)}]` },
+    { key: "enable_telemetry", value: "false" },
+    { key: "tags", value: "local.tags" }
+  ]);
+}
+var PRIVATE_SERVICES = {
+  "privatelink.vaultcore.azure.net": "Key Vault",
+  "privatelink.postgres.database.azure.com": "PostgreSQL",
+  "privatelink.mysql.database.azure.com": "MySQL"
+};
+function privateDnsZoneName(zone) {
+  return `private_dns_${zone.replace(/^privatelink\./, "").split(".")[0]?.replace(/[^a-z0-9]+/g, "_")}`;
+}
+function privateDnsZoneModule(zone, networkId) {
+  const pin = MODULE_VERSIONS["azure/private-dns-zone"];
+  const name = privateDnsZoneName(zone);
+  return block("module", [name], [
+    { key: "source", value: quote(pin.source) },
+    { key: "version", value: quote(pin.version) },
+    { key: "domain_name", value: quote(zone) },
+    { key: "parent_id", value: `module.${RESOURCE_GROUP}.resource_id` },
+    {
+      key: "virtual_network_links",
+      value: mapExpression([
+        {
+          key: "network",
+          value: mapExpression([
+            { key: "name", value: quote(`${name.replace(/_/g, "-")}-link`) },
+            { key: "virtual_network_id", value: networkId },
+            { key: "autoregistration", value: "false" }
+          ])
+        }
+      ])
+    },
+    { key: "enable_telemetry", value: "false" },
+    { key: "tags", value: "local.tags" }
+  ]);
+}
+
 // ../packages/engine/src/kinds.ts
 function moduleBlock(key, name, inputs, subdir) {
   const pin = MODULE_VERSIONS[key];
@@ -22405,7 +22467,10 @@ function s3Encryption(algorithm, keyArn) {
 }
 var ACCESS_LOG_BUCKET_INPUT = "attach_access_log_delivery_policy";
 function s3AccessLogs(c) {
-  const name = `${c.name}_logs`;
+  return s3AccessLogsOf(c.name, c.slug);
+}
+function s3AccessLogsOf(host, slug) {
+  const name = `${host}_logs`;
   return {
     logging: {
       key: "logging",
@@ -22415,14 +22480,14 @@ function s3AccessLogs(c) {
       ])
     },
     bucket: moduleBlock("aws/s3-bucket", name, [
-      { key: "bucket", value: cloudName2("logs", c.slug) },
+      { key: "bucket", value: cloudName2("logs", slug) },
       { key: "control_object_ownership", value: "true" },
       { key: "object_ownership", value: quote("BucketOwnerEnforced") },
       ...S3_PUBLIC_ACCESS_BLOCK,
       { key: "versioning", value: mapExpression([{ key: "enabled", value: "true" }]) },
       s3Encryption("AES256"),
       { key: ACCESS_LOG_BUCKET_INPUT, value: "true" },
-      { key: "access_log_delivery_policy_source_buckets", value: `[module.${c.name}.s3_bucket_arn]` }
+      { key: "access_log_delivery_policy_source_buckets", value: `[module.${host}.s3_bucket_arn]` }
     ])
   };
 }
@@ -24531,11 +24596,6 @@ var INGRESS_ORDER = KIND_DEFINITIONS.filter(
 var SERVING_KINDS = KIND_DEFINITIONS.filter(
   (k) => k.role === "serving"
 ).map((k) => k.kind);
-var SCAFFOLD_MODULE_SOURCES = [
-  MODULE_VERSIONS["azure/resource-group"].source,
-  MODULE_VERSIONS["azure/private-dns-zone"].source
-];
-var PLAN_NETWORK = "network";
 function providerFor(cloud) {
   return PROVIDER_VERSIONS[cloud];
 }
@@ -25062,7 +25122,6 @@ function wireEdge(source, target, cloud, plan) {
   addDependsOn(source.consumer, `${target.referent.type}.${target.referent.name}`);
   return [];
 }
-var PLAN_ADDRESS_SPACE = "10.0.0.0/16";
 function privateNetwork(name) {
   const subnets = /* @__PURE__ */ new Map();
   const zones = /* @__PURE__ */ new Map();
@@ -25075,31 +25134,13 @@ function privateNetwork(name) {
         return `module.${name}.subnets[${quote(key)}].resource_id`;
       },
       dnsZone: (zone) => {
-        const tf = `private_dns_${zone.replace(/^privatelink\./, "").split(".")[0]?.replace(/[^a-z0-9]+/g, "_")}`;
+        const tf = privateDnsZoneName(zone);
         zones.set(zone, tf);
         return `module.${tf}.resource_id`;
       }
     }
   };
 }
-function planNetwork() {
-  const pin = MODULE_VERSIONS["azure/virtual-network"];
-  return block("module", [PLAN_NETWORK], [
-    { key: "source", value: quote(pin.source) },
-    { key: "version", value: quote(pin.version) },
-    { key: "name", value: quoteTemplate`vnet-\${var.name_prefix}` },
-    { key: "parent_id", value: "module.resource_group.resource_id" },
-    { key: "location", value: "module.resource_group.location" },
-    { key: "address_space", value: `[${quote(PLAN_ADDRESS_SPACE)}]` },
-    { key: "enable_telemetry", value: "false" },
-    { key: "tags", value: "local.tags" }
-  ]);
-}
-var PRIVATE_SERVICES = {
-  "privatelink.vaultcore.azure.net": "Key Vault",
-  "privatelink.postgres.database.azure.com": "PostgreSQL",
-  "privatelink.mysql.database.azure.com": "MySQL"
-};
 function privateNetworkNote(network, zones) {
   const names = [...zones].map((zone) => PRIVATE_SERVICES[zone] ?? zone);
   const services = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0] ?? "";
@@ -25387,7 +25428,7 @@ needs TLS through it.`
   const networkBlocks = [];
   if (privateNet && privateNet.subnets.size > 0) {
     const own2 = azureNetworkNode ? byNodeId.get(azureNetworkNode.id)?.blocks[0] : void 0;
-    const network = own2 ?? planNetwork();
+    const network = own2 ?? planNetworkModule();
     if (!own2) networkBlocks.push(network);
     const space = (azureNetworkNode ? byNodeId.get(azureNetworkNode.id)?.context.attr("Address space") : null) ?? PLAN_ADDRESS_SPACE;
     const octets = /^(\d+)\.(\d+)\./.exec(space.trim());
@@ -25410,32 +25451,7 @@ needs TLS through it.`
       });
     }
     const networkId = `module.${network.labels[0]}.resource_id`;
-    const zonePin = MODULE_VERSIONS["azure/private-dns-zone"];
-    for (const [zone, tf] of privateNet.zones) {
-      networkBlocks.push(
-        block("module", [tf], [
-          { key: "source", value: quote(zonePin.source) },
-          { key: "version", value: quote(zonePin.version) },
-          { key: "domain_name", value: quote(zone) },
-          { key: "parent_id", value: "module.resource_group.resource_id" },
-          {
-            key: "virtual_network_links",
-            value: mapExpression([
-              {
-                key: "network",
-                value: mapExpression([
-                  { key: "name", value: quote(`${tf.replace(/_/g, "-")}-link`) },
-                  { key: "virtual_network_id", value: networkId },
-                  { key: "autoregistration", value: "false" }
-                ])
-              }
-            ])
-          },
-          { key: "enable_telemetry", value: "false" },
-          { key: "tags", value: "local.tags" }
-        ])
-      );
-    }
+    for (const zone of privateNet.zones.keys()) networkBlocks.push(privateDnsZoneModule(zone, networkId));
     if (privateNet.zones.size > 0) notes.push(privateNetworkNote(`module.${network.labels[0]}`, privateNet.zones.keys()));
   }
   const requiredVersion = cloud === "azure" ? ">= 1.11, < 2.0" : ">= 1.6, < 2.0";
@@ -25473,16 +25489,7 @@ needs TLS through it.`
   if (cloud === "azure") {
     scaffold.push(block("provider", ["azurerm"], [], [block("features", [], [])]));
     if (emitted.length > 0) {
-      scaffold.push(
-        block("module", ["resource_group"], [
-          { key: "source", value: quote(MODULE_VERSIONS["azure/resource-group"].source) },
-          { key: "version", value: quote(MODULE_VERSIONS["azure/resource-group"].version) },
-          { key: "name", value: quoteTemplate`rg-\${var.name_prefix}` },
-          { key: "location", value: "var.location" },
-          { key: "enable_telemetry", value: "false" },
-          { key: "tags", value: "local.tags" }
-        ])
-      );
+      scaffold.push(resourceGroupModule());
     }
     variables.set("location", {
       name: "location",

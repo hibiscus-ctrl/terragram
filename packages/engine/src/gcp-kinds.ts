@@ -1,7 +1,7 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { type HclBlock, attributeOf, block, mapExpression, quote, quoteTemplate } from "./hcl.ts";
+import { type HclBlock, attributeOf, block, extractReferences, mapExpression, quote, quoteTemplate } from "./hcl.ts";
 import type { InfraModel, ModelNode } from "./model.ts";
 
 /**
@@ -158,6 +158,9 @@ function hasExactly(b: HclBlock, keys: readonly string[], blocks = false): boole
   return (blocks || b.blocks.length === 0) && own.length === keys.length && keys.every((k) => own.filter((a) => a.key === k).length === 1);
 }
 
+/** Whether `b` has these nested blocks, each once, and no others. */
+const hasBlocks = (b: HclBlock, types: readonly string[]): boolean => b.blocks.length === types.length && types.every((t) => b.blocks.filter((c) => c.type === t).length === 1);
+
 const compact = (value: string | undefined): string => (value ?? "").replace(/\s+/g, "");
 
 /**
@@ -176,8 +179,16 @@ function isScaffoldBucket(all: readonly HclBlock[], name: string): boolean {
   if (v("public_access_prevention") !== '"enforced"' || !/^(true|false)$/.test(v("force_destroy") ?? "")) return false;
   const purpose = (Object.keys(SCAFFOLD_BUCKETS) as Array<keyof typeof SCAFFOLD_BUCKETS>).find((p) => compact(v("labels")) === `{purpose="${p}"}`);
   if (!purpose || !SCAFFOLD_BUCKETS[purpose].test(v("name") ?? "")) return false;
-  // Nothing but versions, a logging target, a lifecycle and, in a plan with a key store, that store's key: no website, no CORS.
-  if (!b.blocks.every((c) => ["versioning", "logging", "lifecycle_rule", "encryption"].includes(c.type))) return false;
+  // Exactly the blocks the generator writes for this purpose, each once, and in a plan with a key store that store's key: no website, no CORS.
+  if (!hasBlocks({ ...b, blocks: b.blocks.filter((c) => c.type !== "encryption") }, purpose === "access-logs" ? ["versioning", "lifecycle_rule"] : ["versioning", "logging"])) return false;
+  const part = (type: string) => b.blocks.find((c) => c.type === type);
+  const versioning = part("versioning");
+  const logging = part("logging");
+  const rule = part("lifecycle_rule");
+  if (!versioning || !hasExactly(versioning, ["enabled"]) || compact(attributeOf(versioning, "enabled")) !== "true") return false;
+  if (logging && (!hasExactly(logging, ["log_bucket", "log_object_prefix"]) || bucketNamed(compact(attributeOf(logging, "log_bucket"))) === undefined || compact(attributeOf(logging, "log_object_prefix")) !== '"access/"')) return false;
+  const [condition, action] = [rule?.blocks.find((c) => c.type === "condition"), rule?.blocks.find((c) => c.type === "action")];
+  if (rule && (!hasExactly(rule, [], true) || !hasBlocks(rule, ["condition", "action"]) || !condition || !action || !hasExactly(condition, ["age"]) || !hasExactly(action, ["type"]) || compact(attributeOf(condition, "age")) !== "365" || compact(attributeOf(action, "type")) !== '"Delete"')) return false;
   const encryption = b.blocks.filter((c) => c.type === "encryption");
   if (encryption.length > 1) return false;
   const keyName = encryption[0] ? /^google_kms_crypto_key\.([a-z0-9_]+)\.id$/.exec(attributeOf(encryption[0], "default_kms_key_name") ?? "")?.[1] : undefined;
@@ -326,6 +337,85 @@ export function isGcpScaffold(b: HclBlock, all: readonly HclBlock[]): boolean {
     default:
       return false;
   }
+}
+
+/** The name of `b` when it is a Pub/Sub resource of this type. */
+const pubsub = (b: HclBlock, type: "google_pubsub_topic" | "google_pubsub_subscription"): string | undefined =>
+  b.type === "resource" && b.labels.length === 2 && b.labels[0] === type ? b.labels[1] : undefined;
+
+/** The one block `type` named `name` in the file, if there is one. */
+const resourceNamed = (all: readonly HclBlock[], type: string, name: string): HclBlock | undefined =>
+  all.find((o) => o.type === "resource" && o.labels.length === 2 && o.labels[0] === type && o.labels[1] === name);
+
+/**
+ * The three blocks `queue` writes for the queue `queue`, when the file has them exactly as the generator writes them and
+ * tied to each other: the topic, the dead-letter topic named for it, and the subscription of the queue's name that reads
+ * from the first and gives up on the second. The names carry one slug, both topics one key (the key store's, which must be
+ * in the file) or none, and the subscription has the generator's attributes and its two blocks, each exact. Nothing a
+ * reviewer would add (a push endpoint, a filter, a second target, another label) is part of it.
+ */
+function queueParts(queue: string, all: readonly HclBlock[]): { topic: HclBlock; dead: HclBlock; subscription: HclBlock } | undefined {
+  const topic = resourceNamed(all, "google_pubsub_topic", queue);
+  const dead = resourceNamed(all, "google_pubsub_topic", `${queue}_dead_letter`);
+  const subscription = resourceNamed(all, "google_pubsub_subscription", queue);
+  if (!topic || !dead || !subscription) return undefined;
+  const slug = /^"topic-\$\{var\.name_prefix\}-([a-z0-9-]+)"$/.exec(compact(attributeOf(topic, "name")))?.[1];
+  if (slug === undefined) return undefined;
+  const key = attributeOf(topic, "kms_key_name");
+  const keyName = key === undefined ? undefined : /^google_kms_crypto_key\.([a-z0-9_]+)\.id$/.exec(compact(key))?.[1];
+  if (key !== undefined && (keyName === undefined || resourceNamed(all, "google_kms_crypto_key", keyName) === undefined)) return undefined;
+  const keyed = key === undefined ? [] : ["kms_key_name"];
+  for (const t of [topic, dead]) {
+    if (!hasExactly(t, ["name", "message_retention_duration", ...keyed]) || compact(attributeOf(t, "message_retention_duration")) !== '"604800s"') return undefined;
+    if (compact(attributeOf(t, "kms_key_name")) !== compact(key)) return undefined;
+  }
+  if (compact(attributeOf(dead, "name")) !== `"dlq-\${var.name_prefix}-${slug}"`) return undefined;
+  const ordering = compact(attributeOf(subscription, "enable_message_ordering"));
+  const policy = subscription.blocks.find((c) => c.type === "dead_letter_policy");
+  const expiry = subscription.blocks.find((c) => c.type === "expiration_policy");
+  const exact =
+    hasExactly(subscription, ["name", "topic", "ack_deadline_seconds", "message_retention_duration", "enable_message_ordering", "enable_exactly_once_delivery"], true) &&
+    hasBlocks(subscription, ["dead_letter_policy", "expiration_policy"]) &&
+    policy !== undefined &&
+    expiry !== undefined &&
+    hasExactly(policy, ["dead_letter_topic", "max_delivery_attempts"]) &&
+    hasExactly(expiry, ["ttl"]) &&
+    compact(attributeOf(subscription, "name")) === `"sub-\${var.name_prefix}-${slug}"` &&
+    compact(attributeOf(subscription, "topic")) === `google_pubsub_topic.${queue}.id` &&
+    compact(attributeOf(subscription, "ack_deadline_seconds")) === "30" &&
+    compact(attributeOf(subscription, "message_retention_duration")) === '"604800s"' &&
+    (ordering === "true" || ordering === "false") &&
+    compact(attributeOf(subscription, "enable_exactly_once_delivery")) === ordering &&
+    compact(attributeOf(policy, "dead_letter_topic")) === `google_pubsub_topic.${queue}_dead_letter.id` &&
+    compact(attributeOf(policy, "max_delivery_attempts")) === "5" &&
+    compact(attributeOf(expiry, "ttl")) === '""';
+  return exact ? { topic, dead, subscription } : undefined;
+}
+
+/**
+ * Whether a topic is the dead-letter topic the plan adds for a queue, so that the queue reads back as one node
+ * (the topic, its subscription and the topic the subscription gives up on). It is one of the three blocks `queue`
+ * writes (`queueParts`) and no other subscription reads it or gives up on it: a second subscription on it is a
+ * consumer the file added, and the topic it consumes is a queue of its own. A topic of the file's own, however it
+ * is named, and a lookalike that differs in any way or that no subscription gives up on, is drawn.
+ */
+export function isGcpDeadLetterTopic(b: HclBlock, all: readonly HclBlock[]): boolean {
+  const name = pubsub(b, "google_pubsub_topic");
+  const queue = name === undefined ? undefined : /^([a-z0-9_]+)_dead_letter$/.exec(name)?.[1];
+  const parts = queue === undefined ? undefined : queueParts(queue, all);
+  if (parts?.dead !== b) return false;
+  const address = `google_pubsub_topic.${name}`;
+  return !all.some((o) => o !== parts.subscription && pubsub(o, "google_pubsub_subscription") !== undefined && expressionsIn(o).some((e) => extractReferences(e).includes(address)));
+}
+
+/**
+ * Whether a subscription is the one the plan adds for a queue, exactly as `queue` writes it and tied to the queue's
+ * topic and dead-letter topic (`queueParts`). Any other subscription (a push endpoint, a filter, a second one on the
+ * queue's topic, one on a topic of the file's own) is the file's own and has to be seen, not read as part of the queue.
+ */
+export function isGcpQueueSubscription(b: HclBlock, all: readonly HclBlock[]): boolean {
+  const name = pubsub(b, "google_pubsub_subscription");
+  return name !== undefined && queueParts(name, all)?.subscription === b;
 }
 
 /* ----------------------------------------------------------------- buckets -- */

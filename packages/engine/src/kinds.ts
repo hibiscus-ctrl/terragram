@@ -14,6 +14,7 @@ import {
 import type { Cloud, GeneratedCloud, ModelNode, NodeCategory, ReviewFlag } from "./model.ts";
 import { MODULE_VERSIONS, type ModuleKey } from "./module-versions.ts";
 import { PROVIDER_VERSIONS } from "./provider-versions.ts";
+import { isAzureScaffold, sameAttributes, squash } from "./scaffold.ts";
 import {
   appEngineClassFrom,
   finalizeFrontend,
@@ -21,6 +22,8 @@ import {
   GCP,
   type GcpPlan,
   isEdgeBlock,
+  isGcpDeadLetterTopic,
+  isGcpQueueSubscription,
   isGcpScaffold,
   redisSkuFrom,
   runSizeFrom,
@@ -952,7 +955,12 @@ const ACCESS_LOG_BUCKET_INPUT = "attach_access_log_delivery_policy";
  * that is the only default encryption S3 delivers access logs into.
  */
 function s3AccessLogs(c: EmitContext): { logging: { key: string; value: string }; bucket: HclBlock } {
-  const name = `${c.name}_logs`;
+  return s3AccessLogsOf(c.name, c.slug);
+}
+
+/** The log bucket of the bucket module `host` whose names carry `slug`, as `s3AccessLogs` writes it. */
+function s3AccessLogsOf(host: string, slug: string): { logging: { key: string; value: string }; bucket: HclBlock } {
+  const name = `${host}_logs`;
   return {
     logging: {
       key: "logging",
@@ -962,16 +970,33 @@ function s3AccessLogs(c: EmitContext): { logging: { key: string; value: string }
       ]),
     },
     bucket: moduleBlock("aws/s3-bucket", name, [
-      { key: "bucket", value: cloudName("logs", c.slug) },
+      { key: "bucket", value: cloudName("logs", slug) },
       { key: "control_object_ownership", value: "true" },
       { key: "object_ownership", value: quote("BucketOwnerEnforced") },
       ...S3_PUBLIC_ACCESS_BLOCK,
       { key: "versioning", value: mapExpression([{ key: "enabled", value: "true" }]) },
       s3Encryption("AES256"),
       { key: ACCESS_LOG_BUCKET_INPUT, value: "true" },
-      { key: "access_log_delivery_policy_source_buckets", value: `[module.${c.name}.s3_bucket_arn]` },
+      { key: "access_log_delivery_policy_source_buckets", value: `[module.${host}.s3_bucket_arn]` },
     ]),
   };
+}
+
+/**
+ * Whether an S3 module call is exactly the log bucket the plan adds for a bucket: every input the
+ * generator writes and no others, named for the bucket module it logs, which names it as its
+ * `logging` target. A bucket that merely takes the access-log policy, or is not the target of one
+ * in the file, is a store of the file's own and is drawn.
+ */
+function isS3LogBucket(b: HclBlock, all: readonly HclBlock[]): boolean {
+  const label = b.labels[0] ?? "";
+  if (b.type !== "module" || b.labels.length !== 1 || stringValue(attr(b, "source")) !== MODULE_VERSIONS["aws/s3-bucket"].source || !label.endsWith("_logs")) return false;
+  const hostName = label.slice(0, -"_logs".length);
+  const host = all.find((o) => o.type === "module" && o.labels.length === 1 && o.labels[0] === hostName && stringValue(attr(o, "source")) === MODULE_VERSIONS["aws/s3-bucket"].source);
+  const slug = /^"(?:data|site)-\$\{var\.name_prefix\}-([a-z0-9-]+)"$/.exec(squash(attr(host ?? b, "bucket")))?.[1];
+  if (host === undefined || attr(host, ACCESS_LOG_BUCKET_INPUT) !== undefined || slug === undefined) return false;
+  const expected = s3AccessLogsOf(hostName, slug);
+  return sameAttributes(b, expected.bucket) && squash(attr(host, "logging")) === squash(expected.logging.value);
 }
 
 /**
@@ -3258,30 +3283,24 @@ export function moduleSourceToKind(
 }
 
 /**
- * Module calls that are the plan's scaffolding rather than one of its components.
- * The Azure resource group is a Verified Module like everything else, but it is
- * not something a reviewer drew — so the reader skips it instead of showing it as
- * a block it could not translate.
+ * Whether a module call is scaffolding rather than a component: the Azure resource group, the
+ * network an Azure plan adds when the model draws none and its private DNS zones (`isAzureScaffold`),
+ * or the bucket a bucket's access logs go to. Only exactly what the generator writes, used by a
+ * component of the file, counts; a lookalike is drawn, the way `isScaffoldResource` does for Google Cloud.
  */
-const SCAFFOLD_MODULE_SOURCES: readonly string[] = [
-  MODULE_VERSIONS["azure/resource-group"].source,
-  MODULE_VERSIONS["azure/private-dns-zone"].source,
-];
-
-/** The module name of the network an Azure plan adds when the model draws none. */
-export const PLAN_NETWORK = "network";
+export function isScaffoldModule(b: HclBlock, all: readonly HclBlock[]): boolean {
+  return isAzureScaffold(b, all, (user) => becomesNode(user, all)) || isS3LogBucket(b, all);
+}
 
 /**
- * Whether a module call is scaffolding: the resource group and the private DNS
- * zones above, the network an Azure plan adds when the model draws none, or the
- * bucket a bucket's access logs go to — part of the bucket that logs into it,
- * never a store the reviewer drew.
+ * Whether the reader draws a block as a node of its own (or inside one): a module call that is not the
+ * log bucket of a bucket, or a resource of a type some kind reads that is not what the plan adds around a component.
+ * A variable, output, local, data source or provider block, and a resource no kind reads, are not.
  */
-export function isScaffoldModule(b: HclBlock): boolean {
-  const source = stringValue(attr(b, "source")) ?? "";
-  if (SCAFFOLD_MODULE_SOURCES.includes(source)) return true;
-  if (source === MODULE_VERSIONS["azure/virtual-network"].source && b.labels[0] === PLAN_NETWORK) return true;
-  return source === MODULE_VERSIONS["aws/s3-bucket"].source && attr(b, ACCESS_LOG_BUCKET_INPUT) === "true";
+function becomesNode(b: HclBlock, all: readonly HclBlock[]): boolean {
+  if (b.type === "module") return !isS3LogBucket(b, all);
+  if (b.type !== "resource" || b.labels.length !== 2) return false;
+  return !isGcpScaffold(b, all) && resourceTypeToKind(b.labels[0] ?? "", undefined, b) !== null;
 }
 
 /** Whether the derived spine fronts this kind with an edge tier by default. */
@@ -3293,6 +3312,24 @@ export function isScaffoldModule(b: HclBlock): boolean {
  */
 export function isScaffoldResource(b: HclBlock, all: readonly HclBlock[]): boolean {
   return isGcpScaffold(b, all);
+}
+
+/**
+ * Whether a resource block is the dead-letter topic a Google Cloud plan adds for a queue, which reads back as
+ * part of the queue rather than as a queue of its own. Only exactly what the generator writes, given up on by
+ * the subscription of the topic it is named for, counts (`isGcpDeadLetterTopic`); a topic of the file's own is drawn.
+ */
+export function isDeadLetterTopic(b: HclBlock, all: readonly HclBlock[]): boolean {
+  return isGcpDeadLetterTopic(b, all);
+}
+
+/**
+ * Whether a resource block is a Pub/Sub subscription that is not the one a Google Cloud plan adds for its queue
+ * (`isGcpQueueSubscription`): a push endpoint, a filter, a second consumer, a subscription on a topic of the file's own.
+ * It is not part of a queue (the queue's own subscription says nothing about what else reads the topic), so `parse` draws it on its own, flagged.
+ */
+export function isForeignSubscription(b: HclBlock, all: readonly HclBlock[]): boolean {
+  return b.type === "resource" && b.labels.length === 2 && b.labels[0] === "google_pubsub_subscription" && !isGcpQueueSubscription(b, all);
 }
 
 export function isFronted(kind: string): boolean {
