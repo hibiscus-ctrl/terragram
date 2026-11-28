@@ -6,9 +6,19 @@ import type { GraphView } from "./project.ts";
 
 /** The text every picture of a {@link GraphView} shares, so that the SVG, the draw.io file and the layout say the same words. */
 
-/** Text with the control characters dropped (a tab is kept): what no format can hold, and what a reader should never see. Markup is the writer's to escape. */
+/**
+ * Text with the characters XML 1.0 cannot hold dropped (a tab is kept): control characters,
+ * lone surrogates, U+FFFE and U+FFFF. No format can hold them and a reader should never see
+ * them. Markup is the writer's to escape.
+ */
 export function cleanText(text: string): string {
-  return [...text].filter((ch) => ch >= " " || ch === "\t").join("");
+  return [...text]
+    .filter((ch) => {
+      const code = ch.codePointAt(0) ?? 0;
+      if (code < 0x20) return ch === "\t";
+      return !((code >= 0xd800 && code <= 0xdfff) || code === 0xfffe || code === 0xffff);
+    })
+    .join("");
 }
 
 export const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);

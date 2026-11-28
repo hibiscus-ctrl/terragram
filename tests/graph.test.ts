@@ -681,6 +681,15 @@ describe("determinism", () => {
     assert.ok(!mermaid.includes("\u0007"));
     assert.ok(!/["]\s*<\/text>/.test(mermaid));
   });
+
+  it("drops what XML 1.0 cannot hold (U+FFFE, U+FFFF, lone surrogates) and keeps real astral characters", () => {
+    const odd = `a￿b￾c\uD800d\uDC00e😀`;
+    const doc = { ...small, nodes: small.nodes.map((n) => (n.id === "web-role" ? { ...n, id: odd } : n)) };
+    const svg = renderGraphSvg(view(doc, { title: odd }));
+    assert.ok(!/[￾￿]/.test(svg));
+    assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(svg));
+    assert.ok(svg.includes("abcde😀"));
+  });
 });
 
 describe("layout", () => {
