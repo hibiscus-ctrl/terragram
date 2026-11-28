@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { type HclBlock, attributeOf, block, mapExpression, quote, quoteTemplate } from "./hcl.ts";
-import type { ModelNode } from "./model.ts";
+import type { InfraModel, ModelNode } from "./model.ts";
 
 /**
  * What each kind emits on Google Cloud.
@@ -26,6 +26,7 @@ type VariableSpec = {
   description?: string;
   default?: string;
   sensitive?: boolean;
+  validation?: { condition: string; message: string };
 };
 
 /** What a kind asks of the plan around it. */
@@ -109,12 +110,14 @@ function serviceAccount(name: string, id: string, description: string): HclBlock
 }
 
 /** A grant of one project role to a service account the plan creates. */
-function projectRole(name: string, role: string, account: string): HclBlock {
+function projectRole(name: string, role: string, account: string, condition?: { title: string; expression: string }): HclBlock {
   return block("resource", ["google_project_iam_member", name], [
     { key: "project", value: "var.project_id" },
     { key: "role", value: quote(role) },
     { key: "member", value: `"serviceAccount:\${${account}.email}"` },
-  ]);
+  ], condition
+    ? [block("condition", [], [{ key: "title", value: quote(condition.title) }, { key: "expression", value: condition.expression }])]
+    : []);
 }
 
 /** The provider a resource that only the beta provider has names: `google_project_service_identity` is one. */
@@ -122,11 +125,12 @@ export const GCP_BETA_REF = "google-beta";
 
 /**
  * What a bucket the plan adds around a component is for, and the name its bucket carries: the access-log
- * bucket of another bucket, the source a function is deployed from.
+ * bucket of another bucket, the source a function or an App Engine application is deployed from.
  */
 const SCAFFOLD_BUCKETS = {
   "access-logs": /^"\$\{var\.project_id\}-logs-\$\{var\.name_prefix\}-[a-z0-9-]+"$/,
   "function-source": /^"\$\{var\.project_id\}-src-\$\{var\.name_prefix\}-[a-z0-9-]+"$/,
+  "app-source": /^"\$\{var\.project_id\}-app-\$\{var\.name_prefix\}-[a-z0-9-]+"$/,
 } as const;
 
 /** Every expression in a block and the blocks nested in it. */
@@ -189,7 +193,8 @@ function isScaffoldBucket(all: readonly HclBlock[], name: string): boolean {
         o.blocks.some((c) => c.type === "logging" && attributeOf(c, "log_bucket") === ref),
     );
   }
-  return all.some((o) => o.type === "resource" && o.labels[0] === "google_cloudfunctions2_function" && expressionsIn(o).includes(ref));
+  const deployedFrom = purpose === "function-source" ? "google_cloudfunctions2_function" : "google_app_engine_standard_app_version";
+  return all.some((o) => o.type === "resource" && o.labels[0] === deployedFrom && expressionsIn(o).some((e) => e.includes(ref)));
 }
 
 /**
@@ -331,7 +336,7 @@ export function isGcpScaffold(b: HclBlock, all: readonly HclBlock[]): boolean {
  * of its own. The log bucket is the one that is not logged: logging it would need a
  * further bucket, and that one another, without end.
  */
-function bucketWithLogs(c: GcpContext, opts: { prefix: string; purpose?: string }): { bucket: HclBlock; blocks: HclBlock[] } {
+function bucketWithLogs(c: GcpContext, opts: { prefix: string; purpose?: string; website?: boolean }): { bucket: HclBlock; blocks: HclBlock[] } {
   const logs = `${c.name}_logs`;
   const purpose = opts.purpose ? [{ key: "labels", value: mapExpression([{ key: "purpose", value: quote(opts.purpose) }]) }] : [];
   const bucket = block("resource", ["google_storage_bucket", c.name], [
@@ -348,6 +353,14 @@ function bucketWithLogs(c: GcpContext, opts: { prefix: string; purpose?: string 
       { key: "log_bucket", value: `google_storage_bucket.${logs}.name` },
       { key: "log_object_prefix", value: quote("access/") },
     ]),
+    ...(opts.website
+      ? [
+          block("website", [], [
+            { key: "main_page_suffix", value: quote("index.html") },
+            { key: "not_found_page", value: quote("error.html") },
+          ]),
+        ]
+      : []),
   ]);
   const logBucket = block("resource", ["google_storage_bucket", logs], [
     { key: "name", value: `"\${var.project_id}-logs-\${var.name_prefix}-${c.slug}"` },
@@ -481,6 +494,10 @@ function sqlInstance(c: GcpContext, engine: SqlEngine, prefix: string): GcpEmit 
   ]);
   instance.attributes.push({ key: "depends_on", value: `[${connection}]` });
   const appAccount = `${c.name}_app`;
+  const onInstance = {
+    title: `Only the ${c.slug} instance`,
+    expression: `"resource.name == \\"projects/\${var.project_id}/instances/\${google_sql_database_instance.${c.name}.name}\\""`,
+  };
   const database = block("resource", ["google_sql_database", c.name], [
     { key: "name", value: quote("app") },
     { key: "instance", value: `google_sql_database_instance.${c.name}.name` },
@@ -494,8 +511,9 @@ function sqlInstance(c: GcpContext, engine: SqlEngine, prefix: string): GcpEmit 
     blocks: [
       instance,
       serviceAccount(appAccount, `${c.slug}-app`, `Connects to the ${c.slug} database with IAM authentication`),
-      projectRole(`${c.name}_app_instance_user`, "roles/cloudsql.instanceUser", `google_service_account.${appAccount}`),
-      projectRole(`${c.name}_app_client`, "roles/cloudsql.client", `google_service_account.${appAccount}`),
+      // The grants are the project's, but bounded by a condition to this one instance.
+      projectRole(`${c.name}_app_instance_user`, "roles/cloudsql.instanceUser", `google_service_account.${appAccount}`, onInstance),
+      projectRole(`${c.name}_app_client`, "roles/cloudsql.client", `google_service_account.${appAccount}`, onInstance),
       database,
       user,
     ],
@@ -600,6 +618,399 @@ const FUNCTION_RUNTIME: Record<string, FunctionRuntime> = {
 
 export function functionRuntimeFrom(runtime: string | undefined): string | undefined {
   return Object.entries(FUNCTION_RUNTIME).find(([, v]) => v.runtime === runtime)?.[0];
+}
+
+/* --------------------------------------------------- load balancing and the edge -- */
+
+/** A request line a front end answers on, for the plan's own names: what a load balancer or a CDN is called. */
+type Frontend = { prefix: string; slug: string; name: string };
+
+/** The hostname an edge or a balancer's own certificate covers, once a DNS zone has named it. */
+export type GcpCustomDomain = { name: string; fqdn: string };
+
+/**
+ * The front end of an external Application Load Balancer: a static address, a URL map (which backends
+ * fill in), an HTTP proxy and the forwarding rule that answers on port 80. Without a name of its own
+ * there is nothing to terminate TLS with, so it forwards plain HTTP; `domainFrontend` adds the HTTPS
+ * side once a zone has given it one.
+ */
+function frontend(f: Frontend): { rule: HclBlock; urlMap: HclBlock; proxy: HclBlock; address: HclBlock } {
+  return {
+    rule: block("resource", ["google_compute_global_forwarding_rule", f.name], [
+      { key: "name", value: cloudName(`${f.prefix}-http`, f.slug) },
+      { key: "target", value: `google_compute_target_http_proxy.${f.name}.id` },
+      { key: "ip_address", value: `google_compute_global_address.${f.name}.id` },
+      { key: "port_range", value: quote("80") },
+      { key: "load_balancing_scheme", value: quote("EXTERNAL_MANAGED") },
+    ]),
+    urlMap: block("resource", ["google_compute_url_map", f.name], [{ key: "name", value: cloudName(f.prefix, f.slug) }]),
+    proxy: block("resource", ["google_compute_target_http_proxy", f.name], [
+      { key: "name", value: cloudName(`${f.prefix}-http`, f.slug) },
+      { key: "url_map", value: `google_compute_url_map.${f.name}.id` },
+    ]),
+    address: block("resource", ["google_compute_global_address", f.name], [
+      { key: "name", value: cloudName(f.prefix, f.slug) },
+      { key: "ip_version", value: quote("IPV4") },
+    ]),
+  };
+}
+
+/**
+ * The name the balancer answers on, over HTTPS: a Google-managed certificate for it, a TLS 1.2 floor,
+ * and the port 80 side turned into a redirect to it.
+ */
+function domainFrontend(f: Frontend, domain: GcpCustomDomain, blocks: HclBlock[]): HclBlock[] {
+  const proxy = blocks.find((b) => b.labels[0] === "google_compute_target_http_proxy" && b.labels[1] === f.name);
+  if (proxy) {
+    const redirect = attributeOf(proxy, "url_map");
+    proxy.attributes = proxy.attributes.map((a) => (a.key === "url_map" ? { key: "url_map", value: `google_compute_url_map.${f.name}_redirect.id` } : a));
+    void redirect;
+  }
+  return [
+    block("resource", ["google_compute_url_map", `${f.name}_redirect`], [{ key: "name", value: cloudName(`${f.prefix}-redirect`, f.slug) }], [
+      block("default_url_redirect", [], [
+        { key: "https_redirect", value: "true" },
+        { key: "strip_query", value: "false" },
+        { key: "redirect_response_code", value: quote("MOVED_PERMANENTLY_DEFAULT") },
+      ]),
+    ]),
+    block("resource", ["google_compute_managed_ssl_certificate", domain.name], [
+      { key: "name", value: cloudName(`${f.prefix}-cert`, f.slug) },
+    ], [block("managed", [], [{ key: "domains", value: `[${quote(domain.fqdn)}]` }])]),
+    block("resource", ["google_compute_ssl_policy", f.name], [
+      { key: "name", value: cloudName(`${f.prefix}-tls`, f.slug) },
+      { key: "profile", value: quote("MODERN") },
+      { key: "min_tls_version", value: quote("TLS_1_2") },
+    ]),
+    block("resource", ["google_compute_target_https_proxy", f.name], [
+      { key: "name", value: cloudName(`${f.prefix}-https`, f.slug) },
+      { key: "url_map", value: `google_compute_url_map.${f.name}.id` },
+      { key: "ssl_certificates", value: `[google_compute_managed_ssl_certificate.${domain.name}.id]` },
+      { key: "ssl_policy", value: `google_compute_ssl_policy.${f.name}.id` },
+    ]),
+    block("resource", ["google_compute_global_forwarding_rule", `${f.name}_https`], [
+      { key: "name", value: cloudName(`${f.prefix}-https`, f.slug) },
+      { key: "target", value: `google_compute_target_https_proxy.${f.name}.id` },
+      { key: "ip_address", value: `google_compute_global_address.${f.name}.id` },
+      { key: "port_range", value: quote("443") },
+      { key: "load_balancing_scheme", value: quote("EXTERNAL_MANAGED") },
+    ]),
+  ];
+}
+
+/** What a backend is asked to reach: a node of the model by its kind and its Terraform name. */
+export type GcpBackendTarget = {
+  kind: string;
+  /** The Terraform name the target's blocks carry. */
+  name: string;
+};
+
+/** What a wire from a balancer or an edge to a target adds. */
+export type GcpBackend = {
+  blocks: HclBlock[];
+  /** What the URL map sends traffic to: a backend service or a backend bucket. */
+  service: string;
+  /** Blocks the URL map takes when its default is this backend (a site's root document). */
+  routes: HclBlock[];
+  /**
+   * The target itself has to be told to admit the balancer: its own ingress setting. It lives on the target's main
+   * block, or on the block of `resource` that the target's kind writes beside it, inside `nested` when there is one.
+   */
+  admit?: { attribute: string; value: string; resource?: string; nested?: string };
+};
+
+/**
+ * The backend one edge adds: a serverless network endpoint group in front of Cloud Run, a Cloud
+ * Function or App Engine, an internet endpoint group in front of another balancer, a backend bucket
+ * in front of a site. With `cdn` the traffic is cached at Google's edge, and with `policy` it passes
+ * a Cloud Armor policy first. Anything else has no backend to write and is a dependency instead.
+ */
+export function gcpBackend(
+  edge: { name: string; slug: string; prefix: string; cdn: boolean; policy?: string; edgePolicy?: string },
+  target: GcpBackendTarget,
+): GcpBackend | null {
+  const { name } = edge;
+  const policy = edge.policy ? [{ key: "security_policy", value: edge.policy }] : [];
+  const logging = block("log_config", [], [
+    { key: "enable", value: "true" },
+    { key: "sample_rate", value: "1" },
+  ]);
+  const service = (protocol: string, group: string): HclBlock =>
+    block("resource", ["google_compute_backend_service", name], [
+      { key: "name", value: cloudName(`${edge.prefix}-be`, `${edge.slug}-${target.name}`.replace(/_/g, "-")) },
+      { key: "protocol", value: quote(protocol) },
+      { key: "load_balancing_scheme", value: quote("EXTERNAL_MANAGED") },
+      { key: "enable_cdn", value: String(edge.cdn) },
+      ...policy,
+    ], [block("backend", [], [{ key: "group", value: group }]), logging]);
+  const neg = (blockOf: HclBlock): HclBlock => blockOf;
+  const serverless = (kind: "cloud_run" | "app_engine", attributes: Array<{ key: string; value: string }>, extra: HclBlock[]): GcpBackend => ({
+    blocks: [
+      neg(block("resource", ["google_compute_region_network_endpoint_group", name], [
+        { key: "name", value: cloudName(`${edge.prefix}-neg`, `${edge.slug}-${target.name}`.replace(/_/g, "-")) },
+        { key: "region", value: "var.region" },
+        { key: "network_endpoint_type", value: quote("SERVERLESS") },
+      ], [block(kind, [], attributes)])),
+      service("HTTPS", `google_compute_region_network_endpoint_group.${name}.id`),
+      ...extra,
+    ],
+    service: `google_compute_backend_service.${name}.id`,
+    routes: [],
+  });
+
+  if (target.kind === "containers") {
+    const run = `google_cloud_run_v2_service.${target.name}`;
+    return {
+      ...serverless("cloud_run", [{ key: "service", value: `${run}.name` }], [
+        // Cloud Run admits what the balancer sends only if it may be invoked without an identity.
+        block("resource", ["google_cloud_run_v2_service_iam_member", name], [
+          { key: "name", value: `${run}.name` },
+          { key: "location", value: `${run}.location` },
+          { key: "role", value: quote("roles/run.invoker") },
+          { key: "member", value: quote("allUsers") },
+        ]),
+      ]),
+      admit: { attribute: "ingress", value: quote("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER") },
+    };
+  }
+  if (target.kind === "functions") {
+    const fn = `google_cloudfunctions2_function.${target.name}`;
+    return serverless("cloud_run", [{ key: "service", value: `${fn}.service_config[0].service` }], [
+      block("resource", ["google_cloud_run_service_iam_member", name], [
+        { key: "service", value: `${fn}.service_config[0].service` },
+        { key: "location", value: `${fn}.location` },
+        { key: "role", value: quote("roles/run.invoker") },
+        { key: "member", value: quote("allUsers") },
+      ]),
+    ]);
+  }
+  if (target.kind === "app-service") {
+    const version = `google_app_engine_standard_app_version.${target.name}`;
+    // The application admits nothing from outside until a balancer is wired to it: then the balancer and Google, and nothing else.
+    return {
+      ...serverless("app_engine", [{ key: "service", value: `${version}.service` }], []),
+      admit: {
+        resource: "google_app_engine_service_network_settings",
+        nested: "network_settings",
+        attribute: "ingress_traffic_allowed",
+        value: quote(APP_ENGINE_INGRESS.loadBalancer),
+      },
+    };
+  }
+  if (target.kind === "static-site") {
+    const bucket = `google_storage_bucket.${target.name}`;
+    const backend = `google_compute_backend_bucket.${name}`;
+    return {
+      blocks: [
+        block("resource", ["google_compute_backend_bucket", name], [
+          { key: "name", value: cloudName(`${edge.prefix}-bucket`, `${edge.slug}-${target.name}`.replace(/_/g, "-")) },
+          { key: "bucket_name", value: `${bucket}.name` },
+          { key: "enable_cdn", value: String(edge.cdn) },
+          // A backend bucket takes an edge policy, not a backend one: the CDN's, when a CDN fronts the site.
+          ...(edge.edgePolicy ? [{ key: "edge_security_policy", value: edge.edgePolicy }] : []),
+        ]),
+        // The bucket stays private: only the load balancer's own service agent reads it. Google creates that agent when the
+        // first backend bucket is, so the grant waits for this one.
+        block("data", ["google_project", name], []),
+        block("resource", ["google_storage_bucket_iam_member", name], [
+          { key: "bucket", value: `${bucket}.name` },
+          { key: "role", value: quote("roles/storage.objectViewer") },
+          { key: "member", value: `"serviceAccount:service-\${data.google_project.${name}.number}@https-lb.iam.gserviceaccount.com"` },
+          { key: "depends_on", value: `[${backend}]` },
+        ]),
+      ],
+      service: `${backend}.id`,
+      // A site is served from its index document: "/" asks the bucket for an object of that name.
+      routes: [
+        block("host_rule", [], [
+          { key: "hosts", value: `["*"]` },
+          { key: "path_matcher", value: quote("site") },
+        ]),
+        block("path_matcher", [], [
+          { key: "name", value: quote("site") },
+          { key: "default_service", value: `${backend}.id` },
+        ], [
+          block("route_rules", [], [
+            { key: "priority", value: "1" },
+            { key: "service", value: `${backend}.id` },
+          ], [
+            block("match_rules", [], [{ key: "full_path_match", value: quote("/") }]),
+            block("route_action", [], [], [block("url_rewrite", [], [{ key: "path_prefix_rewrite", value: quote("/index.html") }])]),
+          ]),
+        ]),
+      ],
+    };
+  }
+  return null;
+}
+
+/** The Cloud Armor policy a CDN in front of an application carries: the OWASP rules, Log4j, and adaptive DDoS protection. */
+function armorPolicy(c: GcpContext): HclBlock {
+  const deny = (priority: number, description: string, expression: string): HclBlock =>
+    block("rule", [], [
+      { key: "action", value: quote("deny(403)") },
+      { key: "priority", value: String(priority) },
+      { key: "description", value: quote(description) },
+    ], [block("match", [], [], [block("expr", [], [{ key: "expression", value: quote(expression) }])])]);
+  return block("resource", ["google_compute_security_policy", c.name], [
+    { key: "name", value: cloudName("waf", c.slug) },
+    { key: "description", value: quote("Blocks the OWASP top ten request patterns and the Log4Shell probe") },
+  ], [
+    deny(1000, "SQL injection", "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1})"),
+    deny(1001, "Cross-site scripting", "evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})"),
+    deny(1002, "Remote code execution", "evaluatePreconfiguredWaf('rce-v33-stable', {'sensitivity': 1})"),
+    deny(1003, "Log4Shell (CVE-2021-44228)", "evaluatePreconfiguredWaf('cve-canary')"),
+    block("rule", [], [
+      { key: "action", value: quote("allow") },
+      { key: "priority", value: "2147483647" },
+      { key: "description", value: quote("Allow what no rule above denies") },
+    ], [
+      block("match", [], [{ key: "versioned_expr", value: quote("SRC_IPS_V1") }], [
+        block("config", [], [{ key: "src_ip_ranges", value: `["*"]` }]),
+      ]),
+    ]),
+    // Every request the policy judges is logged with what matched it, as the AWS web ACL's log is.
+    block("advanced_options_config", [], [
+      { key: "json_parsing", value: quote("STANDARD") },
+      { key: "log_level", value: quote("VERBOSE") },
+    ]),
+    block("adaptive_protection_config", [], [], [
+      block("layer_7_ddos_defense_config", [], [{ key: "enable", value: "true" }]),
+    ]),
+  ]);
+}
+
+/** Cloud Armor's policy name, as the backends of the CDN in front of it name it. */
+export const GCP_EDGE_PREFIX = "cdn";
+
+/** What an App Engine service's `ingress_traffic_allowed` is set to, by who may reach it. */
+export const APP_ENGINE_INGRESS = {
+  internalOnly: "INGRESS_TRAFFIC_ALLOWED_INTERNAL_ONLY",
+  loadBalancer: "INGRESS_TRAFFIC_ALLOWED_INTERNAL_AND_LB",
+  all: "INGRESS_TRAFFIC_ALLOWED_ALL",
+} as const;
+
+/**
+ * The Cloud Armor policy a CDN puts on a site's backend bucket. A backend bucket takes an edge policy, which Google
+ * limits to rules on the caller's address and region: the WAF signatures the application policy has cannot be written in
+ * one. So it allows what no rule denies, and is where a reviewer adds the ranges or countries to refuse.
+ */
+export function edgeArmorPolicy(name: string, slug: string): HclBlock {
+  return block("resource", ["google_compute_security_policy", name], [
+    { key: "name", value: cloudName("waf-edge", slug) },
+    { key: "description", value: quote("Filters requests to a CDN's sites by address and region at Google's edge: add the ranges or countries to refuse") },
+    { key: "type", value: quote("CLOUD_ARMOR_EDGE") },
+  ], [
+    block("rule", [], [
+      { key: "action", value: quote("allow") },
+      { key: "priority", value: "2147483647" },
+      { key: "description", value: quote("Allow what no rule above denies") },
+    ], [
+      block("match", [], [{ key: "versioned_expr", value: quote("SRC_IPS_V1") }], [
+        block("config", [], [{ key: "src_ip_ranges", value: `["*"]` }]),
+      ]),
+    ]),
+  ]);
+}
+
+/**
+ * Which load balancer each CDN in front of an application has become, as node ids (balancer -> front door). A CDN
+ * wired to a balancer is that balancer's: its backends cache and pass the policy, and there is one front end, so no second
+ * address reaches the origin around the policy. So is a CDN and a balancer that send to the same target, which would
+ * otherwise be two ways in, one of them unfiltered.
+ */
+export function foldedFronts(model: Pick<InfraModel, "nodes" | "edges">): Map<string, string> {
+  const kind = new Map(model.nodes.map((n) => [n.id, n.kind]));
+  const folded = new Map<string, string>();
+  for (const e of model.edges) {
+    if (kind.get(e.source) === "front-door" && kind.get(e.target) === "load-balancer" && !folded.has(e.target)) folded.set(e.target, e.source);
+  }
+  const targets = (id: string) => new Set(model.edges.filter((e) => e.source === id && kind.get(e.target) !== "load-balancer").map((e) => e.target));
+  for (const balancer of model.nodes.filter((n) => n.kind === "load-balancer" && !folded.has(n.id))) {
+    const own = targets(balancer.id);
+    const front = model.nodes.find((n) => n.kind === "front-door" && [...targets(n.id)].some((t) => own.has(t)));
+    if (front) folded.set(balancer.id, front.id);
+  }
+  return folded;
+}
+
+/** Why a front end that no DNS zone names serves plain HTTP only. */
+export const PLAIN_HTTP_REASON =
+  "No DNS zone in the model names it, so there is no hostname to issue a managed certificate for: it serves plain HTTP on port 80 only. " +
+  "Draw a DNS zone to it to serve HTTPS (port 80 then redirects), or send nothing that needs TLS through it.";
+
+/** The load balancers and CDNs of a Google plan that no DNS zone names, and so answer on plain HTTP only. */
+export function plainHttpFrontEnds(model: Pick<InfraModel, "nodes" | "edges">): ModelNode[] {
+  const kind = new Map(model.nodes.map((n) => [n.id, n.kind]));
+  const folded = foldedFronts(model);
+  const foldedIds = new Set(folded.values());
+  const named = (id: string) => model.edges.some((e) => e.target === id && kind.get(e.source) === "dns");
+  return model.nodes.filter((n) => {
+    if (n.kind === "front-door") return !foldedIds.has(n.id) && !named(n.id);
+    if (n.kind !== "load-balancer") return false;
+    const front = folded.get(n.id);
+    return !named(n.id) && !(front !== undefined && named(front));
+  });
+}
+
+/** App Engine's runtime and the placeholder it serves until the application is deployed. */
+const APP_ENGINE_FILES: Array<{ file: string; content: string }> = [
+  {
+    file: "index.js",
+    content: [
+      "// Placeholder application — replace it with your own.",
+      "const http = require(\"node:http\");",
+      "",
+      "http",
+      "  .createServer((req, res) => {",
+      "    res.writeHead(200, { \"content-type\": \"application/json\" });",
+      "    res.end(JSON.stringify({ ok: true, message: \"Replace this placeholder with your application.\" }));",
+      "  })",
+      "  .listen(8080); // App Engine standard sends requests to port 8080",
+      "",
+    ].join("\n"),
+  },
+  {
+    file: "package.json",
+    content: `${JSON.stringify({ name: "app", version: "1.0.0", main: "index.js", scripts: { start: "node index.js" } }, null, 2)}\n`,
+  },
+];
+
+/** App Engine's instance classes for the three tiers the model offers. */
+const APP_ENGINE_CLASS: Record<string, string> = { "Dev / Test": "F1", "Standard (P1v3)": "F2", "Production (P3v3)": "F4" };
+
+export function appEngineClassFrom(value: string | undefined): string | undefined {
+  return Object.entries(APP_ENGINE_CLASS).find(([, v]) => v === value)?.[0];
+}
+
+/**
+ * A load balancer's URL map needs somewhere to send traffic, and a plan with nothing behind it yet has nowhere.
+ * Until an edge gives it a backend it redirects to a hostname the reviewer fills in, which the plan says
+ * rather than inventing one.
+ */
+export function finalizeFrontend(host: HclBlock): VariableSpec[] {
+  if (host.attributes.some((a) => a.key === "default_service")) return [];
+  host.blocks.push(
+    block("default_url_redirect", [], [
+      { key: "host_redirect", value: "var.origin_domain_name" },
+      { key: "https_redirect", value: "true" },
+      { key: "strip_query", value: "false" },
+      { key: "redirect_response_code", value: quote("TEMPORARY_REDIRECT") },
+    ]),
+  );
+  return [
+    {
+      name: "origin_domain_name",
+      type: "string",
+      description: "Hostname the load balancer sends traffic to: nothing in the model sits behind it yet.",
+      default: quote("example.com"),
+    },
+  ];
+}
+
+/** Whether a block belongs to the CDN in front of an application rather than to a load balancer of its own. */
+export function isEdgeBlock(b: HclBlock): boolean {
+  return b.labels[0] === "google_compute_security_policy" || (attributeOf(b, "name") ?? "").startsWith(`"${GCP_EDGE_PREFIX}-`);
 }
 
 /** The tables and helpers `kinds.ts` binds to the registry. */
@@ -1254,6 +1665,123 @@ export const GCP = {
         outputs: [{ name: `${c.name}_number`, value: `google_project.${c.name}.number` }],
       };
     },
+  },
+  /** A bucket that serves a site: private, versioned and logged, with an index document and an error page. */
+  staticSite: {
+    emit: (c: GcpContext) => {
+      c.gcp.api("storage.googleapis.com");
+      const { bucket, blocks } = bucketWithLogs(c, { prefix: "site", website: true });
+      return {
+        blocks,
+        referent: blocks.indexOf(bucket),
+        consumer: blocks.indexOf(bucket),
+        variables: [NAME_PREFIX],
+        outputs: [{ name: `${c.name}_bucket`, value: `google_storage_bucket.${c.name}.name` }],
+      };
+    },
+  },
+
+  /** App Engine standard on its own service account, deployed from a directory written beside the plan. */
+  appService: {
+    emit: (c: GcpContext) => {
+      c.gcp.api("appengine.googleapis.com", "cloudbuild.googleapis.com", "storage.googleapis.com");
+      const source = `${c.name}_source`;
+      const sourceBucket = bucketWithLogs({ ...c, name: source }, { prefix: "app", purpose: "app-source" });
+      const instanceClass = APP_ENGINE_CLASS[c.attr("Compute tier")] ?? "F2";
+      return {
+        blocks: [
+          block("resource", ["google_app_engine_standard_app_version", c.name], [
+            { key: "service", value: quote("default") },
+            { key: "version_id", value: quote("v1") },
+            { key: "runtime", value: quote("nodejs22") },
+            { key: "instance_class", value: quote(instanceClass) },
+            { key: "service_account", value: `google_service_account.${c.name}.email` },
+            // The default service cannot be deleted, so a destroy leaves its version in place instead of failing on it.
+            { key: "noop_on_destroy", value: "true" },
+            { key: "depends_on", value: `[google_app_engine_application.${c.name}]` },
+          ], [
+            block("entrypoint", [], [{ key: "shell", value: quote("node index.js") }]),
+            block("deployment", [], [], [
+              block("zip", [], [
+                { key: "source_url", value: `"https://storage.googleapis.com/\${google_storage_bucket.${source}.name}/\${google_storage_bucket_object.${source}.name}"` },
+              ]),
+            ]),
+            block("handlers", [], [
+              { key: "url_regex", value: quote(".*") },
+              { key: "security_level", value: quote("SECURE_ALWAYS") },
+            ], [block("script", [], [{ key: "script_path", value: quote("auto") }])]),
+          ]),
+          block("resource", ["google_app_engine_application", c.name], [
+            { key: "location_id", value: "var.region" },
+            { key: "database_type", value: quote("CLOUD_FIRESTORE") },
+          ]),
+          // An application nothing fronts is public on appspot.com unless it is told otherwise: it admits nothing from outside
+          // until a balancer is wired to it, or the model draws the internet straight to it.
+          block("resource", ["google_app_engine_service_network_settings", c.name], [
+            { key: "service", value: `google_app_engine_standard_app_version.${c.name}.service` },
+          ], [block("network_settings", [], [{ key: "ingress_traffic_allowed", value: quote(APP_ENGINE_INGRESS.internalOnly) }])]),
+          serviceAccount(c.name, c.slug, `Runs the ${c.slug} application`),
+          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
+          // The deployment reads the zip as the application's account: from its own source bucket, and no other.
+          block("resource", ["google_storage_bucket_iam_member", `${source}_viewer`], [
+            { key: "bucket", value: `google_storage_bucket.${source}.name` },
+            { key: "role", value: quote("roles/storage.objectViewer") },
+            { key: "member", value: `"serviceAccount:\${google_service_account.${c.name}.email}"` },
+          ]),
+          block("data", ["archive_file", c.name], [
+            { key: "type", value: quote("zip") },
+            { key: "source_dir", value: quoteTemplate`\${path.module}/src/${c.slug}` },
+            { key: "output_path", value: quoteTemplate`\${path.module}/.terraform/${c.slug}.zip` },
+          ]),
+          ...sourceBucket.blocks,
+          block("resource", ["google_storage_bucket_object", source], [
+            { key: "name", value: `"\${data.archive_file.${c.name}.output_md5}.zip"` },
+            { key: "bucket", value: `google_storage_bucket.${source}.name` },
+            { key: "source", value: `data.archive_file.${c.name}.output_path` },
+          ]),
+        ],
+        variables: [NAME_PREFIX],
+        outputs: [{ name: `${c.name}_hostname`, value: `google_app_engine_application.${c.name}.default_hostname` }],
+        files: APP_ENGINE_FILES.map((f) => ({ name: `src/${c.slug}/${f.file}`, content: f.content })),
+      };
+    },
+  },
+
+  /** An external Application Load Balancer; its backends are what the edges to it add. */
+  loadBalancer: {
+    emit: (c: GcpContext) => {
+      c.gcp.api("compute.googleapis.com");
+      const f = frontend({ prefix: "lb", slug: c.slug, name: c.name });
+      return {
+        blocks: [f.rule, f.urlMap, f.proxy, f.address],
+        referent: 0,
+        consumer: 1,
+        variables: [NAME_PREFIX],
+        outputs: [{ name: `${c.name}_address`, value: `google_compute_global_address.${c.name}.address` }],
+      };
+    },
+    domain: (c: { name: string; slug: string }, domain: GcpCustomDomain, blocks: HclBlock[]) =>
+      domainFrontend({ prefix: "lb", slug: c.slug, name: c.name }, domain, blocks),
+  },
+
+  /**
+   * Cloud CDN and Cloud Armor in front of an application: a policy of the OWASP and Log4Shell rules, and a
+   * load balancer of its own whose backends cache what they serve and pass the policy first.
+   */
+  frontDoor: {
+    emit: (c: GcpContext) => {
+      c.gcp.api("compute.googleapis.com");
+      const f = frontend({ prefix: GCP_EDGE_PREFIX, slug: c.slug, name: c.name });
+      return {
+        blocks: [armorPolicy(c), f.rule, f.urlMap, f.proxy, f.address],
+        referent: 1,
+        consumer: 2,
+        variables: [NAME_PREFIX],
+        outputs: [{ name: `${c.name}_address`, value: `google_compute_global_address.${c.name}.address` }],
+      };
+    },
+    domain: (c: { name: string; slug: string }, domain: GcpCustomDomain, blocks: HclBlock[]) =>
+      domainFrontend({ prefix: GCP_EDGE_PREFIX, slug: c.slug, name: c.name }, domain, blocks),
   },
 } as const;
 

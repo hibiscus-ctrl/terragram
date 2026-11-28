@@ -214,6 +214,25 @@ export const SCANNER_SKIPS: readonly ScannerSkip[] = [
       "nodes that never serve.",
   },
   {
+    checkov: "CKV_GCP_102",
+    reason:
+      "A load balancer calls Cloud Run with no identity of its own, so the service has to admit allUsers to be " +
+      "reachable through it at all. What it admits is bounded the other way: ingress is set to the load balancer " +
+      "(INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER, or ALLOW_INTERNAL_AND_GCLB for a function), so the service's own " +
+      "run.app address refuses the internet, and a CDN in front of it passes Cloud Armor first. That is the narrowest " +
+      "setting Google has that admits an external load balancer: it also admits callers inside the project's network " +
+      "and Google's own services, which reach the service around Cloud Armor. The plan's header says so for every " +
+      "service a balancer is wired to.",
+  },
+  {
+    checkov: "CKV_GCP_73",
+    reason:
+      "The Log4Shell rule is in the policy every CDN in front of an application carries, and a test holds it there. " +
+      "The one other policy the plan writes is the edge policy of a CDN's static site: a backend bucket takes only " +
+      "an edge policy, and Google limits those to rules on the caller's address and region, so it cannot hold a " +
+      "preconfigured WAF expression and checkov, which asks every policy for one, can never pass it.",
+  },
+  {
     trivy: "GCP-0072",
     reason:
       "The one rule that admits traffic inside the network, from the subnetwork's own ip_cidr_range and nothing else " +

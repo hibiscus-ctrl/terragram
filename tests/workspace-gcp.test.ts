@@ -215,12 +215,15 @@ module "net" {
     assert.deepEqual(module.model.nodes.map((n) => n.kind), ["internet", "vnet"]);
   });
 
-  it("reads and builds a kind from the same spec, and reads the ones it does not build yet", () => {
+  it("reads and builds a kind from the same spec", () => {
     assert.equal(readSpec("queue", "gcp")?.type, "google_pubsub_topic");
     assert.equal(cloudSpec("queue", "gcp")?.type, "google_pubsub_topic");
     assert.equal(readSpec("queue", "aws")?.type, "aws_sqs_queue");
     assert.equal(readSpec("static-site", "gcp")?.type, "google_storage_bucket");
-    assert.equal(cloudSpec("static-site", "gcp"), null);
+    assert.equal(cloudSpec("static-site", "gcp")?.type, "google_storage_bucket");
+    // The nodes that are not components are not built on any cloud.
+    assert.equal(cloudSpec("internet", "gcp"), null);
+    assert.equal(cloudSpec("external", "gcp"), null);
   });
 });
 
@@ -310,11 +313,11 @@ describe("a Google Cloud model is read, drawn, explained and generated", () => {
     assert.match(out.files[0]?.content ?? "", /# Target: Google Cloud · London \(europe-west2\) · Terraform/);
   });
 
-  it("says which components it cannot build, as it does for AWS and Azure", () => {
+  it("builds every component of the fixture, and says so as it does for AWS and Azure", () => {
     const feasibility = assessFeasibility(model, "gcp");
-    assert.equal(feasibility.verdict, "partial");
-    assert.deepEqual(feasibility.omitted, ["Load Balancer", "Static Site"]);
-    assert.match(feasibility.summary, /^17 of 19 components can be built on Google Cloud\. Not buildable: Load Balancer, Static Site\./);
+    assert.equal(feasibility.verdict, "full");
+    assert.deepEqual(feasibility.omitted, []);
+    assert.equal(feasibility.summary, "All 19 components can be built on Google Cloud.");
   });
 
   it("is described in plain English as Google Cloud", () => {
@@ -330,7 +333,7 @@ describe("a Google Cloud model is read, drawn, explained and generated", () => {
     assert.equal(built.receipt.cloud, "gcp");
     assert.deepEqual(built.receipt.plan.slice(0, 3), ["main.tf", "variables.tf", "outputs.tf"]);
     assert.ok(built.receipt.sbom.some((entry) => entry.name === "google"));
-    assert.deepEqual(built.receipt.omitted, ["Load Balancer", "Static Site"]);
+    assert.deepEqual(built.receipt.omitted, []);
     const files = buildBundle(built.receipt, model, built.terraform.files, built.attestation);
     const report = await verifyBundle(files, { trustedKeys: [built.receipt.publicKey ?? ""] });
     assert.equal(report.ok, true, JSON.stringify(report));

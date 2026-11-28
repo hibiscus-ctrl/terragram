@@ -47,6 +47,12 @@ variable "org_id" {
   default     = null
 }
 
+variable "origin_domain_name" {
+  type        = string
+  description = "Hostname the load balancer sends traffic to: nothing in the model sits behind it yet."
+  default     = "example.com"
+}
+
 variable "project_id" {
   type        = string
   description = "ID of the project every resource is created in."

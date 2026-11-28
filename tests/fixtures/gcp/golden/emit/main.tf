@@ -1,6 +1,12 @@
 # Generated from the diagram model
 # Target: Google Cloud · London (europe-west2) · Terraform
-# 0 module calls and 64 resources from 17 components
+# 0 module calls and 77 resources from 19 components
+#
+# Before you apply: www.orders.example.com is served over HTTPS on a certificate validated through
+# the orders.example.com zone this plan creates, which works only once the zone is delegated.
+# Create the zone first (terraform apply -target=google_dns_managed_zone.dns), set the domain's
+# name servers at your registrar to the dns_name_servers output, then apply the rest.
+# Until the zone is delegated, Google cannot provision the managed certificate, and the name does not serve HTTPS.
 
 terraform {
   required_version = ">= 1.6, < 2.0"
@@ -155,6 +161,38 @@ resource "google_dns_managed_zone" "dns" {
   cloud_logging_config {
     enable_logging = true
   }
+}
+
+resource "google_compute_global_forwarding_rule" "load_balancer" {
+  name                  = "lb-http-${var.name_prefix}-load-balancer"
+  target                = google_compute_target_http_proxy.load_balancer.id
+  ip_address            = google_compute_global_address.load_balancer.id
+  port_range            = "80"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+}
+
+resource "google_compute_url_map" "load_balancer" {
+  name       = "lb-${var.name_prefix}-load-balancer"
+  depends_on = [google_project_service.enabled]
+
+  default_url_redirect {
+    host_redirect          = var.origin_domain_name
+    https_redirect         = true
+    strip_query            = false
+    redirect_response_code = "TEMPORARY_REDIRECT"
+  }
+}
+
+resource "google_compute_target_http_proxy" "load_balancer" {
+  name       = "lb-http-${var.name_prefix}-load-balancer"
+  url_map    = google_compute_url_map.load_balancer_redirect.id
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_compute_global_address" "load_balancer" {
+  name       = "lb-${var.name_prefix}-load-balancer"
+  ip_version = "IPV4"
+  depends_on = [google_project_service.enabled]
 }
 
 resource "google_service_account" "entra_id" {
@@ -664,12 +702,22 @@ resource "google_project_iam_member" "postgres_app_instance_user" {
   project = var.project_id
   role    = "roles/cloudsql.instanceUser"
   member  = "serviceAccount:${google_service_account.postgres_app.email}"
+
+  condition {
+    title      = "Only the postgres instance"
+    expression = "resource.name == \"projects/${var.project_id}/instances/${google_sql_database_instance.postgres.name}\""
+  }
 }
 
 resource "google_project_iam_member" "postgres_app_client" {
   project = var.project_id
   role    = "roles/cloudsql.client"
   member  = "serviceAccount:${google_service_account.postgres_app.email}"
+
+  condition {
+    title      = "Only the postgres instance"
+    expression = "resource.name == \"projects/${var.project_id}/instances/${google_sql_database_instance.postgres.name}\""
+  }
 }
 
 resource "google_sql_database" "postgres" {
@@ -812,6 +860,71 @@ resource "google_storage_bucket" "object_storage_2_logs" {
 
 resource "google_storage_bucket_iam_member" "object_storage_2_logs_delivery" {
   bucket = google_storage_bucket.object_storage_2_logs.name
+  role   = "roles/storage.objectCreator"
+  member = "group:cloud-storage-analytics@google.com"
+}
+
+resource "google_storage_bucket" "static_site" {
+  name                        = "${var.project_id}-site-${var.name_prefix}-static-site"
+  location                    = var.region
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  force_destroy               = true
+  depends_on                  = [google_kms_crypto_key_iam_member.key_vault_storage]
+
+  versioning {
+    enabled = true
+  }
+
+  logging {
+    log_bucket        = google_storage_bucket.static_site_logs.name
+    log_object_prefix = "access/"
+  }
+
+  website {
+    main_page_suffix = "index.html"
+    not_found_page   = "error.html"
+  }
+
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.key_vault.id
+  }
+}
+
+resource "google_storage_bucket" "static_site_logs" {
+  name                        = "${var.project_id}-logs-${var.name_prefix}-static-site"
+  location                    = var.region
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  force_destroy               = true
+  labels = {
+    purpose = "access-logs"
+  }
+  depends_on = [google_kms_crypto_key_iam_member.key_vault_storage, google_project_service.enabled]
+
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    condition {
+      age = 365
+    }
+
+    action {
+      type = "Delete"
+    }
+  }
+
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.key_vault.id
+  }
+}
+
+resource "google_storage_bucket_iam_member" "static_site_logs_delivery" {
+  bucket = google_storage_bucket.static_site_logs.name
   role   = "roles/storage.objectCreator"
   member = "group:cloud-storage-analytics@google.com"
 }
@@ -963,6 +1076,53 @@ resource "google_service_networking_connection" "private_services" {
   service                 = "servicenetworking.googleapis.com"
   reserved_peering_ranges = [google_compute_global_address.private_services.name]
   deletion_policy         = "ABANDON"
+}
+
+resource "google_dns_record_set" "dns_to_load_balancer" {
+  managed_zone = google_dns_managed_zone.dns.name
+  name         = "www.${google_dns_managed_zone.dns.dns_name}"
+  type         = "A"
+  ttl          = 300
+  rrdatas      = [google_compute_global_address.load_balancer.address]
+}
+
+resource "google_compute_url_map" "load_balancer_redirect" {
+  name = "lb-redirect-${var.name_prefix}-load-balancer"
+
+  default_url_redirect {
+    https_redirect         = true
+    strip_query            = false
+    redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
+  }
+}
+
+resource "google_compute_managed_ssl_certificate" "dns_to_load_balancer" {
+  name = "lb-cert-${var.name_prefix}-load-balancer"
+
+  managed {
+    domains = ["www.orders.example.com"]
+  }
+}
+
+resource "google_compute_ssl_policy" "load_balancer" {
+  name            = "lb-tls-${var.name_prefix}-load-balancer"
+  profile         = "MODERN"
+  min_tls_version = "TLS_1_2"
+}
+
+resource "google_compute_target_https_proxy" "load_balancer" {
+  name             = "lb-https-${var.name_prefix}-load-balancer"
+  url_map          = google_compute_url_map.load_balancer.id
+  ssl_certificates = [google_compute_managed_ssl_certificate.dns_to_load_balancer.id]
+  ssl_policy       = google_compute_ssl_policy.load_balancer.id
+}
+
+resource "google_compute_global_forwarding_rule" "load_balancer_https" {
+  name                  = "lb-https-${var.name_prefix}-load-balancer"
+  target                = google_compute_target_https_proxy.load_balancer.id
+  ip_address            = google_compute_global_address.load_balancer.id
+  port_range            = "443"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
 }
 
 data "google_storage_project_service_account" "key_vault_storage" {

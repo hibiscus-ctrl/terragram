@@ -71,12 +71,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dead-letter topic; `key-vault` a Secret Manager secret under a Cloud KMS key that rotates every 90 days, with no value written; `entra-id` a service account;
   `monitoring` a log bucket retention, a notification channel and an alert policy; `postgres` and `mysql` a Cloud SQL instance with no public IP, TLS with a
   client certificate, backups and point-in-time recovery, audit flags, query insights and deletion protection, connected to as a service account through IAM
-  database authentication, so no password is created anywhere; `redis-cache` a Memorystore instance with AUTH and TLS; `nosql` a Firestore database;
+  database authentication, whose grants are bounded to the one instance by an IAM condition, so no password is created anywhere; `redis-cache` a Memorystore instance with AUTH and TLS; `nosql` a Firestore database;
   `data-warehouse` a BigQuery dataset; `project` a project with no default network and data-access audit logs. A database or a cache reaches its network through
   one private service connection per plan. Reading a Google plan back does not draw what the plan adds around a component, but only when a block is exactly what the generator writes and is tied to the component that uses it (a log bucket another bucket logs into, a source bucket a function is deployed from, the one `roles/storage.objectCreator` grant to Cloud Storage's own group on such a log bucket); a bucket that only carries the label or the name, or a grant to anyone else, is drawn. The Environment choice moves what costs money or blocks a `destroy` (availability, backup retention, deletion
   protection) and nothing that is security. The kinds only Google Cloud has (`project`, `kubernetes`, `virtual-machine`, `data-warehouse`) are now offered to a
-  translator, and are reported as not buildable on AWS and Azure. Not yet built on Google Cloud, and reported as such: the load balancer, the CDN and WAF, the
-  app service and the static site. The emit gate (`npm run validate:emit`, and the Generated Terraform job) now runs every brief and template for Google Cloud too,
+  translator, and are reported as not buildable on AWS and Azure. `load-balancer` an external Application Load Balancer (an address, a URL map, a proxy and a rule on port 80) whose backends are what its
+  edges add: a serverless network endpoint group for Cloud Run (whose ingress is then set to the balancer, and which may be invoked without an identity, as
+  a balancer calls it with none), a Cloud Function or App Engine, a backend bucket for a site (served from its index document, the bucket kept private and
+  read only by the balancer's service agent) or an internet endpoint group for another balancer; with nothing behind it, it redirects to a hostname it asks for.
+  `front-door` Cloud Armor (the OWASP SQL injection, cross-site scripting and remote code execution rules, Log4Shell, and adaptive DDoS protection) and Cloud CDN in
+  front of an application, as a balancer of its own whose resources are named `cdn-...` so reading a plan back tells it from a load balancer; in front of a load balancer it is that balancer's own: the policy and the cache go on its backends and no second front end or address is written, so there is no way to reach the origin around it. `app-service` App Engine
+  standard on its own service account, deployed from a directory written beside the plan and read from its own source bucket only, HTTPS only, and closed to everything outside Google (`INGRESS_TRAFFIC_ALLOWED_INTERNAL_ONLY`) until a balancer fronts it, which opens it to the balancer and Google, or the model draws the internet straight to it, which makes it public and says so in the plan's header. `static-site` a private, versioned, logged bucket with an index
+  document and an error page. A DNS zone wired to a balancer or a CDN publishes an A record for its address and gives it the zone's name over HTTPS: a Google-managed
+  certificate, a TLS 1.2 floor, and port 80 redirecting to it. A front end no zone names answers on plain HTTP only, and the plan's header, `explain` and the feasibility
+  check (which marks it as needing review) say so. A balancer and a CDN that send to the same target are one front end, so there is no way in around the policy, and
+  a CDN's static site takes a Cloud Armor edge policy of its own (a backend bucket takes only that kind, which Google limits to address and region rules). The plan's header
+  says what a balancer in front of Cloud Run or a function leaves open: the narrowest ingress setting Google has for an external balancer also admits callers inside the
+  project's network, which reach the service around Cloud Armor. A site's private bucket is read by the balancer's service agent once the backend bucket that creates it
+  exists, and destroying the plan leaves the default App Engine service's version in place (`noop_on_destroy`), which it cannot delete. The emit gate (`npm run validate:emit`, and the Generated Terraform job) now runs every brief and template for Google Cloud too,
   through `terraform fmt`, `init` and `validate`, `tflint` with the google ruleset (`--cloud=gcp` runs that cloud alone), `trivy` and `checkov`, with the exceptions
   in `scripts/scanner-skips.ts`, each with its reason.
   A plan with a `key-vault` puts every bucket (the log and source buckets the plan adds too), Pub/Sub topic and BigQuery dataset under that key, with one grant of

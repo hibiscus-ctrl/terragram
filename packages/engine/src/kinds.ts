@@ -15,9 +15,12 @@ import type { Cloud, GeneratedCloud, ModelNode, NodeCategory, ReviewFlag } from 
 import { MODULE_VERSIONS, type ModuleKey } from "./module-versions.ts";
 import { PROVIDER_VERSIONS } from "./provider-versions.ts";
 import {
+  appEngineClassFrom,
+  finalizeFrontend,
   functionRuntimeFrom,
   GCP,
   type GcpPlan,
+  isEdgeBlock,
   isGcpScaffold,
   redisSkuFrom,
   runSizeFrom,
@@ -235,7 +238,7 @@ export type CloudSpec = {
   /** Serve the hostname a DNS zone points at this ingress tier, over HTTPS, on a
    *  certificate validated through that zone. Without it the zone's record names a
    *  host the tier does not answer for. Returns any blocks it adds. */
-  customDomain?: (host: HclBlock, domain: CustomDomain) => HclBlock[];
+  customDomain?: (host: HclBlock, domain: CustomDomain, blocks: HclBlock[]) => HclBlock[];
 };
 
 /**
@@ -1119,6 +1122,21 @@ const GCP_MODULES = {
   project: "terraform-google-modules/project-factory/google",
 } as const;
 
+/** The types a Google front end is made of, whether it is a load balancer or the CDN in front of an application. */
+const GCP_FRONTEND_TYPES = [
+  "google_compute_global_forwarding_rule",
+  "google_compute_global_address",
+  "google_compute_url_map",
+  "google_compute_target_http_proxy",
+  "google_compute_target_https_proxy",
+  "google_compute_backend_service",
+  "google_compute_backend_bucket",
+  "google_compute_managed_ssl_certificate",
+  "google_compute_ssl_policy",
+  "google_compute_region_network_endpoint_group",
+  "google_compute_global_network_endpoint_group",
+];
+
 /** A storage bucket that serves a site: a `website` block (the resource) or input (a module). */
 function hasWebsite(b: HclBlock): boolean {
   return b.blocks.some((x) => x.type === "website") || attr(b, "website") !== undefined;
@@ -1511,6 +1529,13 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     },
     gcp: {
       type: "google_compute_security_policy",
+      matches: GCP_FRONTEND_TYPES,
+      matchBlock: isEdgeBlock,
+      emit: (c) => GCP.frontDoor.emit({ ...c, gcp: gcpPlan(c) }),
+      finalize: (host) => finalizeFrontend(host),
+      customDomain: (host, domain, blocks) =>
+        GCP.frontDoor.domain({ name: host.labels[1] ?? "", slug: (host.labels[1] ?? "").replace(/_/g, "-") }, domain, blocks),
+      addressResource: (ref) => `google_compute_global_address.${ref.name}.address`,
     },
   },
 
@@ -1638,17 +1663,20 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     gcp: {
       type: "google_compute_global_forwarding_rule",
       matches: [
+        ...GCP_FRONTEND_TYPES,
         "google_compute_forwarding_rule",
-        "google_compute_url_map",
         "google_compute_region_url_map",
-        "google_compute_target_http_proxy",
-        "google_compute_target_https_proxy",
-        "google_compute_backend_service",
         "google_compute_region_backend_service",
         "google_compute_health_check",
         "google_compute_region_health_check",
       ],
+      // What the front door claims (its own balancer is named apart, see `isEdgeBlock`) is decided before this kind sees a block.
       moduleSource: GCP_MODULES.loadBalancer,
+      emit: (c) => GCP.loadBalancer.emit({ ...c, gcp: gcpPlan(c) }),
+      finalize: (host) => finalizeFrontend(host),
+      customDomain: (host, domain, blocks) =>
+        GCP.loadBalancer.domain({ name: host.labels[1] ?? "", slug: (host.labels[1] ?? "").replace(/_/g, "-") }, domain, blocks),
+      addressResource: (ref) => `google_compute_global_address.${ref.name}.address`,
     },
   },
 
@@ -1779,7 +1807,11 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
     },
     gcp: {
       type: "google_app_engine_standard_app_version",
-      matches: ["google_app_engine_flexible_app_version", "google_app_engine_application"],
+      matches: ["google_app_engine_flexible_app_version", "google_app_engine_application", "google_app_engine_service_network_settings"],
+      emit: (c) => GCP.appService.emit({ ...c, gcp: gcpPlan(c) }),
+      read: (b) => readOne(b, "instance_class", "Compute tier", (v) => appEngineClassFrom(v)),
+      settings: { attribute: "env_variables" },
+      hostname: (ref) => `google_app_engine_application.${ref.name}.default_hostname`,
     },
   },
 
@@ -2158,6 +2190,8 @@ export const KIND_DEFINITIONS: readonly KindDefinition[] = [
       type: "google_storage_bucket",
       matchBlock: (b) => hasWebsite(b),
       moduleSource: GCP_MODULES.bucket,
+      emit: (c) => GCP.staticSite.emit({ ...c, gcp: gcpPlan(c) }),
+      connection: (ref) => ({ key: "SITE_BUCKET", value: refAddress(ref, "name") }),
     },
   },
 
@@ -3177,6 +3211,9 @@ export function resourceTypeToKind(
 ): { kind: string; cloud: Cloud } | null {
   const clouds: Cloud[] = cloud ? [cloud] : ["azure", "aws", "gcp"];
   let fallback: { kind: string; cloud: Cloud } | null = null;
+  // Two kinds can claim a type as a secondary (a load balancer's pieces are also a CDN's). Without a block to tell
+  // them apart, the kind whose primary the type is answers before one that only lists it.
+  let listed: { kind: string; cloud: Cloud } | null = null;
   for (const c of clouds) {
     for (const def of KIND_DEFINITIONS) {
       const spec = specOf(def, c);
@@ -3187,10 +3224,11 @@ export function resourceTypeToKind(
         if (spec.matchBlock(parsed)) return { kind: def.kind, cloud: c };
         continue;
       }
-      fallback ??= { kind: def.kind, cloud: c };
+      if (spec.type === type || !spec.matchBlock) fallback ??= { kind: def.kind, cloud: c };
+      else listed ??= { kind: def.kind, cloud: c };
     }
   }
-  return fallback;
+  return fallback ?? listed;
 }
 
 /**
