@@ -233,6 +233,49 @@ resource "aws_iam_role_policy" "fn" {
     assert.deepEqual(edgesFor(`["arn:aws:sqs:us-east-1:123456789012:jobs"]`, "sqs:SendMessage"), ["entra-id -> queue: write"]);
   });
 
+  it("matches a drawn function and secret by the name in their ARN, and a resource the picture does not draw is any resource", () => {
+    const more = `${BASE}
+resource "aws_sns_topic" "alerts" {
+  name = "alerts"
+}
+
+resource "aws_ecr_repository" "images" {
+  name = "images"
+}
+
+resource "aws_secretsmanager_secret" "db" {
+  name = "db-password"
+}
+`;
+    const on = (resource: string, action: string) =>
+      typed(
+        read(`${more}
+resource "aws_iam_role_policy" "fn" {
+  role   = aws_iam_role.fn.id
+  policy = jsonencode({ Statement = [{ Effect = "Allow", Action = "${action}", Resource = ${resource} }] })
+}
+`).model,
+      ).filter((e) => e.startsWith("entra-id -> "));
+    const target = (resource: string, action: string) => on(resource, action).map((e) => e.split(" -> ")[1].split(":")[0]);
+    const topic = target(`"arn:aws:sns:us-east-1:123456789012:alerts"`, "sns:Publish");
+    const fn = target(`"arn:aws:lambda:us-east-1:123456789012:function:api:live"`, "lambda:InvokeFunction");
+    const repo = target(`"arn:aws:ecr:us-east-1:123456789012:repository/images"`, "ecr:BatchGetImage");
+    const secret = target(`"arn:aws:secretsmanager:us-east-1:123456789012:secret:db-password-AbC123"`, "secretsmanager:GetSecretValue");
+    for (const [what, got] of [["function", fn], ["secret", secret]] as const) {
+      assert.equal(got.length, 1, `${what}: ${got.join(", ")}`);
+      assert.notEqual(got[0], ANY_RESOURCE_ID, `${what} is matched to its drawn node`);
+    }
+    // Topics and container repositories are not drawn as nodes: a grant on one is on a resource the picture does not hold.
+    assert.deepEqual(topic, [ANY_RESOURCE_ID]);
+    assert.deepEqual(repo, [ANY_RESOURCE_ID]);
+    // A function ARN without the "function:" part, an ECR ARN without "repository/" and a secret without "secret:"
+    // name nothing drawn: any resource.
+    assert.deepEqual(target(`"arn:aws:lambda:us-east-1:123456789012:layer:api:1"`, "lambda:GetLayerVersion"), [ANY_RESOURCE_ID]);
+    assert.deepEqual(target(`"arn:aws:ecr:us-east-1:123456789012:images"`, "ecr:BatchGetImage"), [ANY_RESOURCE_ID]);
+    assert.deepEqual(target(`"arn:aws:secretsmanager:us-east-1:123456789012:db-password"`, "secretsmanager:GetSecretValue"), [ANY_RESOURCE_ID]);
+    assert.deepEqual(target(`"arn:aws:dynamodb:us-east-1:123456789012:global-table/orders"`, "dynamodb:DescribeGlobalTable"), [ANY_RESOURCE_ID]);
+  });
+
   it("draws any resource at the action's level for an ARN no drawn resource has", () => {
     assert.deepEqual(edgesFor(`"arn:aws:s3:::other-bucket/key"`, "s3:PutObject"), [`entra-id -> ${ANY_RESOURCE_ID}: write`]);
     assert.deepEqual(edgesFor(`"arn:aws:kms:us-east-1:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"`, "kms:Decrypt"), [`entra-id -> ${ANY_RESOURCE_ID}: read`]);
