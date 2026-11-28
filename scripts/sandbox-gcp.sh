@@ -5,8 +5,9 @@
 # The steps of the Google Cloud sandbox workflow (.github/workflows/sandbox-google.yml), one command
 # each, so a step reads as what it does and the workflow stays short:
 #
-#   sandbox-gcp.sh generate              write the four plans (scripts/sandbox-gcp-plans.ts)
-#   sandbox-gcp.sh summary               print, as Markdown, what the plans change for a sandbox project
+#   sandbox-gcp.sh generate              write the four plans (scripts/sandbox-gcp-plans.ts); needs no credentials
+#   sandbox-gcp.sh summary               print, as Markdown, what the plans change for a sandbox project; needs none
+#   sandbox-gcp.sh preflight             fail if a service account holds Editor or Owner in the project
 #   sandbox-gcp.sh apply <plan>          terraform init and apply one plan
 #   sandbox-gcp.sh smoke <plan>          check the plan's main resources exist and are healthy
 #   sandbox-gcp.sh destroy <plan>        terraform destroy it, tried again, and fail if state is left
@@ -23,18 +24,26 @@
 # with (GOOGLE_APPLICATION_CREDENTIALS, CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE).
 set -euo pipefail
 
-command=${1:?usage: sandbox-gcp.sh generate|summary|apply|smoke|destroy|sweep [plan]}
+command=${1:?usage: sandbox-gcp.sh generate|summary|preflight|apply|smoke|destroy|sweep [plan]}
 plan=${2:-}
 work=${SANDBOX_DIR:-${RUNNER_TEMP:?}/sandbox-gcp}
-project=${GOOGLE_PROJECT_ID:?}
 region=${GOOGLE_REGION:-europe-west2}
 zone="${region}-a"
 mark="ih-sbx-tg-"
 here=$(cd "$(dirname "$0")" && pwd)
 
-export CLOUDSDK_CORE_PROJECT=$project
-export GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:?}
-export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=$GOOGLE_APPLICATION_CREDENTIALS
+# Generating and summarising run where no token can be had (the first job installs dependencies), so
+# they need no project and no credentials; everything else needs both.
+project=
+case $command in
+  generate | summary) ;;
+  *)
+    project=${GOOGLE_PROJECT_ID:?}
+    export CLOUDSDK_CORE_PROJECT=$project
+    export GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:?}
+    export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=$GOOGLE_APPLICATION_CREDENTIALS
+    ;;
+esac
 export TF_PLUGIN_CACHE_DIR=${TF_PLUGIN_CACHE_DIR:-${RUNNER_TEMP:?}/plugins}
 mkdir -p "$TF_PLUGIN_CACHE_DIR" "$work"
 export TF_IN_AUTOMATION=1
@@ -381,6 +390,25 @@ left_after_sweep() {
   listed iam service-accounts list --filter "email ~ ^sa-$mark" --format 'value(email)'
 }
 
+# A plan may attach any service account of the project to what it creates (the account holds Service
+# Account User on the project), and so give a job the roles that account holds: none may hold Editor or
+# Owner. Fails closed: a policy that can't be read, or read as something else, fails too. Only the
+# counts are printed, never the policy or an account's name; the bootstrap's README has the command
+# that lists them.
+preflight() {
+  local policy found
+  policy=$(gcloud projects get-iam-policy "$project" --format json) || fail "the project's IAM policy could not be read"
+  found=$(jq -r '
+    if type != "object" then error("not a policy") else . end
+    | [.bindings[]? | select(.role == "roles/editor" or .role == "roles/owner") | .role as $role
+      | .members[]? | select(test("^serviceAccount:|^principal://iam\\.googleapis\\.com/projects/-/serviceAccounts/")) | $role]
+    | group_by(.) | map("\(.[0]): \(length)") | join(", ")' <<< "$policy") || fail "the project's IAM policy could not be read as JSON"
+  if [ -n "$found" ]; then
+    fail "Service accounts hold Editor or Owner in the project ($found): remove those grants before running this workflow (see the bootstrap's README)"
+  fi
+  echo "No service account holds Editor or Owner in the project."
+}
+
 case $command in
   generate)
     node "$here/sandbox-gcp-plans.ts" --out "$work"
@@ -388,6 +416,7 @@ case $command in
   summary)
     node "$here/sandbox-gcp-plans.ts" --summary
     ;;
+  preflight) preflight ;;
   apply) apply_plan "$plan" ;;
   smoke) smoke_plan "$plan" ;;
   destroy) destroy_plan "$plan" ;;

@@ -4,8 +4,15 @@ name: Sandbox (Google Cloud)
 # project, checks what it built is there and healthy, and destroys it again, whatever happened. It
 # runs only when started by hand, and its job waits for the approval of the sandbox environment's
 # reviewers before it signs in: the environment's variables name the project, the workload identity
-# provider and the service account, and the provider accepts the tokens of that environment's jobs,
-# from this workflow file, and no others. No key is created or stored.
+# provider and the service account, and the provider accepts the token of that environment's job,
+# from this workflow file on main, started by hand, and no other. No key is created or stored.
+#
+# Two jobs, so no package of this repository's dependency tree runs where a token can be had. "plans"
+# installs the dependencies (without their install scripts) and generates the plans, and has no
+# id-token permission and no environment. "round-trip" has both: it installs nothing, and runs only
+# pinned actions, this repository's scripts, the gcloud CLI and Terraform with the plans "plans" wrote.
+# Before it applies anything it checks that no service account of the project holds Editor or Owner
+# (a plan may attach any service account of the project to what it creates), and stops if one does.
 #
 # The plans are the generator's own, with the changes a shared project needs (scripts/lib/sandbox-gcp.ts
 # lists them, and the run's summary says which): no App Engine application (one per project, for good),
@@ -15,8 +22,11 @@ name: Sandbox (Google Cloud)
 #
 # A cancelled job gets five minutes for its always() steps before GitHub stops it, too few for a
 # destroy, and a job that times out or whose runner is lost runs no more steps: the next run's
-# first sweep deletes what they left, or run "sweep" by hand. The state stays in the runner's
-# temporary directory, which is never uploaded; nothing here prints an output or an attribute value.
+# first sweep deletes what they left, or run "sweep" by hand. The step timeouts of the round-trip job
+# add up to 325 minutes with every plan, so its job timeout (350, under GitHub's 360) is never what
+# stops a destroy (tests/sandbox-workflow.test.ts checks it). The state stays in the runner's
+# temporary directory, which is never uploaded (the generated plans are, for a day, to carry them
+# between the jobs); nothing here prints an output or an attribute value.
 on:
   workflow_dispatch:
     inputs:
@@ -34,17 +44,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  round-trip:
-    name: round-trip (${{ inputs.plan }})
+  # Dependencies installed without their install scripts, the plans generated and written to an artifact.
+  # No token can be had here: no id-token permission, and no environment, so none of its variables.
+  plans:
+    name: plans
     runs-on: ubuntu-latest
-    environment: sandbox
     permissions:
       contents: read
-      id-token: write # OpenID Connect, for the service account
-    timeout-minutes: 350
-    env:
-      GOOGLE_PROJECT_ID: ${{ vars.GOOGLE_PROJECT_ID }}
-      GOOGLE_REGION: ${{ vars.GOOGLE_REGION || 'europe-west2' }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,7 +62,52 @@ jobs:
           node-version: "24"
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
+
+      - name: Generate the plans
+        run: scripts/sandbox-gcp.sh generate
+
+      - name: What the plans change
+        run: |
+          {
+            echo "### Changes for a sandbox project"
+            echo
+            echo "If the round-trip job is cancelled, times out or loses its runner before its last step, the next run's first sweep (or the plan \`sweep\`) deletes what it left."
+            echo
+            scripts/sandbox-gcp.sh summary
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sandbox-gcp-plans
+          path: ${{ runner.temp }}/sandbox-gcp
+          retention-days: 1
+          if-no-files-found: error
+
+  round-trip:
+    name: round-trip (${{ inputs.plan }})
+    needs: plans
+    runs-on: ubuntu-latest
+    environment: sandbox
+    permissions:
+      contents: read
+      id-token: write # OpenID Connect, for the service account
+    timeout-minutes: 350
+    env:
+      GOOGLE_PROJECT_ID: ${{ vars.GOOGLE_PROJECT_ID }}
+      GOOGLE_REGION: ${{ vars.GOOGLE_REGION || 'europe-west2' }}
+    steps:
+      # Nothing is installed in this job (the id-token request variables are set for all of its steps):
+      # the scripts it runs are this repository's, and the plans are the first job's artifact.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: inputs.plan != 'sweep'
+        with:
+          name: sandbox-gcp-plans
+          path: ${{ runner.temp }}/sandbox-gcp
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
@@ -74,30 +126,22 @@ jobs:
           create_credentials_file: true
           export_environment_variables: false
 
-      - name: What the plans change
+      # Before anything is changed: a plan may attach any service account of the project to what it
+      # creates, so none may hold Editor or Owner. Every step that changes the project needs this to have
+      # passed, always() steps included.
+      - name: No service account holds Editor or Owner
+        id: preflight
+        timeout-minutes: 5
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
-        run: |
-          {
-            echo "### Changes for a sandbox project"
-            echo
-            echo "If this job is cancelled, times out or loses its runner before its last step, the next run's first sweep (or the plan \`sweep\`) deletes what it left."
-            echo
-            scripts/sandbox-gcp.sh summary
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: scripts/sandbox-gcp.sh preflight
 
       # What an earlier run may have left: the project holds nothing named after the sandbox between runs.
       - name: Sweep what an earlier run left
-        timeout-minutes: 45
+        timeout-minutes: 30
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh sweep
-
-      - name: Generate the plans
-        if: inputs.plan != 'sweep'
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
-        run: scripts/sandbox-gcp.sh generate
 
       # Each plan: apply, check, destroy. An apply or a check that fails does not stop the others, and
       # the destroy runs whatever happened; the last step fails the job if any plan failed.
@@ -105,7 +149,7 @@ jobs:
         id: apply-serverless
         if: inputs.plan == 'all' || inputs.plan == 'gcp-serverless'
         continue-on-error: true
-        timeout-minutes: 30
+        timeout-minutes: 20
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh apply gcp-serverless
@@ -113,24 +157,24 @@ jobs:
         id: smoke-serverless
         if: steps.apply-serverless.outcome == 'success'
         continue-on-error: true
-        timeout-minutes: 10
+        timeout-minutes: 5
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh smoke gcp-serverless
       - name: Destroy gcp-serverless
         id: destroy-serverless
-        if: always() && (inputs.plan == 'all' || inputs.plan == 'gcp-serverless')
+        if: always() && steps.preflight.outcome == 'success' && (inputs.plan == 'all' || inputs.plan == 'gcp-serverless')
         continue-on-error: true
-        timeout-minutes: 30
+        timeout-minutes: 20
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh destroy gcp-serverless
 
       - name: Apply gcp-site
         id: apply-site
-        if: always() && (inputs.plan == 'all' || inputs.plan == 'gcp-site')
+        if: always() && steps.preflight.outcome == 'success' && (inputs.plan == 'all' || inputs.plan == 'gcp-site')
         continue-on-error: true
-        timeout-minutes: 30
+        timeout-minutes: 20
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh apply gcp-site
@@ -138,24 +182,24 @@ jobs:
         id: smoke-site
         if: steps.apply-site.outcome == 'success'
         continue-on-error: true
-        timeout-minutes: 10
+        timeout-minutes: 5
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh smoke gcp-site
       - name: Destroy gcp-site
         id: destroy-site
-        if: always() && (inputs.plan == 'all' || inputs.plan == 'gcp-site')
+        if: always() && steps.preflight.outcome == 'success' && (inputs.plan == 'all' || inputs.plan == 'gcp-site')
         continue-on-error: true
-        timeout-minutes: 30
+        timeout-minutes: 20
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh destroy gcp-site
 
       - name: Apply gcp-platform
         id: apply-platform
-        if: always() && (inputs.plan == 'all' || inputs.plan == 'gcp-platform')
+        if: always() && steps.preflight.outcome == 'success' && (inputs.plan == 'all' || inputs.plan == 'gcp-platform')
         continue-on-error: true
-        timeout-minutes: 40
+        timeout-minutes: 35
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh apply gcp-platform
@@ -163,24 +207,24 @@ jobs:
         id: smoke-platform
         if: steps.apply-platform.outcome == 'success'
         continue-on-error: true
-        timeout-minutes: 10
+        timeout-minutes: 5
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh smoke gcp-platform
       - name: Destroy gcp-platform
         id: destroy-platform
-        if: always() && (inputs.plan == 'all' || inputs.plan == 'gcp-platform')
+        if: always() && steps.preflight.outcome == 'success' && (inputs.plan == 'all' || inputs.plan == 'gcp-platform')
         continue-on-error: true
-        timeout-minutes: 40
+        timeout-minutes: 35
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh destroy gcp-platform
 
       - name: Apply gcp-data
         id: apply-data
-        if: always() && (inputs.plan == 'all' || inputs.plan == 'gcp-data')
+        if: always() && steps.preflight.outcome == 'success' && (inputs.plan == 'all' || inputs.plan == 'gcp-data')
         continue-on-error: true
-        timeout-minutes: 60
+        timeout-minutes: 45
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh apply gcp-data
@@ -188,15 +232,15 @@ jobs:
         id: smoke-data
         if: steps.apply-data.outcome == 'success'
         continue-on-error: true
-        timeout-minutes: 10
+        timeout-minutes: 5
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh smoke gcp-data
       - name: Destroy gcp-data
         id: destroy-data
-        if: always() && (inputs.plan == 'all' || inputs.plan == 'gcp-data')
+        if: always() && steps.preflight.outcome == 'success' && (inputs.plan == 'all' || inputs.plan == 'gcp-data')
         continue-on-error: true
-        timeout-minutes: 60
+        timeout-minutes: 45
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh destroy gcp-data
@@ -205,9 +249,9 @@ jobs:
       # failed half-way, and fails if anything named after the sandbox is left.
       - name: Sweep the project
         id: sweep
-        if: always()
+        if: always() && steps.preflight.outcome == 'success'
         continue-on-error: true
-        timeout-minutes: 45
+        timeout-minutes: 30
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: scripts/sandbox-gcp.sh sweep
@@ -220,7 +264,7 @@ jobs:
             ${{ steps.apply-site.outcome }} ${{ steps.smoke-site.outcome }} ${{ steps.destroy-site.outcome }}
             ${{ steps.apply-platform.outcome }} ${{ steps.smoke-platform.outcome }} ${{ steps.destroy-platform.outcome }}
             ${{ steps.apply-data.outcome }} ${{ steps.smoke-data.outcome }} ${{ steps.destroy-data.outcome }}
-            ${{ steps.sweep.outcome }}
+            ${{ steps.sweep.outcome }} ${{ steps.preflight.outcome }}
         run: |
           case " $OUTCOMES " in
             *" failure "* | *" cancelled "*)
