@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The graph layout packs boxes and cards toward a 16:10 picture instead of laying the boxes side by side in one row: a 64-resource AWS estate in a few
+  module and region boxes was about 10:1, and is now about 2:1, so its labels are readable at fit-to-view. The shape is an option, `aspect` (width over height,
+  default 1.6, from 0.5 to 4; a value outside that is a `RangeError`) on `layoutGraphDocument`, `layoutGraphView`, `renderGraphSvg` and `renderGraphDrawio`, and `terragram graph --aspect`.
+  Cards are 224 wide (were 172), so a type like `aws_s3_bucket_public_access_block` fits, and a longer one shows both its start and its end. Lines between boxes are
+  routed through the gaps between cards. `diagram.graph-layout/v1` keeps its shape. The same input still gives the same layout in any order.
 - `terragram-engine/graph` returns the layout of an estate as data: `layoutGraphDocument(doc, { base, findings, delta, title, maxNodes })`
   (or `layoutGraphView(view)`) gives a `diagram.graph-layout/v1` value with the boxes (account, environment, module call) and cards as
   rectangles, the references with the routes the picture draws, a `badges` object on each card and box (what changed against a base graph, and the findings by severity),

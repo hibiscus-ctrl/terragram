@@ -4,7 +4,7 @@
 import { z } from "zod";
 
 import { SEVERITIES } from "./findings.ts";
-import { layoutGraph, type Point } from "./layout.ts";
+import { layoutGraph, type LayoutOptions, type Point } from "./layout.ts";
 import { type GraphView, projectGraph, type ProjectOptions } from "./project.ts";
 import type { GraphDocument } from "./schema.ts";
 import { cleanText, clip, footerLines, headerLines } from "./text.ts";
@@ -81,7 +81,7 @@ export const graphLayoutSchema = z.object({
       id: z.string(),
       kind: z.string().describe("The resource type, or `module call`."),
       category: z.enum(["network", "compute", "storage", "identity", "data", "other"]),
-      label: z.string().describe("The short name of a card, at most 24 characters; the SVG draws the first 20."),
+      label: z.string().describe("The short name of a card, at most 40 characters; the SVG draws 24 of them, with the middle left out of a longer one."),
       title: z.string().describe("The tooltip: type, label, region and status."),
       group: z.string().describe("The id of the box this node is inside."),
       region: z.string().optional(),
@@ -136,11 +136,11 @@ function headingOf(group: GraphView["groups"][number], width: number): string {
   return clip(full, Math.max(12, Math.floor((width - 56) / 6.6)));
 }
 
-/** Where everything of a {@link GraphView} sits. */
-export function layoutGraphView(view: GraphView): GraphLayoutView {
+/** Where everything of a {@link GraphView} sits, the boxes packed toward `options.aspect` (width over height; see {@link LayoutOptions}). */
+export function layoutGraphView(view: GraphView, options: LayoutOptions = {}): GraphLayoutView {
   const header = headerLines(view).map((line) => text(line, LINE_LIMIT));
   const top = header.length * 18 + (header.length > 0 ? 6 : 0);
-  const layout = view.nodes.length === 0 ? undefined : layoutGraph(view, top);
+  const layout = view.nodes.length === 0 ? undefined : layoutGraph(view, top, options);
 
   const groups: LayoutGroup[] = [];
   for (const group of view.groups) {
@@ -208,7 +208,8 @@ export function layoutGraphView(view: GraphView): GraphLayoutView {
   };
 }
 
-/** The layout of a `graph/v1` document, with the options {@link projectGraph} takes (a base to compare with, findings, glue, delta, a title). */
-export function layoutGraphDocument(doc: GraphDocument, options: ProjectOptions = {}): GraphLayoutView {
-  return layoutGraphView(projectGraph(doc, options));
+/** The layout of a `graph/v1` document, with the options {@link projectGraph} takes (a base to compare with, findings, glue, delta, a title) and the `aspect` to pack toward. */
+export function layoutGraphDocument(doc: GraphDocument, options: ProjectOptions & LayoutOptions = {}): GraphLayoutView {
+  const { aspect, ...project } = options;
+  return layoutGraphView(projectGraph(doc, project), aspect === undefined ? {} : { aspect });
 }

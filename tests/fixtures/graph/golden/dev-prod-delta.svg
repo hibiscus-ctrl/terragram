@@ -1,41 +1,41 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="360" height="624" viewBox="0 0 360 624" role="img" aria-labelledby="tg-title tg-desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="616" height="440" viewBox="0 0 616 440" role="img" aria-labelledby="tg-title tg-desc">
 <title id="tg-title">Infrastructure graph</title>
 <desc id="tg-desc">3 resources in 3 groups, 2 references.</desc>
 <defs><marker id="tg-arrow-unchanged" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a8a090"/></marker><marker id="tg-arrow-added" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#15803d"/></marker><marker id="tg-arrow-removed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#b91c1c"/></marker></defs>
-<rect width="360" height="624" fill="#faf8f4"/>
+<rect width="616" height="440" fill="#faf8f4"/>
 <text x="24" y="24" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" font-weight="400" fill="#665e4f">Resources +1 -0 ~0, references +2 -0</text>
-<g><rect x="24" y="48" width="256" height="480" rx="12" fill="#f6f3ec" stroke="#cfc7b4" stroke-width="1.25"/>
+<g><rect x="24" y="48" width="568" height="296" rx="12" fill="#f6f3ec" stroke="#cfc7b4" stroke-width="1.25"/>
 <text x="36" y="63" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#665e4f">AWS account 123456789012</text>
 </g>
-<g><rect x="38" y="84" width="228" height="430" rx="12" fill="#f1ede2" stroke="#c9bfa6" stroke-width="1.25" stroke-dasharray="2 3"/>
+<g><rect x="38" y="84" width="540" height="246" rx="12" fill="#f1ede2" stroke="#c9bfa6" stroke-width="1.25" stroke-dasharray="2 3"/>
 <text x="50" y="99" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#665e4f">environment prod</text>
 </g>
-<g><rect x="52" y="388" width="200" height="112" rx="12" fill="#efe9da" stroke="#c4baa0" stroke-width="1.25" stroke-dasharray="6 4"/>
-<text x="64" y="403" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#665e4f">module terraform-aws…</text>
+<g><rect x="312" y="120" width="252" height="112" rx="12" fill="#efe9da" stroke="#c4baa0" stroke-width="1.25" stroke-dasharray="6 4"/>
+<text x="324" y="135" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" font-weight="700" fill="#665e4f">module terraform-aws-modules…</text>
 </g>
-<path d="M 152 316 Q 152 352 152 370 Q 152 388 152 406 L 152 424" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#tg-arrow-added)"/>
-<path d="M 152 182 Q 152 218 152 236 L 152 254" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#tg-arrow-added)"/>
+<path d="M 164 254 L 438 218" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#tg-arrow-added)"/>
+<path d="M 164 182 Q 164 218 164 236 L 164 254" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#tg-arrow-added)"/>
 <g><title>aws_db_instance db-prod, region eu-west-1, added</title>
-<rect x="66" y="254" width="172" height="62" rx="9" fill="#f0fdf4" stroke="#15803d" stroke-width="1.5"/>
-<rect x="66" y="264" width="4" height="42" rx="2" fill="#be185d"/>
-<text x="80" y="278" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#be185d" letter-spacing="0.3">aws_db_instance</text>
-<text x="80" y="300" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">db-prod</text><circle cx="66" cy="254" r="8" fill="#15803d"/><text x="66" y="258" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#ffffff">+</text>
+<rect x="52" y="254" width="224" height="62" rx="9" fill="#f0fdf4" stroke="#15803d" stroke-width="1.5"/>
+<rect x="52" y="264" width="4" height="42" rx="2" fill="#be185d"/>
+<text x="66" y="278" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#be185d" letter-spacing="0.3">aws_db_instance</text>
+<text x="66" y="300" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">db-prod</text><circle cx="52" cy="254" r="8" fill="#15803d"/><text x="52" y="258" text-anchor="middle" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#ffffff">+</text>
 </g>
 <g opacity="0.55"><title>aws_ecs_service svc-prod, region eu-west-1, context</title>
-<rect x="66" y="120" width="172" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
-<rect x="66" y="130" width="4" height="42" rx="2" fill="#047857"/>
-<text x="80" y="144" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.3">aws_ecs_service</text>
-<text x="80" y="166" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">svc-prod</text>
+<rect x="52" y="120" width="224" height="62" rx="9" fill="#ffffff" stroke="#047857" stroke-width="1.5"/>
+<rect x="52" y="130" width="4" height="42" rx="2" fill="#047857"/>
+<text x="66" y="144" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#047857" letter-spacing="0.3">aws_ecs_service</text>
+<text x="66" y="166" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">svc-prod</text>
 </g>
 <g opacity="0.55"><title>aws_subnet subnet-prod, region eu-west-1, context</title>
-<rect x="66" y="424" width="172" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
-<rect x="66" y="434" width="4" height="42" rx="2" fill="#2563eb"/>
-<text x="80" y="448" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">aws_subnet</text>
-<text x="80" y="470" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">subnet-prod</text>
+<rect x="326" y="156" width="224" height="62" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+<rect x="326" y="166" width="4" height="42" rx="2" fill="#2563eb"/>
+<text x="340" y="180" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9" font-weight="600" fill="#2563eb" letter-spacing="0.3">aws_subnet</text>
+<text x="340" y="202" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="700" fill="#211d16">subnet-prod</text>
 </g>
-<text x="24" y="568" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">Delta view: what changed, and the resources one reference away from it.</text>
-<text x="24" y="584" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">2 glue resources hidden: aws_iam_role_policy_attachment x2.</text>
-<rect x="24" y="599" width="10" height="10" rx="2" fill="#15803d"/><text x="39" y="608" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">+ added</text>
-<rect x="96.4" y="599" width="10" height="10" rx="2" fill="#b91c1c"/><text x="111.4" y="608" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">- removed</text>
-<rect x="181.2" y="599" width="10" height="10" rx="2" fill="#b45309"/><text x="196.2" y="608" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">~ changed</text>
+<text x="24" y="384" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">Delta view: what changed, and the resources one reference away from it.</text>
+<text x="24" y="400" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">2 glue resources hidden: aws_iam_role_policy_attachment x2.</text>
+<rect x="24" y="415" width="10" height="10" rx="2" fill="#15803d"/><text x="39" y="424" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">+ added</text>
+<rect x="96.4" y="415" width="10" height="10" rx="2" fill="#b91c1c"/><text x="111.4" y="424" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">- removed</text>
+<rect x="181.2" y="415" width="10" height="10" rx="2" fill="#b45309"/><text x="196.2" y="424" font-family="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#665e4f">~ changed</text>
 </svg>

@@ -1,0 +1,118 @@
+flowchart TB
+  subgraph g0["AWS account 123456789012"]
+    subgraph g2["module terraform-aws-modules/s3-bucket/aws 4.1.0"]
+      n11["aws_s3_bucket_public_access_block<br/>assets-bucket"]
+      n12["aws_s3_bucket_server_side_encryption_configuration<br/>assets-bucket"]
+      n13["aws_s3_bucket<br/>assets-bucket"]
+    end
+    subgraph g3["module terraform-aws-modules/security-group/aws 5.1.2"]
+      n14["aws_security_group_rule<br/>rule-59"]
+      n15["aws_security_group_rule<br/>rule-60"]
+      n16["aws_security_group_rule<br/>rule-61"]
+      n17["aws_security_group_rule<br/>rule-62"]
+      n19["aws_security_group<br/>sg-mod-0"]
+      n20["aws_security_group<br/>sg-mod-1"]
+      n21["aws_security_group<br/>sg-mod-2"]
+      n22["aws_security_group<br/>sg-mod-3"]
+    end
+    subgraph g4["module terraform-aws-modules/vpc/aws 5.13.0"]
+      n6["aws_internet_gateway<br/>igw-01"]
+      n10["aws_route_table<br/>rtb-01"]
+      n24["aws_subnet<br/>subnet-0a0"]
+      n25["aws_subnet<br/>subnet-0a1"]
+      n26["aws_subnet<br/>subnet-0a2"]
+      n27["aws_subnet<br/>subnet-0a3"]
+      n28["aws_vpc<br/>vpc-0a1b2c3d"]
+    end
+    n0["aws_db_instance<br/>orders-db"]
+    n1["aws_iam_policy<br/>web-policy"]
+    n2["aws_iam_role<br/>web-role"]
+    n3["aws_instance<br/>i-0abc0"]
+    n4["aws_instance<br/>i-0abc1"]
+    n5["aws_instance<br/>i-0abc2"]
+    n7["aws_lb_listener<br/>web-listener"]
+    n8["aws_lb_target_group<br/>web-tg"]
+    n9["aws_lb<br/>web-lb"]
+    n18["aws_security_group<br/>sg-db"]
+    n23["aws_security_group<br/>sg-web"]
+    n29["aws_wafv2_web_acl<br/>edge-acl"]
+  end
+  subgraph g1["AWS account 210987654321"]
+    subgraph g5["module terraform-aws-modules/eks/aws 20.8.0"]
+      n37["aws_eks_cluster<br/>prod-cluster"]
+      n38["aws_eks_node_group<br/>prod-ng"]
+      n40["aws_iam_role<br/>eks-cluster-role"]
+    end
+    subgraph g6["module terraform-aws-modules/vpc/aws 5.13.0"]
+      n52["aws_subnet<br/>subnet-0b0"]
+      n53["aws_subnet<br/>subnet-0b1"]
+      n54["aws_vpc<br/>vpc-0f9e8d7c"]
+    end
+    n30["aws_acm_certificate<br/>edge-cert"]
+    n31["aws_cloudfront_distribution<br/>edge-01"]
+    n32["aws_cloudwatch_log_group<br/>orders-fn-0"]
+    n33["aws_cloudwatch_log_group<br/>orders-fn-1"]
+    n34["aws_cloudwatch_log_group<br/>orders-fn-2"]
+    n35["aws_cloudwatch_log_group<br/>orders-fn-3"]
+    n36["aws_dynamodb_table<br/>orders"]
+    n39["aws_elasticache_replication_group<br/>orders-cache"]
+    n41["aws_iam_role<br/>lambda-exec"]
+    n42["aws_kms_key<br/>orders-key"]
+    n43["aws_lambda_function<br/>orders-fn-0"]
+    n44["aws_lambda_function<br/>orders-fn-1"]
+    n45["aws_lambda_function<br/>orders-fn-2"]
+    n46["aws_lambda_function<br/>orders-fn-3"]
+    n47["aws_route53_record<br/>www.example.com"]
+    n48["aws_route53_zone<br/>example.com"]
+    n49["aws_s3_bucket<br/>orders-archive"]
+    n50["aws_sns_topic<br/>orders-topic"]
+    n51["aws_sqs_queue<br/>orders-queue"]
+  end
+  n0 --> n18
+  n3 --> n23
+  n3 --> n24
+  n4 --> n23
+  n4 --> n25
+  n5 --> n23
+  n5 --> n26
+  n6 --> n28
+  n7 --> n8
+  n7 --> n9
+  n8 --> n28
+  n9 --> n23
+  n9 --> n24
+  n10 --> n6
+  n10 --> n28
+  n11 --> n13
+  n12 --> n13
+  n14 --> n19
+  n15 --> n20
+  n16 --> n21
+  n17 --> n22
+  n18 --> n23
+  n18 --> n28
+  n23 --> n28
+  n24 --> n28
+  n25 --> n28
+  n26 --> n28
+  n27 --> n28
+  n36 --> n42
+  n37 --> n40
+  n37 --> n52
+  n38 --> n37
+  n43 --> n32
+  n43 --> n36
+  n43 --> n41
+  n43 --> n51
+  n44 --> n33
+  n44 --> n36
+  n44 --> n41
+  n45 --> n34
+  n45 --> n36
+  n45 --> n41
+  n46 --> n35
+  n46 --> n36
+  n46 --> n41
+  n50 --> n51
+  n52 --> n54
+  n53 --> n54

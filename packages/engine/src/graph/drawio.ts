@@ -1,9 +1,9 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { type Box, layoutGraph } from "./layout.ts";
+import { type Box, layoutGraph, type LayoutOptions } from "./layout.ts";
 import { CATEGORY_COLOUR, EDGE_STYLE, GROUP_STYLE, INK, MUTED, STATUS_STYLE } from "./svg.ts";
-import { clip, footerLines, headerLines } from "./text.ts";
+import { CARD_KIND_CHARS, CARD_LABEL_CHARS, clipMiddle, footerLines, headerLines } from "./text.ts";
 import type { GraphView, ViewGroup, ViewNode } from "./project.ts";
 
 /**
@@ -53,7 +53,7 @@ function groupHeading(group: ViewGroup): string {
 function cardLabel(node: ViewNode): string {
   const mark = STATUS_STYLE[node.status].mark;
   const findings = node.findings ? ` [${node.findings.count} ${node.findings.worst}]` : "";
-  return `${mark ? `${mark} ` : ""}${clip(node.type, 26)}\n${clip(node.label, 20)}${findings}`;
+  return `${mark ? `${mark} ` : ""}${clipMiddle(node.type, CARD_KIND_CHARS)}\n${clipMiddle(node.label, CARD_LABEL_CHARS)}${findings}`;
 }
 
 const geometry = (box: Box, parent?: Box): string =>
@@ -121,10 +121,10 @@ function textCell(id: string, text: string, x: number, y: number, width: number,
   return `<mxCell id="${id}" value="${attr(text)}" style="text;${css}" vertex="1" parent="1"><mxGeometry x="${x}" y="${y}" width="${width}" height="18" as="geometry"/></mxCell>`;
 }
 
-export function renderGraphDrawio(view: GraphView): string {
+export function renderGraphDrawio(view: GraphView, options: LayoutOptions = {}): string {
   const head = headerLines(view);
   const top = head.length * 18 + (head.length > 0 ? 6 : 0);
-  const layout = view.nodes.length === 0 ? undefined : layoutGraph(view, top);
+  const layout = view.nodes.length === 0 ? undefined : layoutGraph(view, top, options);
   const foot = footerLines(view);
   const width = Math.ceil(Math.max(layout?.width ?? 0, 360)) - 48;
 

@@ -191,8 +191,11 @@ the CLI, so its output is a contract.
 
 - **Pipeline.** `parseGraphDocument` (zod, mirrors `schemas/vendor/infraharvest/graph-v1.schema.json`)
   → `normalizeGraph` (index-free keys, glue folded away) → `projectGraph` (the `GraphView`: groups,
-  nodes, edges, statuses, finding tallies) → `renderGraphSvg` / `renderGraphDrawio` / `renderGraphMermaid`. Layout is
-  dagre as a compound graph, boxes drawn around members (`graph/layout.ts`).
+  nodes, edges, statuses, finding tallies) → `renderGraphSvg` / `renderGraphDrawio` / `renderGraphMermaid`. Layout (`graph/layout.ts`) is built inside out:
+  the cards of a box that refer to each other are a dagre cluster, a card that refers to none is a block of one, and a box's blocks (clusters,
+  lone cards, inner boxes) are shelf-packed toward an `aspect` (width over height, default 1.6, bounds `MIN_ASPECT`..`MAX_ASPECT`, a RangeError outside them;
+  `terragram graph --aspect`), tallest first with the view's order as the tie-break. The inner boxes are tried at a few shapes and the best picture is kept.
+  A line between two cards of one box is the cluster's own route; every other line is routed in `route` through the gaps between cards.
 - **The layout is a public API** (`graph/layout-view.ts`, `diagram.graph-layout/v1`, `schemas/graph-layout.v1.schema.json`).
   `layoutGraphDocument(doc, options)` (or `layoutGraphView(view)`) returns the picture as plain data: `groups` and `nodes` with their
   rectangles (whole numbers, the SVG's coordinates, shifted down by `top` when a title or summary sits above), `edges` with their routes,

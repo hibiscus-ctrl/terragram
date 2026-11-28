@@ -48,6 +48,7 @@ const load = (name: string): GraphDocument => parseGraphDocument(readFileSync(fi
 const small = load("small");
 const smallBase = load("small-base");
 const medium = load("medium");
+const large = load("large");
 const gcp = load("gcp");
 const environments = load("environments");
 const environmentsBase = load("environments-base");
@@ -989,6 +990,12 @@ describe("goldens", () => {
     golden("medium.drawio", renderGraphDrawio(view(medium)));
   });
 
+  it("draws the large estate, 64 resources in four boxes, as wide as it is tall", () => {
+    golden("large.svg", `${renderGraphSvg(view(large))}\n`);
+    golden("large.drawio", renderGraphDrawio(view(large)));
+    golden("large.mmd", renderGraphMermaid(view(large)));
+  });
+
   it("draws what changed between two small estates, in full and as a delta", () => {
     golden("small-diff.svg", `${renderGraphSvg(view(small, { base: smallBase }))}\n`);
     golden("small-diff.mmd", renderGraphMermaid(view(small, { base: smallBase })));
@@ -1038,6 +1045,7 @@ describe("goldens", () => {
       ["hashed", hashedDevProd, {}],
       ["dropped", dropAddresses(devProd), {}],
       ["medium", medium, {}],
+      ["large", large, {}],
     ];
     for (const [name, doc, options, baseDoc] of cases) {
       for (const seed of [11, 12]) {

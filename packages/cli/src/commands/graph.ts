@@ -4,9 +4,13 @@
 import { parseArgs } from "node:util";
 
 import {
+  DEFAULT_ASPECT,
   DEFAULT_GLUE,
+  type GraphLayoutOptions,
   type GraphDocument,
   GraphDocumentError,
+  MAX_ASPECT,
+  MIN_ASPECT,
   parseFindings,
   parseGraphDocument,
   projectGraph,
@@ -33,6 +37,8 @@ Options:
   -f, --format <format>    svg (default), drawio (a diagrams.net
                            file), mermaid (a flowchart) or json (the view model)
   --title <text>           a title for the picture
+  --aspect <ratio>         the width over the height to pack the picture toward (svg and drawio;
+                           default ${DEFAULT_ASPECT}, from ${MIN_ASPECT} to ${MAX_ASPECT})
   --show-glue              draw the resources that are hidden as glue (attachments,
                            associations, random_*, null_resource, ...)
   --hide <glob>            also hide resource types matching this glob, e.g. aws_cloudwatch_* (repeatable)
@@ -63,6 +69,7 @@ export async function graph(argv: string[], io: Io): Promise<number> {
       findings: { type: "string" },
       format: { type: "string", short: "f", default: "svg" },
       title: { type: "string" },
+      aspect: { type: "string" },
       "show-glue": { type: "boolean", default: false },
       hide: { type: "string", multiple: true },
       keep: { type: "string", multiple: true },
@@ -79,6 +86,12 @@ export async function graph(argv: string[], io: Io): Promise<number> {
   if (path === undefined || extra.length > 0) throw new UsageError("give exactly one graph.json");
   const format = FORMATS.find((f) => f === values.format);
   if (format === undefined) throw new UsageError(`--format must be one of ${FORMATS.join(", ")}`);
+  let layout: GraphLayoutOptions = {};
+  if (values.aspect !== undefined) {
+    const aspect = values.aspect.trim() === "" ? Number.NaN : Number(values.aspect);
+    if (!(aspect >= MIN_ASPECT && aspect <= MAX_ASPECT)) throw new UsageError(`--aspect must be a number from ${MIN_ASPECT} to ${MAX_ASPECT}`);
+    layout = { aspect };
+  }
   if (values.delta && values.base === undefined) throw new UsageError("--delta needs --base");
 
   const hide = values.hide ?? [];
@@ -107,9 +120,9 @@ export async function graph(argv: string[], io: Io): Promise<number> {
   });
   const body =
     format === "svg"
-      ? `${renderGraphSvg(view)}\n`
+      ? `${renderGraphSvg(view, layout)}\n`
       : format === "drawio"
-        ? renderGraphDrawio(view)
+        ? renderGraphDrawio(view, layout)
         : format === "mermaid"
           ? renderGraphMermaid(view)
           : `${JSON.stringify(view, null, 2)}\n`;

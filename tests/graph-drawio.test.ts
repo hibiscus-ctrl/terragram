@@ -78,7 +78,7 @@ describe("renderGraphDrawio", () => {
       return m?.slice(1).map(Number) as [number, number, number, number];
     };
     const [nx, ny, nw, nh] = box("n0");
-    assert.deepEqual([nw, nh], [172, 62]);
+    assert.deepEqual([nw, nh], [224, 62]);
     // The container is padded 14 around its cards and has 22 for its heading above them.
     assert.ok(nx >= 14 && ny >= 36, `card at ${nx},${ny}`);
   });

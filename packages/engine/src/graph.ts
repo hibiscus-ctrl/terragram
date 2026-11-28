@@ -20,6 +20,7 @@ export {
   SEVERITIES,
 } from "./graph/findings.ts";
 export { DEFAULT_GLUE, type GlueRule } from "./graph/glue.ts";
+export { DEFAULT_ASPECT, type LayoutOptions as GraphLayoutOptions, MAX_ASPECT, MIN_ASPECT } from "./graph/layout.ts";
 export { renderGraphDrawio } from "./graph/drawio.ts";
 export {
   GRAPH_LAYOUT_SCHEMA,
