@@ -20512,8 +20512,12 @@ var ENGINE_VERSION = "0.1.0";
 var NAME_PREFIX = {
   name: "name_prefix",
   type: "string",
-  description: "Short prefix applied to every resource name.",
-  default: quote("infra-prod")
+  description: "Short prefix applied to every resource name: 1 to 20 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen.",
+  default: quote("infra-prod"),
+  validation: {
+    condition: 'can(regex("^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$", var.name_prefix))',
+    message: "Use 1 to 20 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen."
+  }
 };
 var NETWORK_ID = {
   name: "network_id",
@@ -20534,8 +20538,12 @@ var GCP_LABELS = {
 function cloudName(prefix, slug) {
   return quoteTemplate`${prefix}-\${var.name_prefix}-${slug}`;
 }
+var ACCOUNT_ID_MAX = 30;
+var ACCOUNT_ID_KEPT = 23;
+var ACCOUNT_ID_HASH = 6;
 function accountId(slug) {
-  return `trim(substr(${quoteTemplate`sa-\${var.name_prefix}-${slug}`}, 0, 30), "-")`;
+  const full = quoteTemplate`sa-\${var.name_prefix}-${slug}`;
+  return `length(${full}) <= ${ACCOUNT_ID_MAX} ? ${full} : "\${trim(substr(${full}, 0, ${ACCOUNT_ID_KEPT}), "-")}-\${substr(sha256(${full}), 0, ${ACCOUNT_ID_HASH})}"`;
 }
 function production(c) {
   return c.attr("Environment") === "Production";

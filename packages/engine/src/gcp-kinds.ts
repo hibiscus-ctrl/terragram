@@ -39,11 +39,19 @@ export type GcpPlan = {
   position: number;
 };
 
+/**
+ * The prefix every resource name starts with. Its shape is what the names built from it need: a service account
+ * id is 6 to 30 characters, a bucket and a cluster are 63, and all of them start with a lowercase letter.
+ */
 const NAME_PREFIX: VariableSpec = {
   name: "name_prefix",
   type: "string",
-  description: "Short prefix applied to every resource name.",
+  description: "Short prefix applied to every resource name: 1 to 20 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen.",
   default: quote("infra-prod"),
+  validation: {
+    condition: 'can(regex("^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$", var.name_prefix))',
+    message: "Use 1 to 20 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen.",
+  },
 };
 
 const NETWORK_ID: VariableSpec = {
@@ -87,9 +95,20 @@ function cloudName(prefix: string, slug: string): string {
   return quoteTemplate`${prefix}-\${var.name_prefix}-${slug}`;
 }
 
-/** A service account id: 6 to 30 characters, ending in a letter or a digit. */
+/** The longest service account id Google Cloud takes, and how much of a longer one is kept before its hash. */
+const ACCOUNT_ID_MAX = 30;
+const ACCOUNT_ID_KEPT = 23;
+const ACCOUNT_ID_HASH = 6;
+
+/**
+ * A service account id: 6 to 30 characters, starting with a letter and ending with a letter or a digit. One that fits
+ * is `sa-<name_prefix>-<slug>` as it is. One that does not is cut to its first 23 characters and ends in six
+ * characters of the SHA-256 of the whole, so two nodes that share a long prefix (`virtual-machine`,
+ * `virtual-machine-2`) never get the same id, and the same node gets the same id on every run.
+ */
 function accountId(slug: string): string {
-  return `trim(substr(${quoteTemplate`sa-\${var.name_prefix}-${slug}`}, 0, 30), "-")`;
+  const full = quoteTemplate`sa-\${var.name_prefix}-${slug}`;
+  return `length(${full}) <= ${ACCOUNT_ID_MAX} ? ${full} : "\${trim(substr(${full}, 0, ${ACCOUNT_ID_KEPT}), "-")}-\${substr(sha256(${full}), 0, ${ACCOUNT_ID_HASH})}"`;
 }
 
 function production(c: Pick<GcpContext, "attr">): boolean {

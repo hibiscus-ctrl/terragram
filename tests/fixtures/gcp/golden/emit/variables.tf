@@ -37,8 +37,13 @@ variable "labels" {
 
 variable "name_prefix" {
   type        = string
-  description = "Short prefix applied to every resource name."
+  description = "Short prefix applied to every resource name: 1 to 20 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen."
   default     = "infra-prod"
+
+  validation {
+    condition     = can(regex("^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$", var.name_prefix))
+    error_message = "Use 1 to 20 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen."
+  }
 }
 
 variable "org_id" {

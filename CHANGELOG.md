@@ -190,6 +190,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   consumer of the queue's topic or a subscription on a topic of your own is drawn as its own flagged node, listed as not translated (so it counts as not
   buildable, and a grant on it is a grant on it, not on the queue). A dead-letter topic is folded into its queue only when no subscription but the plan's own
   reads it or gives up on it.
+- Two Google Cloud nodes of one kind no longer get the same service account id. The id was `sa-<name_prefix>-<slug>` cut to 30 characters, so `virtual-machine` and
+  `virtual-machine-2` under a long prefix collided and the second apply failed with a 409. An id that fits is unchanged; one that does not keeps its first 23
+  characters and ends in six characters of the SHA-256 of the whole, the same on every run. `name_prefix` now has a validation (1 to 20 lowercase letters, digits and
+  hyphens, starting with a letter).
 
 ## [0.2.0] - 2026-11-23
 
