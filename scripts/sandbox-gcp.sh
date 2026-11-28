@@ -7,6 +7,7 @@
 #
 #   sandbox-gcp.sh generate              write the four plans (scripts/sandbox-gcp-plans.ts); needs no credentials
 #   sandbox-gcp.sh summary               print, as Markdown, what the plans change for a sandbox project; needs none
+#   sandbox-gcp.sh validate              refuse plans that are not what the generator writes (sandbox-gcp-validate.mjs); needs none
 #   sandbox-gcp.sh preflight             fail if a service account holds Editor or Owner in the project
 #   sandbox-gcp.sh apply <plan>          terraform init and apply one plan
 #   sandbox-gcp.sh smoke <plan>          check the plan's main resources exist and are healthy
@@ -19,12 +20,17 @@
 # reader finds whose it is by label. Terraform's state stays in the runner's temporary directory: it is
 # never printed, uploaded or kept, and no command here prints an output or an attribute value.
 #
+# The job that signs in runs Terraform on plans another job wrote, so before it does: `validate` refuses
+# anything but the generator's own shapes, `terraform init` takes its providers only from the committed lock
+# file (-lockfile=readonly, from the registry, no plugin cache), and the CLI configuration is the committed
+# sandbox-gcp.tfrc, whatever the runner has.
+#
 # Environment: SANDBOX_DIR (where the plans are written, by default under RUNNER_TEMP), GOOGLE_PROJECT_ID, GOOGLE_REGION (default
 # europe-west2), GITHUB_RUN_ID (and GITHUB_RUN_ATTEMPT), and the credentials file the step signs in
 # with (GOOGLE_APPLICATION_CREDENTIALS, CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE).
 set -euo pipefail
 
-command=${1:?usage: sandbox-gcp.sh generate|summary|preflight|apply|smoke|destroy|sweep [plan]}
+command=${1:?usage: sandbox-gcp.sh generate|summary|validate|preflight|apply|smoke|destroy|sweep [plan]}
 plan=${2:-}
 work=${SANDBOX_DIR:-${RUNNER_TEMP:?}/sandbox-gcp}
 region=${GOOGLE_REGION:-europe-west2}
@@ -32,11 +38,12 @@ zone="${region}-a"
 mark="ih-sbx-tg-"
 here=$(cd "$(dirname "$0")" && pwd)
 
-# Generating and summarising run where no token can be had (the first job installs dependencies), so
-# they need no project and no credentials; everything else needs both.
+# Generating and summarising run where no token can be had (the first job installs dependencies), and
+# validating runs before the second job signs in, so they need no project and no credentials; everything
+# else needs both.
 project=
 case $command in
-  generate | summary) ;;
+  generate | summary | validate) ;;
   *)
     project=${GOOGLE_PROJECT_ID:?}
     export CLOUDSDK_CORE_PROJECT=$project
@@ -44,8 +51,11 @@ case $command in
     export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=$GOOGLE_APPLICATION_CREDENTIALS
     ;;
 esac
-export TF_PLUGIN_CACHE_DIR=${TF_PLUGIN_CACHE_DIR:-${RUNNER_TEMP:?}/plugins}
-mkdir -p "$TF_PLUGIN_CACHE_DIR" "$work"
+mkdir -p "$work"
+# Nothing of Terraform's environment but what is set here: no plugin cache, no reattached or overridden
+# providers, no data directory, no variables, no extra arguments.
+while IFS= read -r name; do unset "$name"; done < <(compgen -e | grep -E '^(TF_|TERRAFORM_)' || true)
+export TF_CLI_CONFIG_FILE=$here/sandbox-gcp.tfrc
 export TF_IN_AUTOMATION=1
 export TF_INPUT=0
 export TF_CLI_ARGS="-no-color"
@@ -103,6 +113,15 @@ retry() {
   return 1
 }
 
+# tf_init <dir> <plan or network>: terraform init with the committed lock file of that root (sandbox-gcp-locks/,
+# one per root, since a lock file naming a provider the root does not use counts as a change) copied in and
+# read-only, so a provider that is not in it, or whose package does not match its hashes, fails the init
+# instead of being installed.
+tf_init() {
+  cp "$here/sandbox-gcp-locks/$2.terraform.lock.hcl" "$1/.terraform.lock.hcl"
+  (cd "$1" && terraform init -input=false -lockfile=readonly)
+}
+
 write_vars() {
   local dir=$1 id=$2 extra=$3
   jq -n --arg project "$project" --arg region "$region" --arg prefix "$(prefix "$id")" --arg run "${GITHUB_RUN_ID:?}" --argjson extra "$extra" \
@@ -119,7 +138,7 @@ apply_network() {
   cp -r "$here/sandbox-gcp-network" "$dir"
   (
     cd "$dir"
-    retry terraform init -input=false
+    retry tf_init "$dir" network
     terraform apply -auto-approve -input=false -lock-timeout=5m \
       -var "project_id=$project" -var "region=$region" -var "name=$(network_name)"
   )
@@ -170,7 +189,7 @@ apply_plan() {
   esac
   (
     cd "$dir"
-    retry terraform init -input=false
+    retry tf_init "$dir" "$id"
     terraform validate
     terraform apply -auto-approve -input=false -lock-timeout=5m -parallelism=10
   )
@@ -244,7 +263,7 @@ bq_datasets() {
 destroy_state() {
   local id=$1 dir=$work/$1 attempt left
   cd "$dir"
-  retry terraform init -input=false || return 1
+  retry tf_init "$dir" "$id" || return 1
   # A destroy that fails, as on a dependency Google Cloud still deletes (a private service connection
   # waits for the databases to be gone), is tried twice more before what is left counts.
   for attempt in 1 2 3; do
@@ -415,6 +434,18 @@ case $command in
     ;;
   summary)
     node "$here/sandbox-gcp-plans.ts" --summary
+    ;;
+  validate)
+    # Before any step that can get a token: the plans are another job's. The digest goes in the job's summary,
+    # to compare with the other job's, or with the plans generated from the same commit.
+    if ! checked=$(node "$here/sandbox-gcp-validate.mjs" "$work"); then
+      echo "$checked"
+      exit 1
+    fi
+    echo "$checked"
+    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+      echo "Digest of the plans (job ${GITHUB_JOB:-}): \`${checked##*digest }\`" >> "$GITHUB_STEP_SUMMARY"
+    fi
     ;;
   preflight) preflight ;;
   apply) apply_plan "$plan" ;;

@@ -1,0 +1,5 @@
+# The Terraform CLI configuration the Google Cloud sandbox workflow runs with (TF_CLI_CONFIG_FILE, set by
+# scripts/sandbox-gcp.sh), instead of whatever the runner has: no provider_installation (so no mirror, no
+# local directory, no dev_overrides, only the registry and the lock file's hashes), no plugin cache, no
+# credentials. tests/sandbox-workflow.test.ts holds that nothing here but the lines below is set.
+disable_checkpoint = true

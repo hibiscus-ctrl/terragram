@@ -11,6 +11,12 @@ name: Sandbox (Google Cloud)
 # installs the dependencies (without their install scripts) and generates the plans, and has no
 # id-token permission and no environment. "round-trip" has both: it installs nothing, and runs only
 # pinned actions, this repository's scripts, the gcloud CLI and Terraform with the plans "plans" wrote.
+# Those plans came out of the dependency tree, so before it signs in the job refuses any plan that is not
+# what the generator writes (scripts/sandbox-gcp-validate.mjs, on Node's built-ins: no provisioner, no
+# external data source, no module, no backend, no provider but the three it lists, no file but plain
+# Terraform and the generator's placeholders), and Terraform then installs only the providers of the
+# committed lock files (scripts/sandbox-gcp-locks/, init with -lockfile=readonly, no plugin
+# cache, the CLI configuration scripts/sandbox-gcp.tfrc). Both jobs' summaries give the plans' digest.
 # Before it applies anything it checks that no service account of the project holds Editor or Owner
 # (a plan may attach any service account of the project to what it creates), and stops if one does.
 #
@@ -23,7 +29,7 @@ name: Sandbox (Google Cloud)
 # A cancelled job gets five minutes for its always() steps before GitHub stops it, too few for a
 # destroy, and a job that times out or whose runner is lost runs no more steps: the next run's
 # first sweep deletes what they left, or run "sweep" by hand. The step timeouts of the round-trip job
-# add up to 325 minutes with every plan, so its job timeout (350, under GitHub's 360) is never what
+# add up to 327 minutes with every plan, so its job timeout (350, under GitHub's 360) is never what
 # stops a destroy (tests/sandbox-workflow.test.ts checks it). The state stays in the runner's
 # temporary directory, which is never uploaded (the generated plans are, for a day, to carry them
 # between the jobs); nothing here prints an output or an attribute value.
@@ -67,6 +73,10 @@ jobs:
       - name: Generate the plans
         run: scripts/sandbox-gcp.sh generate
 
+      # The digest goes in this job's summary, for the reviewer; the round-trip job checks the plans itself.
+      - name: Check the plans
+        run: scripts/sandbox-gcp.sh validate
+
       - name: What the plans change
         run: |
           {
@@ -108,6 +118,13 @@ jobs:
         with:
           name: sandbox-gcp-plans
           path: ${{ runner.temp }}/sandbox-gcp
+
+      # Before a token can be asked for and before Terraform runs: the plans are the first job's, which ran
+      # this repository's dependencies. A plan that is anything but what the generator writes stops the job.
+      - name: Check the plans
+        if: inputs.plan != 'sweep'
+        timeout-minutes: 2
+        run: scripts/sandbox-gcp.sh validate
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
