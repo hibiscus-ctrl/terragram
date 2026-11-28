@@ -255,3 +255,111 @@ describe("what a plan writes for the other clouds' near-misses stays out of the 
     assert.equal(isScaffoldModule(blocks[0] as HclBlock, blocks), false);
   });
 });
+
+describe("the subnets a hidden network carries are read, not assumed", () => {
+  const network = moduleText(AZURE, "network");
+  const subnets = /\n {2}subnets = \{[\s\S]*?\n {2}\}\n/.exec(network)?.[0] ?? "";
+  const NETWORK = (body: string) => `${moduleText(AZURE, "resource_group")}\n${body}\n${USES("network", "resource_group")}`;
+  const withSubnets = (value: string) => network.replace(subnets, `\n  subnets = ${value}\n`);
+
+  it("hides the network with the subnets the generator writes", () => {
+    assert.ok(subnets.length > 0);
+    assert.ok(hidden(NETWORK(network)).includes("network"));
+  });
+
+  it("hides a network the plan has not given subnets yet", () => {
+    assert.ok(hidden(NETWORK(withoutSubnets(network))).includes("network"));
+  });
+
+  const unreadable: Array<[string, string]> = [
+    ["a reference", "var.subnets"],
+    ["a merge", "merge({}, var.subnets)"],
+    ["a merge that holds the generator's own", `merge(${/\{[\s\S]*\}/.exec(subnets)?.[0] ?? "{}"}, var.more)`],
+    ["a for expression", "{ for name, cidr in var.subnets : name => { name = name, address_prefix = cidr } }"],
+    ["a conditional", "var.enabled ? {} : var.subnets"],
+    ["no subnet at all", "{}"],
+    ["an object with something after it", '{ app = { name = "snet-app", address_prefix = "10.0.1.0/24" } }.app'],
+    ["a subnet that is a reference", "{ app = var.app_subnet }"],
+    ["a subnet that is a call", '{ app = merge({ name = "snet-app", address_prefix = "10.0.1.0/24" }, var.extra) }'],
+    ["a subnet with an input of the file's own", '{ app = { name = "snet-app", address_prefix = "10.0.1.0/24", network_security_group = { id = var.nsg } } }'],
+  ];
+  for (const [label, value] of unreadable) {
+    it(`draws a network whose subnets are ${label}`, () => {
+      assert.notEqual(withSubnets(value), network, "the generator's subnets are replaced");
+      assert.ok(withSubnets(value).trimEnd().endsWith("}"), "and the module is still closed");
+      assert.ok(!hidden(NETWORK(withSubnets(value))).includes("network"), label);
+      const parsed = parseTerraform(NETWORK(withSubnets(value)));
+      assert.ok(parsed.ok);
+      assert.ok(parsed.model.nodes.some((n) => n.kind === "vnet"), label);
+    });
+  }
+});
+
+describe("what keeps the plan's modules hidden is a drawn block that reads them", () => {
+  const group = moduleText(AZURE, "resource_group");
+  const network = moduleText(AZURE, "network");
+  const zone = moduleText(AZURE, "private_dns_vaultcore");
+  const PLAN = `${group}\n${network}\n${zone}\n`;
+
+  const notUsers: Array<[string, string]> = [
+    ["an output", 'output "group" {\n  value = module.resource_group.resource_id\n}\n'],
+    ["a local", "locals {\n  group = module.resource_group.resource_id\n}\n"],
+    ["a variable's default", 'variable "group" {\n  default = module.resource_group.resource_id\n}\n'],
+    ["a data source nothing draws", 'data "azurerm_client_config" "current" {\n  tenant_id = module.resource_group.resource_id\n}\n'],
+    ["a resource no kind reads", 'resource "azurerm_unheard_of" "x" {\n  group = module.resource_group.resource_id\n}\n'],
+    ["a module that only has the words in a string", 'module "mine" {\n  source = "Azure/avm-res-storage-storageaccount/azurerm"\n  version = "0.6.8"\n  note = "module.resource_group.resource_id"\n}\n'],
+    ["a quoted address in a list", 'module "mine" {\n  source = "Azure/avm-res-storage-storageaccount/azurerm"\n  version = "0.6.8"\n  notes = ["see module.resource_group.resource_id", "module.network.resource_id"]\n}\n'],
+    ["a heredoc", 'module "mine" {\n  source = "Azure/avm-res-storage-storageaccount/azurerm"\n  version = "0.6.8"\n  note = <<-EOT\n    module.resource_group.resource_id\n  EOT\n}\n'],
+  ];
+  for (const [label, text] of notUsers) {
+    it(`draws the group and the network when only ${label} names them`, () => {
+      const names = hidden(`${PLAN}${text}`);
+      assert.ok(!names.includes("resource_group"), label);
+      assert.ok(!names.includes("network"), label);
+    });
+  }
+
+  it("draws the network and the zone when the only block that reads the zone is an output", () => {
+    const names = hidden(`${PLAN}${USES("resource_group")}output "z" {\n  value = module.private_dns_vaultcore.resource_id\n}\n`);
+    assert.ok(!names.includes("private_dns_vaultcore"));
+    assert.ok(!names.includes("network"));
+    assert.ok(names.includes("resource_group"));
+  });
+
+  it("keeps hiding a module a drawn block reads through an interpolation, in a resource or in a module", () => {
+    const interpolated = 'module "mine" {\n  source = "Azure/avm-res-storage-storageaccount/azurerm"\n  version = "0.6.8"\n  note = "${module.resource_group.resource_id}"\n}\n';
+    assert.ok(hidden(`${PLAN}${interpolated}`).includes("resource_group"));
+    const resource = 'resource "azurerm_storage_account" "mine" {\n  name = "x"\n  resource_group_name = module.resource_group.name\n}\n';
+    assert.ok(hidden(`${group}\n${resource}`).includes("resource_group"));
+  });
+
+  it("is not kept hidden by a module that is itself the plan's", () => {
+    // The zone reads the group, and the network reads it; none of them is a component, so none keeps the group hidden.
+    assert.deepEqual(hidden(PLAN), []);
+  });
+});
+
+describe("only the private DNS zones the generator writes are hidden, whatever else is exact", () => {
+  const base = `${moduleText(AZURE, "resource_group")}\n${moduleText(AZURE, "network")}\n`;
+  const zone = moduleText(AZURE, "private_dns_vaultcore");
+  const anotherZone = (domain: string, label: string) =>
+    zone.replace('"private_dns_vaultcore"', `"${label}"`).replace("privatelink.vaultcore.azure.net", domain).replace("private-dns-vaultcore-link", `${label.replace(/_/g, "-")}-link`);
+
+  it("hides the three the generator writes, one for each service behind a private endpoint", () => {
+    for (const domain of ["privatelink.vaultcore.azure.net", "privatelink.postgres.database.azure.com", "privatelink.mysql.database.azure.com"]) {
+      const label = `private_dns_${domain.replace(/^privatelink\./, "").split(".")[0]}`;
+      assert.ok(hidden(`${base}${anotherZone(domain, label)}\n${USES(label)}`).includes(label), domain);
+    }
+  });
+
+  it("draws a zone of a private link domain the generator never writes, however exactly it is otherwise written", () => {
+    for (const [domain, label] of [
+      ["privatelink.blob.core.windows.net", "private_dns_blob"],
+      ["privatelink.database.windows.net", "private_dns_database"],
+      ["privatelink.azure.net", "private_dns_azure"],
+      ["privatelink.vaultcore.azure.net.evil.example", "private_dns_vaultcore"],
+    ] as const) {
+      assert.ok(!hidden(`${base}${anotherZone(domain, label)}\n${USES(label)}`).includes(label), domain);
+    }
+  });
+});

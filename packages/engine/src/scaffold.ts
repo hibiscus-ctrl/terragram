@@ -1,7 +1,7 @@
 // Copyright 2026 Gabriel Ignat
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { type HclBlock, attributeOf, block, mapEntries, mapExpression, quote, quoteTemplate, stringValue } from "./hcl.ts";
+import { type HclBlock, attributeOf, block, extractReferences, mapEntries, mapExpression, objectLiteral, quote, quoteTemplate, stringValue } from "./hcl.ts";
 import { MODULE_VERSIONS } from "./module-versions.ts";
 
 /**
@@ -48,6 +48,13 @@ export function planNetworkModule(): HclBlock {
     { key: "tags", value: "local.tags" },
   ]);
 }
+
+/** The private DNS zones an Azure plan adds, and what sits behind each, as the plan's note names it. */
+export const PRIVATE_SERVICES: Readonly<Record<string, string>> = {
+  "privatelink.vaultcore.azure.net": "Key Vault",
+  "privatelink.postgres.database.azure.com": "PostgreSQL",
+  "privatelink.mysql.database.azure.com": "MySQL",
+};
 
 /** The module name of the private DNS zone `zone` (`privatelink.vaultcore.azure.net` -> `private_dns_vaultcore`). */
 export function privateDnsZoneName(zone: string): string {
@@ -106,38 +113,32 @@ function expressionsOf(b: HclBlock): string[] {
   return [...b.attributes.map((a) => a.value), ...b.blocks.flatMap(expressionsOf)];
 }
 
-/** Whether `text` names `address` as a whole reference (`module.network.x`, not `module.network_2.x`). */
-function names(text: string, address: string): boolean {
-  for (let at = text.indexOf(address); at !== -1; at = text.indexOf(address, at + 1)) {
-    const before = text[at - 1] ?? "";
-    const after = text[at + address.length] ?? "";
-    if (!/[\w.-]/.test(before) && !/[\w-]/.test(after)) return true;
-  }
-  return false;
-}
+/** Whether a block reads the module `label` as a reference: not the same text in a string, which is no reference. */
+const refers = (b: HclBlock, label: string): boolean => expressionsOf(b).some((e) => extractReferences(e).includes(`module.${label}`));
 
-const refers = (b: HclBlock, label: string): boolean => expressionsOf(b).some((e) => names(e, `module.${label}`));
-
-/** The subnets an Azure plan adds to its network: a name, a /24, and the delegation or outbound access a kind asked for. */
+/**
+ * The subnets an Azure plan adds to its network: a name, a /24, and the delegation or outbound access a kind asked for.
+ * Absent is a network the plan has not given subnets yet; present, it has to be an object written out with at least one
+ * subnet and every one of them exact, so a reference, a `merge()` or a `for` expression (all of which could hold anything) is not.
+ */
 function subnetsAreThePlans(value: string | undefined): boolean {
-  const subnets = mapEntries(value);
-  return (
-    new Set(subnets.map((s) => s.key)).size === subnets.length &&
-    subnets.every((s) => {
-      const own = mapEntries(s.value);
-      const get = (key: string) => squash(own.find((e) => e.key === key)?.value);
-      const allowed = ["name", "address_prefix", "default_outbound_access_enabled", "delegations"];
-      return (
-        /^[a-z0-9-]+$/.test(s.key) &&
-        own.length === new Set(own.map((e) => e.key)).size &&
-        own.every((e) => allowed.includes(e.key)) &&
-        get("name") === `"snet-${s.key}"` &&
-        /^"\d{1,3}\.\d{1,3}\.\d{1,3}\.0\/24"$/.test(get("address_prefix")) &&
-        (own.every((e) => e.key !== "default_outbound_access_enabled") || get("default_outbound_access_enabled") === "true") &&
-        (own.every((e) => e.key !== "delegations") || /^\[\{ name = "delegation", service_delegation = \{ name = "[A-Za-z0-9./]+" \} \}\]$/.test(get("delegations")))
-      );
-    })
-  );
+  if (value === undefined) return true;
+  const subnets = objectLiteral(value);
+  if (subnets === undefined || new Set(subnets.map((s) => s.key)).size !== subnets.length) return false;
+  return subnets.every((s) => {
+    const own = objectLiteral(s.value);
+    if (own === undefined || own.length !== new Set(own.map((e) => e.key)).size) return false;
+    const get = (key: string) => squash(own.find((e) => e.key === key)?.value);
+    const allowed = ["name", "address_prefix", "default_outbound_access_enabled", "delegations"];
+    return (
+      /^[a-z0-9-]+$/.test(s.key) &&
+      own.every((e) => allowed.includes(e.key)) &&
+      get("name") === `"snet-${s.key}"` &&
+      /^"\d{1,3}\.\d{1,3}\.\d{1,3}\.0\/24"$/.test(get("address_prefix")) &&
+      (own.every((e) => e.key !== "default_outbound_access_enabled") || get("default_outbound_access_enabled") === "true") &&
+      (own.every((e) => e.key !== "delegations") || /^\[\{ name = "delegation", service_delegation = \{ name = "[A-Za-z0-9./]+" \} \}\]$/.test(get("delegations")))
+    );
+  });
 }
 
 /** What a block looks like, before asking whether anything uses it: the generator's resource group, network or zone. */
@@ -157,7 +158,7 @@ function shapeOf(b: HclBlock, all: readonly HclBlock[]): "resource-group" | "net
   if (source === MODULE_VERSIONS["azure/private-dns-zone"].source) {
     const zone = stringValue(attributeOf(b, "domain_name"));
     const network = /^module\.([A-Za-z0-9_-]+)\.resource_id$/.exec(squash(mapEntries(mapEntries(attributeOf(b, "virtual_network_links"))[0]?.value).find((e) => e.key === "virtual_network_id")?.value))?.[1];
-    if (zone === undefined || network === undefined || !/^privatelink\.[a-z0-9.-]+$/.test(zone) || label !== privateDnsZoneName(zone)) return undefined;
+    if (zone === undefined || network === undefined || !Object.hasOwn(PRIVATE_SERVICES, zone) || label !== privateDnsZoneName(zone)) return undefined;
     const linked = all.some((o) => o.type === "module" && o.labels[0] === network && sourceOf(o) === MODULE_VERSIONS["azure/virtual-network"].source);
     return linked && sameAttributes(b, privateDnsZoneModule(zone, `module.${network}.resource_id`)) ? "zone" : undefined;
   }
@@ -167,16 +168,18 @@ function shapeOf(b: HclBlock, all: readonly HclBlock[]): "resource-group" | "net
 /**
  * Whether a module call is something an Azure plan adds around its components rather than a component
  * of the file's own: the resource group, the network added when the model draws none, or a private DNS
- * zone, each exactly as the generator writes it, and each used by a block that is not itself one of those.
+ * zone (one of the plan's three), each exactly as the generator writes it, and each used by a block that
+ * the reader draws (`drawn`: a resource or module that becomes a node, not a variable, output, local or
+ * another piece of scaffold, and not a string that happens to read like a reference).
  * A resource group named otherwise or carrying another input, a virtual network that is the file's own
- * (even one called `network`), and a zone nothing reads are drawn.
+ * (even one called `network`), and a zone nothing drawn reads are drawn.
  */
-export function isAzureScaffold(b: HclBlock, all: readonly HclBlock[]): boolean {
+export function isAzureScaffold(b: HclBlock, all: readonly HclBlock[], drawn: (user: HclBlock) => boolean): boolean {
   const shape = shapeOf(b, all);
   if (shape === undefined) return false;
   const label = b.labels[0] ?? "";
-  const drawn = (user: HclBlock) => user !== b && shapeOf(user, all) === undefined && refers(user, label);
-  if (all.some(drawn)) return true;
+  const usedBy = (of: HclBlock, name: string) => all.some((u) => u !== of && shapeOf(u, all) === undefined && drawn(u) && refers(u, name));
+  if (usedBy(b, label)) return true;
   // The network is also used through a zone that is itself used.
-  return shape === "network" && all.some((z) => z !== b && shapeOf(z, all) === "zone" && refers(z, label) && all.some((u) => u !== z && shapeOf(u, all) === undefined && refers(u, z.labels[0] ?? "")));
+  return shape === "network" && all.some((z) => z !== b && shapeOf(z, all) === "zone" && refers(z, label) && usedBy(z, z.labels[0] ?? ""));
 }

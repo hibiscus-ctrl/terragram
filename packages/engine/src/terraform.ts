@@ -49,7 +49,7 @@ import {
 } from "./kinds.ts";
 import { type Cloud, type InfraModel, type ModelNode, resourceNodes } from "./model.ts";
 import { PROVIDER_VERSIONS } from "./provider-versions.ts";
-import { PLAN_ADDRESS_SPACE, PLAN_NETWORK, planNetworkModule, privateDnsZoneModule, privateDnsZoneName, resourceGroupModule } from "./scaffold.ts";
+import { PLAN_ADDRESS_SPACE, PLAN_NETWORK, PRIVATE_SERVICES, planNetworkModule, privateDnsZoneModule, privateDnsZoneName, resourceGroupModule } from "./scaffold.ts";
 
 /**
  * Model → Terraform. Every resource fact comes from the kind registry; what this
@@ -493,13 +493,6 @@ function privateNetwork(name: string): {
     },
   };
 }
-
-/** What sits behind each private DNS zone, as the note names it. */
-const PRIVATE_SERVICES: Record<string, string> = {
-  "privatelink.vaultcore.azure.net": "Key Vault",
-  "privatelink.postgres.database.azure.com": "PostgreSQL",
-  "privatelink.mysql.database.azure.com": "MySQL",
-};
 
 /** What private endpoints ask of whoever administers what sits behind them. */
 function privateNetworkNote(network: string, zones: Iterable<string>): string {

@@ -21954,6 +21954,11 @@ function planNetworkModule() {
     { key: "tags", value: "local.tags" }
   ]);
 }
+var PRIVATE_SERVICES = {
+  "privatelink.vaultcore.azure.net": "Key Vault",
+  "privatelink.postgres.database.azure.com": "PostgreSQL",
+  "privatelink.mysql.database.azure.com": "MySQL"
+};
 function privateDnsZoneName(zone) {
   return `private_dns_${zone.replace(/^privatelink\./, "").split(".")[0]?.replace(/[^a-z0-9]+/g, "_")}`;
 }
@@ -25136,11 +25141,6 @@ function privateNetwork(name) {
     }
   };
 }
-var PRIVATE_SERVICES = {
-  "privatelink.vaultcore.azure.net": "Key Vault",
-  "privatelink.postgres.database.azure.com": "PostgreSQL",
-  "privatelink.mysql.database.azure.com": "MySQL"
-};
 function privateNetworkNote(network, zones) {
   const names = [...zones].map((zone) => PRIVATE_SERVICES[zone] ?? zone);
   const services = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0] ?? "";

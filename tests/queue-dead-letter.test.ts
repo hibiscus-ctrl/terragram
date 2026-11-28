@@ -155,12 +155,20 @@ resource "google_pubsub_topic" "queue_2_dead_letter" {
 }
 
 resource "google_pubsub_subscription" "queue_2" {
-  name  = "sub-\${var.name_prefix}-queue-2"
-  topic = google_pubsub_topic.queue_2.id
+  name                         = "sub-\${var.name_prefix}-queue-2"
+  topic                        = google_pubsub_topic.queue_2.id
+  ack_deadline_seconds         = 30
+  message_retention_duration   = "604800s"
+  enable_message_ordering      = false
+  enable_exactly_once_delivery = false
 
   dead_letter_policy {
     dead_letter_topic     = google_pubsub_topic.queue_2_dead_letter.id
     max_delivery_attempts = 5
+  }
+
+  expiration_policy {
+    ttl = ""
   }
 }
 
@@ -176,5 +184,157 @@ resource "google_pubsub_topic_iam_member" "writer" {
     assert.equal(queueNodes.length, 2);
     const writes = parsed.model.edges.filter((e) => e.access === "write" && queueNodes.includes(e.target));
     assert.deepEqual(writes.map((e) => e.target), [queueNodes[1]]);
+  });
+});
+
+describe("a subscription the plan did not write is shown, never absorbed into the queue", () => {
+  const sub = blockText(PLAIN, "google_pubsub_subscription", "queue");
+  const nodes = (source: string) => {
+    const parsed = parseTerraform(source);
+    assert.ok(parsed.ok);
+    return parsed;
+  };
+  /** The flagged nodes the file's own subscriptions are drawn as. */
+  const flagged = (source: string) =>
+    nodes(source)
+      .model.nodes.filter((n) => n.kind === "external" && n.label.startsWith("google_pubsub_subscription "))
+      .map((n) => n.label);
+
+  const PUSH = `
+resource "google_pubsub_subscription" "to_partner" {
+  name  = "to-partner"
+  topic = google_pubsub_topic.queue.id
+
+  push_config {
+    push_endpoint = "https://partner.example.com/hook?token=s3cret-value"
+  }
+}
+`;
+
+  it("leaves the plan's own subscription part of its queue, with nothing flagged", () => {
+    for (const source of [PLAIN, KEYED]) {
+      assert.deepEqual(flagged(source), []);
+      assert.deepEqual(nodes(source).untranslated, []);
+    }
+  });
+
+  it("draws a push subscription on the queue's topic as a flagged node of its own, and lists it as untranslated", () => {
+    const parsed = nodes(`${PLAIN}${PUSH}`);
+    assert.equal(queues(`${PLAIN}${PUSH}`), 1);
+    assert.deepEqual(flagged(`${PLAIN}${PUSH}`), ["google_pubsub_subscription to_partner"]);
+    assert.deepEqual(parsed.untranslated, ["google_pubsub_subscription.to_partner"]);
+    const node = parsed.model.nodes.find((n) => n.label === "google_pubsub_subscription to_partner");
+    assert.ok(node?.flag?.reason);
+    // Only the name of the block reaches the model: not the endpoint, and not the token in it.
+    assert.doesNotMatch(JSON.stringify(parsed.model), /partner\.example|s3cret|push_endpoint/);
+  });
+
+  it("draws a pull subscription of the file's own, on a topic of its own or the queue's, the same way", () => {
+    const own = `
+resource "google_pubsub_topic" "audit" {
+  name = "audit"
+}
+
+resource "google_pubsub_subscription" "audit" {
+  name  = "audit-reader"
+  topic = google_pubsub_topic.audit.id
+}
+
+resource "google_pubsub_subscription" "second_reader" {
+  name  = "second-reader"
+  topic = google_pubsub_topic.queue.id
+}
+`;
+    assert.deepEqual(flagged(`${PLAIN}${own}`).sort(), ["google_pubsub_subscription audit", "google_pubsub_subscription second_reader"]);
+    assert.equal(queues(`${PLAIN}${own}`), 2);
+  });
+
+  it("draws a grant on the file's own subscription as a grant on that node, not on the queue", () => {
+    const source = `${PLAIN}${PUSH}
+resource "google_service_account" "reader" {
+  account_id = "reader"
+}
+
+resource "google_pubsub_subscription_iam_member" "reader" {
+  subscription = google_pubsub_subscription.to_partner.name
+  role         = "roles/pubsub.subscriber"
+  member       = "serviceAccount:\${google_service_account.reader.email}"
+}
+`;
+    const parsed = nodes(source);
+    const target = parsed.model.nodes.find((n) => n.label === "google_pubsub_subscription to_partner")?.id;
+    const queue = parsed.model.nodes.find((n) => n.kind === "queue")?.id;
+    assert.ok(target && queue);
+    const grants = parsed.model.edges.filter((e) => e.access !== undefined && e.access !== "runs-as");
+    assert.ok(grants.some((e) => e.target === target));
+    assert.ok(!grants.some((e) => e.target === queue));
+  });
+
+  it("does not take the plan's own subscription for the plan's once it is changed in anything it writes", () => {
+    const changes: Array<[string, (b: string) => string]> = [
+      ["a push endpoint", (b) => b.replace(/\n\}\n$/, '\n  push_config {\n    push_endpoint = "https://partner.example.com"\n  }\n}\n')],
+      ["a filter", (b) => b.replace(/\n\}\n$/, '\n  filter = "attributes.kind = \\"order\\""\n}\n')],
+      ["another acknowledgement deadline", (b) => b.replace("ack_deadline_seconds         = 30", "ack_deadline_seconds         = 600")],
+      ["a name of its own", (b) => b.replace(/sub-\$\{var\.name_prefix\}-queue/, "orders-reader")],
+      ["no dead-letter policy", (b) => b.replace(/\n {2}dead_letter_policy \{[\s\S]*?\n {2}\}\n/, "\n")],
+      ["another attempt limit", (b) => b.replace("max_delivery_attempts = 5", "max_delivery_attempts = 100")],
+      ["a topic it names by text", (b) => b.replace(/topic\s+= google_pubsub_topic\.queue\.id/, 'topic = "projects/p/topics/t"')],
+      ["ordering and exactly-once that disagree", (b) => b.replace("enable_message_ordering      = false", "enable_message_ordering      = true")],
+    ];
+    for (const [label, change] of changes) {
+      const source = PLAIN.replace(sub, change(sub));
+      assert.notEqual(source, PLAIN, label);
+      assert.deepEqual(flagged(source), ["google_pubsub_subscription queue"], label);
+      assert.deepEqual(nodes(source).untranslated.filter((u) => u.startsWith("google_pubsub_subscription")), ["google_pubsub_subscription.queue"], label);
+      // And so the dead-letter topic is no longer part of a queue the plan wrote.
+      assert.equal(folded(source, "queue_dead_letter"), false, label);
+    }
+  });
+
+  it("draws the dead-letter topic of its own when another subscription reads it or gives up on it", () => {
+    const readsIt = `${PLAIN}
+resource "google_pubsub_subscription" "inspector" {
+  name  = "dead-letter-inspector"
+  topic = google_pubsub_topic.queue_dead_letter.id
+}
+`;
+    assert.equal(folded(readsIt, "queue_dead_letter"), false);
+    assert.equal(queues(readsIt), 2);
+    assert.ok(flagged(readsIt).includes("google_pubsub_subscription inspector"));
+
+    const givesUpOnIt = `${PLAIN}
+resource "google_pubsub_subscription" "other" {
+  name  = "other"
+  topic = google_pubsub_topic.queue.id
+
+  dead_letter_policy {
+    dead_letter_topic     = google_pubsub_topic.queue_dead_letter.id
+    max_delivery_attempts = 5
+  }
+}
+`;
+    assert.equal(folded(givesUpOnIt, "queue_dead_letter"), false);
+    assert.equal(queues(givesUpOnIt), 2);
+    assert.ok(flagged(givesUpOnIt).includes("google_pubsub_subscription other"));
+
+    const byText = `${PLAIN}
+resource "google_pubsub_subscription" "by_name" {
+  name  = "by-name"
+  topic = "projects/p/topics/\${google_pubsub_topic.queue_dead_letter.name}"
+}
+`;
+    assert.equal(folded(byText, "queue_dead_letter"), false);
+  });
+
+  it("folds a dead-letter topic that only a word of another subscription's text mentions", () => {
+    const mention = `${PLAIN}
+resource "google_pubsub_subscription" "note" {
+  name   = "note"
+  topic  = google_pubsub_topic.queue.id
+  labels = { about = "google_pubsub_topic.queue_dead_letter.id" }
+}
+`;
+    assert.equal(folded(mention, "queue_dead_letter"), true);
+    assert.ok(flagged(mention).includes("google_pubsub_subscription note"));
   });
 });

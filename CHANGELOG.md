@@ -181,6 +181,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   store's key when there is one, no other attribute, given up on by the queue's own subscription and named like its topic) folds into the queue, and what is
   granted on it is granted on the queue. A topic of your own, whatever its name, a lookalike that differs in any way, or one no subscription gives up on is
   drawn as a queue of its own.
+- Reading a plan back hides less of what an author wrote. A network whose `subnets` is a reference, a `merge()` or a `for` expression, or has no subnet in
+  it, is drawn instead of passing as the plan's (only an object written out with every subnet exact is hidden); a private DNS zone is hidden only for the three
+  domains the plan writes; and the resource group, network or zone is kept hidden only by a block the reader draws, not by an output, a local, a variable, a
+  resource of a type no kind reads, or a string or heredoc that happens to spell `module.<name>`. The log and source buckets of a Google Cloud plan must also
+  have the versioning, logging and lifecycle blocks the plan writes, each once.
+- A Pub/Sub subscription that is not the one the plan writes for its queue is no longer absorbed into the queue: a push endpoint, a filter, a second
+  consumer of the queue's topic or a subscription on a topic of your own is drawn as its own flagged node, listed as not translated (so it counts as not
+  buildable, and a grant on it is a grant on it, not on the queue). A dead-letter topic is folded into its queue only when no subscription but the plan's own
+  reads it or gives up on it.
 
 ## [0.2.0] - 2026-11-23
 

@@ -23,6 +23,7 @@ import {
   type GcpPlan,
   isEdgeBlock,
   isGcpDeadLetterTopic,
+  isGcpQueueSubscription,
   isGcpScaffold,
   redisSkuFrom,
   runSizeFrom,
@@ -3288,7 +3289,18 @@ export function moduleSourceToKind(
  * component of the file, counts; a lookalike is drawn, the way `isScaffoldResource` does for Google Cloud.
  */
 export function isScaffoldModule(b: HclBlock, all: readonly HclBlock[]): boolean {
-  return isAzureScaffold(b, all) || isS3LogBucket(b, all);
+  return isAzureScaffold(b, all, (user) => becomesNode(user, all)) || isS3LogBucket(b, all);
+}
+
+/**
+ * Whether the reader draws a block as a node of its own (or inside one): a module call that is not the
+ * log bucket of a bucket, or a resource of a type some kind reads that is not what the plan adds around a component.
+ * A variable, output, local, data source or provider block, and a resource no kind reads, are not.
+ */
+function becomesNode(b: HclBlock, all: readonly HclBlock[]): boolean {
+  if (b.type === "module") return !isS3LogBucket(b, all);
+  if (b.type !== "resource" || b.labels.length !== 2) return false;
+  return !isGcpScaffold(b, all) && resourceTypeToKind(b.labels[0] ?? "", undefined, b) !== null;
 }
 
 /** Whether the derived spine fronts this kind with an edge tier by default. */
@@ -3309,6 +3321,15 @@ export function isScaffoldResource(b: HclBlock, all: readonly HclBlock[]): boole
  */
 export function isDeadLetterTopic(b: HclBlock, all: readonly HclBlock[]): boolean {
   return isGcpDeadLetterTopic(b, all);
+}
+
+/**
+ * Whether a resource block is a Pub/Sub subscription that is not the one a Google Cloud plan adds for its queue
+ * (`isGcpQueueSubscription`): a push endpoint, a filter, a second consumer, a subscription on a topic of the file's own.
+ * It is not part of a queue (the queue's own subscription says nothing about what else reads the topic), so `parse` draws it on its own, flagged.
+ */
+export function isForeignSubscription(b: HclBlock, all: readonly HclBlock[]): boolean {
+  return b.type === "resource" && b.labels.length === 2 && b.labels[0] === "google_pubsub_subscription" && !isGcpQueueSubscription(b, all);
 }
 
 export function isFronted(kind: string): boolean {
