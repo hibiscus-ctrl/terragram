@@ -353,6 +353,25 @@ function wireEdge(source: Emitted, target: Emitted, cloud: Cloud, plan: WirePlan
     return [];
   }
 
+  // A bucket wired to the plan's secret store is encrypted under that store's own customer-managed key,
+  // which Cloud Storage's service agent is allowed to use. The bucket waits for that grant.
+  if (cloud === "gcp" && source.node.kind === "object-storage" && target.node.kind === "key-vault") {
+    const agent = `data.google_storage_project_service_account.${originName}.email_address`;
+    const grant = `google_kms_crypto_key_iam_member.${originName}`;
+    source.consumer.blocks.push(
+      block("encryption", [], [{ key: "default_kms_key_name", value: `google_kms_crypto_key.${target.name}.id` }]),
+    );
+    addDependsOn(source.consumer, grant);
+    return [
+      block("data", ["google_storage_project_service_account", originName], []),
+      block("resource", ["google_kms_crypto_key_iam_member", originName], [
+        { key: "crypto_key_id", value: `google_kms_crypto_key.${target.name}.id` },
+        { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+        { key: "member", value: `"serviceAccount:\${${agent}}"` },
+      ]),
+    ];
+  }
+
   const connection = target.spec.connection?.(target.referent);
   if (source.spec.settings && connection) {
     const host = source.blocks[source.spec.settings.blockIndex ?? 0] ?? source.consumer;

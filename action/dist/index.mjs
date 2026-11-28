@@ -24501,6 +24501,22 @@ function wireEdge(source, target, cloud, plan) {
     if (encryption) encryption.value = s3Encryption("aws:kms", `aws_kms_key.${target.name}.arn`).value;
     return [];
   }
+  if (cloud === "gcp" && source.node.kind === "object-storage" && target.node.kind === "key-vault") {
+    const agent = `data.google_storage_project_service_account.${originName}.email_address`;
+    const grant = `google_kms_crypto_key_iam_member.${originName}`;
+    source.consumer.blocks.push(
+      block("encryption", [], [{ key: "default_kms_key_name", value: `google_kms_crypto_key.${target.name}.id` }])
+    );
+    addDependsOn(source.consumer, grant);
+    return [
+      block("data", ["google_storage_project_service_account", originName], []),
+      block("resource", ["google_kms_crypto_key_iam_member", originName], [
+        { key: "crypto_key_id", value: `google_kms_crypto_key.${target.name}.id` },
+        { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+        { key: "member", value: `"serviceAccount:\${${agent}}"` }
+      ])
+    ];
+  }
   const connection2 = target.spec.connection?.(target.referent);
   if (source.spec.settings && connection2) {
     const host = source.blocks[source.spec.settings.blockIndex ?? 0] ?? source.consumer;

@@ -295,6 +295,16 @@ describe("a bucket wired to the plan, and a service wired to its dependencies", 
     assert.match(main, /STORAGE_BUCKET\s+= google_storage_bucket\.object_storage\.name/);
   });
 
+  it("a bucket wired to the key store is encrypted under its key, and the service agent may use it", () => {
+    const { model, ids } = modelOf("object-storage", "key-vault");
+    const { main } = plan(addEdge(model, ids[0] ?? "", ids[1] ?? ""));
+    assert.match(main, /resource "google_storage_bucket" "object_storage" \{[\s\S]*?encryption \{\n\s+default_kms_key_name = google_kms_crypto_key\.key_vault\.id/);
+    assert.match(main, /member\s+= "serviceAccount:\$\{data\.google_storage_project_service_account\.object_storage_to_key_vault\.email_address\}"/);
+    assert.match(main, /depends_on\s+= \[[^\]]*google_kms_crypto_key_iam_member\.object_storage_to_key_vault/);
+    // Not every bucket: the one with nothing wired to it stays on Google's own key.
+    assert.doesNotMatch(plan(modelOf("object-storage").model).main, /default_kms_key_name/);
+  });
+
   it("a DNS zone publishes a record for the tier behind it", () => {
     const { model, ids } = modelOf("dns", "containers");
     const { main } = plan(addEdge(model, ids[0] ?? "", ids[1] ?? ""));
