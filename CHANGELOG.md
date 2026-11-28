@@ -166,6 +166,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   picture whatever order the document lists it in. Where the graph hashes or drops its addresses, the
   order falls back to type and ID as before. The ids in the Mermaid and the JSON view of an estate with
   several accounts are numbered differently; the drawing is the same.
+- The generated-Terraform gate (`npm run validate:emit`) now also runs four Google Cloud plans (`scripts/emit-plans.ts`) beside the briefs and templates, so
+  the kinds they never reached go through `terraform validate`, tflint, trivy and checkov: GKE, the project, the virtual machine, BigQuery, the CDN in front of
+  a static site, and Pub/Sub topics, a dataset and buckets under the key store's key. A test holds that every Google Cloud kind is in one of them.
 
 ### Fixed
 

@@ -21,7 +21,7 @@ CI runs the same set, plus:
 - The **Packages** job: `schemas:check`, `build:packages`, then the schema, CLI and bundle tests with Terraform installed.
 - The **action-dist** job: `build:action`, then `git diff --exit-code -- action/dist`. `action-selftest.yml` runs the Action on the fixture for changes under `action/` or `packages/`.
 - The **Generated Terraform** job: `validate:emit` runs `fmt`, `validate`, tflint, trivy and
-  checkov over every brief and template, and `check:modules` checks every pinned module call
+  checkov over every brief and template and the Google Cloud plans of `scripts/emit-plans.ts`, and `check:modules` checks every pinned module call
   against its published interface.
 - `lint:lockfile`, `reuse lint`, pinact (SHA-pinned actions) and zizmor (workflow lint).
 - The diff-scoped security gates in `security-scan.yml`: Semgrep, Trivy secrets and the
