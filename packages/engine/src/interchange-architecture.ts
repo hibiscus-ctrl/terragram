@@ -46,9 +46,14 @@ const HEADER = /^architecture-beta\b/;
 /** Icons Mermaid draws without a registered icon pack. */
 const BUILT_IN_ICONS: ReadonlySet<string> = new Set(["cloud", "database", "disk", "internet", "server"]);
 
+/** A line longer than this is refused before any pattern is run on it: no diagram needs more, and a pattern's cost grows with the line. */
+const MAX_LINE = 2000;
+
 const ID = "[\\w-]+";
+// Each optional part carries its own leading whitespace and starts with a character no other part starts with
+// (`(`, `[` or `in`), so a run of whitespace can be read in only one way and the match is linear in the line.
 const DECLARATION = new RegExp(
-  `^(group|service)\\s+(${ID})\\s*(?:\\(([^)]*)\\))?\\s*(?:\\[([^\\]]*)\\])?(?:\\s+in\\s+(${ID}))?$`,
+  `^(group|service)\\s+(${ID})(?:\\s*\\(([^)]*)\\))?(?:\\s*\\[([^\\]]*)\\])?(?:\\s+in\\s+(${ID}))?$`,
 );
 const JUNCTION = new RegExp(`^junction\\s+(${ID})(?:\\s+in\\s+(${ID}))?$`);
 const EDGE = new RegExp(
@@ -99,6 +104,7 @@ export function parseArchitecture(source: string): ArchitectureResult {
   for (let index = 0; index < lines.length; index++) {
     const number = index + 1;
     const raw = lines[index] ?? "";
+    if (raw.length > MAX_LINE) return fail(number, `the line is ${raw.length} characters, over ${MAX_LINE} characters; shorten it.`);
     const comment = raw.indexOf("%%");
     const line = (comment === -1 ? raw : raw.slice(0, comment)).trim().replace(/;$/, "");
     if (!line) continue;

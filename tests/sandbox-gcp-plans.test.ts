@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import { assembleModel } from "terragram-engine/engine";
 import { emitTerraform } from "terragram-engine/terraform";
 import { GCP_PLANS } from "../scripts/emit-plans.ts";
+import { evalHcl } from "./helpers/hcl-eval.ts";
 import { AdaptationError, adaptForSandbox, dropBlock, replaceOnce, SANDBOX_ADAPTATIONS } from "../scripts/lib/sandbox-gcp.ts";
 
 /**
@@ -79,13 +80,14 @@ describe("the sandbox's changes to the Google Cloud plans", () => {
         const expression = /^ {2}(?:name|account_id)\s*=\s*(.+)$/m.exec(block)?.[1];
         if (type === undefined || expression === undefined) continue;
         if (!expression?.includes("name_prefix")) continue;
-        const accountId = /^trim\(substr\("(.*)", 0, 30\), "-"\)$/.exec(expression ?? "");
-        const value = (accountId?.[1] ?? expression ?? "")
+        const isAccount = type === "google_service_account";
+        const value = (isAccount ? String(evalHcl(expression, { name_prefix: prefix })) : expression)
           .replaceAll("${var.name_prefix}", prefix)
           .replaceAll("${var.project_id}", project)
           .replace(/^"|"$/g, "");
-        if (accountId) {
-          const id = value.slice(0, 30).replace(/^-+|-+$/g, "");
+        if (isAccount) {
+          const id = value;
+          assert.ok(id.length <= 30, `${id} is over 30 characters`);
           assert.ok(!accounts.has(`${plan.id}/${id}`), `${plan.id}: two service accounts are named ${id}`);
           accounts.set(`${plan.id}/${id}`, id);
           assert.ok(id.includes(prefix), `${id} keeps the sweep's prefix`);

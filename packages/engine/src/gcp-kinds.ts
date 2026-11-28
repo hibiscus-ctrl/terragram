@@ -39,11 +39,46 @@ export type GcpPlan = {
   position: number;
 };
 
+/**
+ * Every role a plan grants, and no other. The sandbox's check of a plan (`scripts/sandbox-gcp-validate.mjs`, plain JavaScript that
+ * cannot import this file) allows these strings and refuses a grant of any other, and `tests/sandbox-gcp-validate.test.ts` fails
+ * when its list and this one differ, so a role added here is added there in the same pull request.
+ */
+export const GCP_ROLES = {
+  logWriter: "roles/logging.logWriter",
+  metricWriter: "roles/monitoring.metricWriter",
+  monitoringViewer: "roles/monitoring.viewer",
+  artifactReader: "roles/artifactregistry.reader",
+  sqlInstanceUser: "roles/cloudsql.instanceUser",
+  sqlClient: "roles/cloudsql.client",
+  keyUser: "roles/cloudkms.cryptoKeyEncrypterDecrypter",
+  objectCreator: "roles/storage.objectCreator",
+  objectViewer: "roles/storage.objectViewer",
+  runInvoker: "roles/run.invoker",
+} as const;
+
+/** The only images a plan starts anything from, held against the sandbox's check the same way as `GCP_ROLES`. */
+export const GCP_IMAGES = {
+  cloudRun: "us-docker.pkg.dev/cloudrun/container/hello",
+  virtualMachine: "debian-cloud/debian-12",
+} as const;
+
+/** Google's own group that writes a bucket's access logs: the one member a plan grants that is not a service account of the plan, a service agent or `allUsers`. */
+export const GCP_LOG_DELIVERY_MEMBER = "group:cloud-storage-analytics@google.com";
+
+/**
+ * The prefix every resource name starts with. Its shape is what the names built from it need: a service account
+ * id is 6 to 30 characters, a bucket and a cluster are 63, and all of them start with a lowercase letter.
+ */
 const NAME_PREFIX: VariableSpec = {
   name: "name_prefix",
   type: "string",
-  description: "Short prefix applied to every resource name.",
+  description: "Short prefix applied to every resource name: 1 to 20 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen.",
   default: quote("infra-prod"),
+  validation: {
+    condition: 'can(regex("^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$", var.name_prefix))',
+    message: "Use 1 to 20 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen.",
+  },
 };
 
 const NETWORK_ID: VariableSpec = {
@@ -62,8 +97,12 @@ export const GCP_LABELS: VariableSpec = {
   name: "labels",
   type: "map(string)",
   description:
-    "Labels added to every resource — owner and cost_centre are what a reviewer asks for first. Merged over the plan's own labels, so a key set here wins. Keys and values are lowercase letters, digits, hyphens and underscores.",
+    "Labels added to every resource — owner and cost_centre are what a reviewer asks for first. Merged over the plan's own labels, so a key set here wins. Keys start with a lowercase letter; keys and values are lowercase letters, digits, hyphens and underscores, at most 63 characters each.",
   default: "{}",
+  validation: {
+    condition: 'alltrue([for k, v in var.labels : can(regex("^[a-z][a-z0-9_-]{0,62}$", k)) && can(regex("^[a-z0-9_-]{0,63}$", v))])',
+    message: "Label keys start with a lowercase letter; keys and values hold only lowercase letters, digits, hyphens and underscores, and are at most 63 characters (a value may be empty).",
+  },
 };
 
 type Attr = { key: string; value: string | undefined } | null | undefined;
@@ -87,9 +126,20 @@ function cloudName(prefix: string, slug: string): string {
   return quoteTemplate`${prefix}-\${var.name_prefix}-${slug}`;
 }
 
-/** A service account id: 6 to 30 characters, ending in a letter or a digit. */
+/** The longest service account id Google Cloud takes, and how much of a longer one is kept before its hash. */
+const ACCOUNT_ID_MAX = 30;
+const ACCOUNT_ID_KEPT = 23;
+const ACCOUNT_ID_HASH = 6;
+
+/**
+ * A service account id: 6 to 30 characters, starting with a letter and ending with a letter or a digit. One that fits
+ * is `sa-<name_prefix>-<slug>` as it is. One that does not is cut to its first 23 characters and ends in six
+ * characters of the SHA-256 of the whole, so two nodes that share a long prefix (`virtual-machine`,
+ * `virtual-machine-2`) never get the same id, and the same node gets the same id on every run.
+ */
 function accountId(slug: string): string {
-  return `trim(substr(${quoteTemplate`sa-\${var.name_prefix}-${slug}`}, 0, 30), "-")`;
+  const full = quoteTemplate`sa-\${var.name_prefix}-${slug}`;
+  return `length(${full}) <= ${ACCOUNT_ID_MAX} ? ${full} : "\${trim(substr(${full}, 0, ${ACCOUNT_ID_KEPT}), "-")}-\${substr(sha256(${full}), 0, ${ACCOUNT_ID_HASH})}"`;
 }
 
 function production(c: Pick<GcpContext, "attr">): boolean {
@@ -266,7 +316,7 @@ export function isGcpScaffold(b: HclBlock, all: readonly HclBlock[]): boolean {
             o.type === "resource" &&
             o.labels[0] === "google_kms_crypto_key_iam_member" &&
             hasExactly(o, ["crypto_key_id", "role", "member"]) &&
-            attributeOf(o, "role") === '"roles/cloudkms.cryptoKeyEncrypterDecrypter"' &&
+            attributeOf(o, "role") === quote(GCP_ROLES.keyUser) &&
             attributeOf(o, "member") === member,
         )
       );
@@ -328,8 +378,8 @@ export function isGcpScaffold(b: HclBlock, all: readonly HclBlock[]): boolean {
       const bucket = bucketNamed(attributeOf(b, "bucket"));
       return (
         hasExactly(b, ["bucket", "role", "member"]) &&
-        attributeOf(b, "role") === '"roles/storage.objectCreator"' &&
-        attributeOf(b, "member") === '"group:cloud-storage-analytics@google.com"' &&
+        attributeOf(b, "role") === quote(GCP_ROLES.objectCreator) &&
+        attributeOf(b, "member") === quote(GCP_LOG_DELIVERY_MEMBER) &&
         bucket !== undefined &&
         isScaffoldBucket(all, bucket)
       );
@@ -470,8 +520,8 @@ function bucketWithLogs(c: GcpContext, opts: { prefix: string; purpose?: string;
   // Storage delivers usage logs as this Google group, which has to be allowed to write them.
   const grant = block("resource", ["google_storage_bucket_iam_member", `${logs}_delivery`], [
     { key: "bucket", value: `google_storage_bucket.${logs}.name` },
-    { key: "role", value: quote("roles/storage.objectCreator") },
-    { key: "member", value: quote("group:cloud-storage-analytics@google.com") },
+    { key: "role", value: quote(GCP_ROLES.objectCreator) },
+    { key: "member", value: quote(GCP_LOG_DELIVERY_MEMBER) },
   ]);
   return { bucket, blocks: [bucket, logBucket, grant] };
 }
@@ -602,8 +652,8 @@ function sqlInstance(c: GcpContext, engine: SqlEngine, prefix: string): GcpEmit 
       instance,
       serviceAccount(appAccount, `${c.slug}-app`, `Connects to the ${c.slug} database with IAM authentication`),
       // The grants are the project's, but bounded by a condition to this one instance.
-      projectRole(`${c.name}_app_instance_user`, "roles/cloudsql.instanceUser", `google_service_account.${appAccount}`, onInstance),
-      projectRole(`${c.name}_app_client`, "roles/cloudsql.client", `google_service_account.${appAccount}`, onInstance),
+      projectRole(`${c.name}_app_instance_user`, GCP_ROLES.sqlInstanceUser, `google_service_account.${appAccount}`, onInstance),
+      projectRole(`${c.name}_app_client`, GCP_ROLES.sqlClient, `google_service_account.${appAccount}`, onInstance),
       database,
       user,
     ],
@@ -856,7 +906,7 @@ export function gcpBackend(
         block("resource", ["google_cloud_run_v2_service_iam_member", name], [
           { key: "name", value: `${run}.name` },
           { key: "location", value: `${run}.location` },
-          { key: "role", value: quote("roles/run.invoker") },
+          { key: "role", value: quote(GCP_ROLES.runInvoker) },
           { key: "member", value: quote("allUsers") },
         ]),
       ]),
@@ -869,7 +919,7 @@ export function gcpBackend(
       block("resource", ["google_cloud_run_service_iam_member", name], [
         { key: "service", value: `${fn}.service_config[0].service` },
         { key: "location", value: `${fn}.location` },
-        { key: "role", value: quote("roles/run.invoker") },
+        { key: "role", value: quote(GCP_ROLES.runInvoker) },
         { key: "member", value: quote("allUsers") },
       ]),
     ]);
@@ -904,7 +954,7 @@ export function gcpBackend(
         block("data", ["google_project", name], []),
         block("resource", ["google_storage_bucket_iam_member", name], [
           { key: "bucket", value: `${bucket}.name` },
-          { key: "role", value: quote("roles/storage.objectViewer") },
+          { key: "role", value: quote(GCP_ROLES.objectViewer) },
           { key: "member", value: `"serviceAccount:service-\${data.google_project.${name}.number}@https-lb.iam.gserviceaccount.com"` },
           { key: "depends_on", value: `[${backend}]` },
         ]),
@@ -1235,7 +1285,7 @@ export const GCP = {
           ], [
             block("boot_disk", [], [], [
               block("initialize_params", [], [
-                { key: "image", value: quote("debian-cloud/debian-12") },
+                { key: "image", value: quote(GCP_IMAGES.virtualMachine) },
                 { key: "size", value: "20" },
                 { key: "type", value: quote("pd-balanced") },
               ]),
@@ -1252,8 +1302,8 @@ export const GCP = {
             ]),
           ]),
           serviceAccount(c.name, c.slug, `Runs the ${c.slug} instance`),
-          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
-          projectRole(`${c.name}_metric_writer`, "roles/monitoring.metricWriter", `google_service_account.${c.name}`),
+          projectRole(`${c.name}_log_writer`, GCP_ROLES.logWriter, `google_service_account.${c.name}`),
+          projectRole(`${c.name}_metric_writer`, GCP_ROLES.metricWriter, `google_service_account.${c.name}`),
         ],
         variables: [NAME_PREFIX, ...variables],
         outputs: [{ name: `${c.name}_internal_ip`, value: `google_compute_instance.${c.name}.network_interface[0].network_ip` }],
@@ -1346,10 +1396,10 @@ export const GCP = {
             ]),
           ]),
           serviceAccount(nodes, `${c.slug}-nodes`, `Runs the ${c.slug} cluster's nodes`),
-          projectRole(`${nodes}_log_writer`, "roles/logging.logWriter", `google_service_account.${nodes}`),
-          projectRole(`${nodes}_metric_writer`, "roles/monitoring.metricWriter", `google_service_account.${nodes}`),
-          projectRole(`${nodes}_monitoring_viewer`, "roles/monitoring.viewer", `google_service_account.${nodes}`),
-          projectRole(`${nodes}_artifact_reader`, "roles/artifactregistry.reader", `google_service_account.${nodes}`),
+          projectRole(`${nodes}_log_writer`, GCP_ROLES.logWriter, `google_service_account.${nodes}`),
+          projectRole(`${nodes}_metric_writer`, GCP_ROLES.metricWriter, `google_service_account.${nodes}`),
+          projectRole(`${nodes}_monitoring_viewer`, GCP_ROLES.monitoringViewer, `google_service_account.${nodes}`),
+          projectRole(`${nodes}_artifact_reader`, GCP_ROLES.artifactReader, `google_service_account.${nodes}`),
         ],
         variables: [
           NAME_PREFIX,
@@ -1401,7 +1451,7 @@ export const GCP = {
                 { key: "min_instance_count", value: "1" },
                 { key: "max_instance_count", value: "10" },
               ]),
-              block("containers", [], [{ key: "image", value: quote("us-docker.pkg.dev/cloudrun/container/hello") }], [
+              block("containers", [], [{ key: "image", value: quote(GCP_IMAGES.cloudRun) }], [
                 block("ports", [], [{ key: "container_port", value: "8080" }]),
                 block("resources", [], [
                   {
@@ -1426,7 +1476,7 @@ export const GCP = {
             ]),
           ]),
           serviceAccount(c.name, c.slug, `Runs the ${c.slug} service`),
-          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
+          projectRole(`${c.name}_log_writer`, GCP_ROLES.logWriter, `google_service_account.${c.name}`),
         ],
         variables: [NAME_PREFIX],
         outputs: [{ name: `${c.name}_url`, value: `google_cloud_run_v2_service.${c.name}.uri` }],
@@ -1470,7 +1520,7 @@ export const GCP = {
             ]),
           ]),
           serviceAccount(c.name, c.slug, `Runs the ${c.slug} function`),
-          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
+          projectRole(`${c.name}_log_writer`, GCP_ROLES.logWriter, `google_service_account.${c.name}`),
           block("data", ["archive_file", c.name], [
             { key: "type", value: quote("zip") },
             { key: "source_dir", value: quoteTemplate`\${path.module}/src/${c.slug}` },
@@ -1586,7 +1636,7 @@ export const GCP = {
           ]),
           block("resource", ["google_kms_crypto_key_iam_member", c.name], [
             { key: "crypto_key_id", value: `google_kms_crypto_key.${c.name}.id` },
-            { key: "role", value: quote("roles/cloudkms.cryptoKeyEncrypterDecrypter") },
+            { key: "role", value: quote(GCP_ROLES.keyUser) },
             { key: "member", value: `"serviceAccount:\${google_project_service_identity.${c.name}_secretmanager.email}"` },
           ]),
         ],
@@ -1811,11 +1861,11 @@ export const GCP = {
             { key: "service", value: `google_app_engine_standard_app_version.${c.name}.service` },
           ], [block("network_settings", [], [{ key: "ingress_traffic_allowed", value: quote(APP_ENGINE_INGRESS.internalOnly) }])]),
           serviceAccount(c.name, c.slug, `Runs the ${c.slug} application`),
-          projectRole(`${c.name}_log_writer`, "roles/logging.logWriter", `google_service_account.${c.name}`),
+          projectRole(`${c.name}_log_writer`, GCP_ROLES.logWriter, `google_service_account.${c.name}`),
           // The deployment reads the zip as the application's account: from its own source bucket, and no other.
           block("resource", ["google_storage_bucket_iam_member", `${source}_viewer`], [
             { key: "bucket", value: `google_storage_bucket.${source}.name` },
-            { key: "role", value: quote("roles/storage.objectViewer") },
+            { key: "role", value: quote(GCP_ROLES.objectViewer) },
             { key: "member", value: `"serviceAccount:\${google_service_account.${c.name}.email}"` },
           ]),
           block("data", ["archive_file", c.name], [

@@ -190,6 +190,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   consumer of the queue's topic or a subscription on a topic of your own is drawn as its own flagged node, listed as not translated (so it counts as not
   buildable, and a grant on it is a grant on it, not on the queue). A dead-letter topic is folded into its queue only when no subscription but the plan's own
   reads it or gives up on it.
+- Two Google Cloud nodes of one kind no longer get the same service account id. The id was `sa-<name_prefix>-<slug>` cut to 30 characters, so `virtual-machine` and
+  `virtual-machine-2` under a long prefix collided and the second apply failed with a 409. An id that fits is unchanged; one that does not keeps its first 23
+  characters and ends in six characters of the SHA-256 of the whole, the same on every run. `name_prefix` now has a validation (1 to 20 lowercase letters, digits and
+  hyphens, starting with a letter).
+- A Google Cloud plan now refuses a label Google would refuse, at plan time. `var.labels` has a validation over every key and value (a key starts with a lowercase
+  letter; keys and values hold lowercase letters, digits, hyphens and underscores and are at most 63 characters), where a bad label used to pass `terraform plan` and fail at apply.
+- Importing a Mermaid `architecture-beta` diagram no longer takes quadratic or worse time on a declaration with a long run of whitespace (`service a` followed by
+  4000 spaces and a character took 36 seconds). Each optional part of a declaration is read from its own leading whitespace, so the match is linear, and a line over 2000
+  characters is refused with an error naming the line.
+- The Google Cloud sandbox workflow runs only from `main`. A dispatch from another branch would have run that branch's `scripts/sandbox-gcp.sh` with the cloud token once the
+  reviewers approved; now the first job fails with an error naming the ref, and the job that gets the token has `if: github.ref == 'refs/heads/main'`.
+- The Google Cloud sandbox sweep deletes only what is named like a run's own (`ih-sbx-tg-<plan letter><4 hex digits>`, the shared network's `ih-sbx-tg-net-<4 hex digits>`), at the start of a
+  name or after a hyphen or a slash, instead of anything with `ih-sbx-tg-` somewhere in its name. Its preflight now also stops the run when a service account of the project holds Service
+  Account Token Creator, Service Account User (the signed-in account excepted), Project IAM Admin, Security Admin, Role Admin or Service Account Key Admin, besides Editor and Owner,
+  and fails on an empty policy instead of passing it.
+- The Google Cloud sandbox's check of the plans (`scripts/sandbox-gcp-validate.mjs`) now reads values, not only names. Before a plan is applied with a cloud token, a grant must be one of the
+  exact roles the generator writes (held equal to `GCP_ROLES` by a test) of a role its type of grant carries, to a service account the plan creates, a service agent it names, Google's log
+  delivery group, or `allUsers` as `roles/run.invoker` on Cloud Run; a virtual machine's `metadata` is the settings the generator writes (no `metadata_startup_script`, `startup-script`,
+  `user-data` or `ssh-keys`); a container's image is the generator's (`GCP_IMAGES`) with no `command`, `args` or environment other than references to the plan's own resources under a
+  name the generator writes; workloads run as a service account the plan creates; and a firewall or a control plane is not opened to `0.0.0.0/0`. A tampered plan is refused before Terraform runs.
 
 ## [0.2.0] - 2026-11-23
 
